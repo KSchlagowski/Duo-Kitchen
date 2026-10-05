@@ -25,7 +25,7 @@ Główna idea: gotujemy hurtowo rano i wieczorem, a w ciągu dnia tylko odgrzewa
 - **AI**: dostęp przez OpenRouter, używany tylko tam, gdzie to konieczne.
   - Przeliczanie makro i harmonogram gotowania są deterministyczne, bez LLM.
   - Cel: niskie koszty utrzymania i przewidywalne wyniki.
-- **Integracja z Claude**: przez konektor MCP (szczegóły w sekcji 11).
+- **Integracja z Claude**: przez konektor MCP (szczegóły w sekcji 12).
 - Kod budowany jest przez Claude Code.
 
 ---
