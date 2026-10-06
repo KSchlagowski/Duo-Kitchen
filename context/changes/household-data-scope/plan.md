@@ -6,11 +6,11 @@ Roadmap F-01. Introduce the household concept so that every account belongs to e
 
 ## Current State Analysis
 
-- Supabase has only `supabase/config.toml` (`project_id = "10x-astro-starter"`, Postgres 17, `enable_confirmations = false`). No migrations, no schema, no `seed.sql`.
+- Supabase is a hosted project only (linked via `npx supabase link`; `supabase/config.toml` is just the CLI project config). No migrations, no schema, no `seed.sql`. Migrations are applied with `npx supabase db push`; SQL runs with `npx supabase db query --linked`.
 - Auth is plain email + password: `src/pages/api/auth/signup.ts` calls `supabase.auth.signUp`, `src/middleware.ts` resolves `context.locals.user` and guards `PROTECTED_ROUTES` (`/dashboard`).
 - `src/types.ts` does not exist yet; `src/lib/services/` does not exist yet.
-- No test runner. Verification today = `npm run lint`, `npx astro check`, `npm run build`, `npm run smoke` (HTTP auth flow; CI runs it against a local Supabase started with `supabase start`, which applies migrations).
-- Supabase CLI 2.117 provides `supabase db query --local -f <file>` — runs SQL against the local stack without needing `psql` (not installed on the dev machine).
+- No test runner. Verification today = `npm run lint`, `npx astro check`, `npm run build`, `npm run smoke` (HTTP auth flow against the hosted Supabase project).
+- Supabase CLI 2.117 provides `supabase db query --linked -f <file>` — runs SQL against the hosted project through the Management API (`SUPABASE_ACCESS_TOKEN`) without needing `psql` (not installed on the dev machine).
 
 ## Desired End State
 
@@ -23,10 +23,10 @@ Roadmap F-01. Introduce the household concept so that every account belongs to e
 
 ### Key Discoveries:
 
-- `supabase/config.toml:13` exposes only `public` and `graphql_public` through the API — a `private` schema is therefore not reachable via PostgREST, which is what makes a `SECURITY DEFINER` helper safe to keep there.
+- The Data API exposes only `public` and `graphql_public` — a `private` schema is therefore not reachable via PostgREST, which is what makes a `SECURITY DEFINER` helper safe to keep there.
 - Supabase grants all privileges on new `public` tables to `anon`/`authenticated` by default; RLS without a policy denies, but revoking write grants on the two membership tables adds defence in depth.
 - `scripts/smoke.mjs` signs up a fresh user — once the trigger exists, a broken trigger makes the "signup creates account" step fail, so the smoke test already guards trigger regressions.
-- `.github/workflows/ci.yml` smoke job excludes many services in `supabase start -x …` but keeps the DB — `supabase db query --local` works there.
+- `.github/workflows/ci.yml` smoke job can run `supabase db query --linked` after `supabase link --project-ref`, given a `SUPABASE_ACCESS_TOKEN` secret — no database password needed.
 
 ## What We're NOT Doing
 
@@ -88,14 +88,14 @@ Single migration that creates the household model, the access helper, per-operat
 
 #### Automated Verification:
 
-- Migration applies cleanly on a fresh DB: `npx supabase db reset`
-- Supabase security advisors report no new issues for these tables/functions: `npx supabase db advisors --local` (or `npx supabase db lint` if advisors is unavailable locally)
+- Migration applies cleanly to the hosted project: `npx supabase db push`
+- Supabase security advisors report no new issues for these tables/functions: `npx supabase db advisors --linked` (or `npx supabase db lint --linked`)
 - Smoke test still passes against the dev server (sign-up goes through the trigger): `npm run smoke`
 - Lint passes: `npm run lint`
 
 #### Manual Verification:
 
-- In Studio (`http://localhost:54323`), a newly signed-up user has exactly one `households` row and one `household_members` row.
+- In the Supabase dashboard (Table Editor), a newly signed-up user has exactly one `households` row and one `household_members` row.
 - Users that existed before the migration (if any) were backfilled with their own household.
 
 **Implementation Note**: After completing this phase and all automated verification passes, pause here for manual confirmation from the human that the manual testing was successful before proceeding to the next phase.
@@ -106,7 +106,7 @@ Single migration that creates the household model, the access helper, per-operat
 
 ### Overview
 
-An SQL script that proves the RLS pattern works for two households, runnable locally and in CI, and serving as the template for testing every later table.
+An SQL script that proves the RLS pattern works for two households, runnable against the hosted project from a dev machine and in CI, and serving as the template for testing every later table.
 
 ### Changes Required:
 
@@ -128,9 +128,9 @@ An SQL script that proves the RLS pattern works for two households, runnable loc
 
 **File**: `package.json`
 
-**Intent**: One command to run the isolation test against the local stack, cross-platform (no psql).
+**Intent**: One command to run the isolation test against the hosted project, cross-platform (no psql). Safe on the shared database because the whole script is rolled back.
 
-**Contract**: `"test:rls": "supabase db query --local -f supabase/tests/household_isolation.sql"`.
+**Contract**: `"test:rls": "supabase db query --linked -f supabase/tests/household_isolation.sql"`.
 
 #### 3. CI step
 
@@ -138,23 +138,23 @@ An SQL script that proves the RLS pattern works for two households, runnable loc
 
 **Intent**: Run the isolation test on every push/PR so a later migration can't silently break household privacy.
 
-**Contract**: In the `smoke` job, a new step after "Start local Supabase": `supabase db query --local -f supabase/tests/household_isolation.sql`.
+**Contract**: The `smoke` job runs entirely against the hosted project (no `supabase start`, no Docker): job-level `SUPABASE_ACCESS_TOKEN` secret, a "Link hosted Supabase project" step (`npx supabase link --project-ref "${{ secrets.SUPABASE_PROJECT_REF }}"`), then `npm run test:rls`; build/preview get `SUPABASE_URL`/`SUPABASE_KEY` from repository secrets.
 
 #### 4. Docs
 
 **File**: `CLAUDE.md` (`## Commands`) and `README.md` (Available Scripts; replace the "No database tables or migrations are required" sentence)
 
-**Intent**: Document `npm run test:rls` and that the DB now has migrations.
+**Intent**: Document `npm run test:rls`, that the DB now has migrations, and that Supabase is hosted-only.
 
-**Contract**: One bullet each; README sentence updated to say migrations are applied by `supabase start` / `supabase db reset`.
+**Contract**: One bullet each; README says migrations are applied with `npx supabase db push`; CI docs list the smoke job's secrets (`SUPABASE_URL`, `SUPABASE_KEY`, `SUPABASE_ACCESS_TOKEN`, `SUPABASE_PROJECT_REF`).
 
 ### Success Criteria:
 
 #### Automated Verification:
 
 - Isolation test passes: `npm run test:rls`
-- Test actually fails when isolation is broken: temporarily change the `households` select policy to `using (true)` (or comment out the trigger), run `npm run test:rls`, confirm non-zero exit with a descriptive message, then revert
-- Test leaves no residue: after a run, `npx supabase db query --local "select count(*) from auth.users where email like '%@rls-test.local'"` returns 0
+- Test actually fails when isolation is broken: run a scratch copy that, inside the same rolled-back transaction, moves user B into user A's household; confirm non-zero exit with a descriptive message (no policy is changed on the shared database)
+- Test leaves no residue: after a run, `npx supabase db query --linked "select count(*) from auth.users where email like '%@rls-test.local'"` returns 0
 - Lint passes: `npm run lint`
 
 #### Manual Verification:
@@ -228,9 +228,9 @@ A read-only service that later slices use as the entry point for "current househ
 
 ### Manual Testing Steps:
 
-1. `npx supabase db reset`, start `npm run dev`, sign up user A → dashboard shows household, 1 member.
+1. `npx supabase db push`, start `npm run dev`, sign up user A → dashboard shows household, 1 member.
 2. Sign up user B in a private window → dashboard shows a different household.
-3. In Studio, confirm two households and two membership rows.
+3. In the Supabase dashboard, confirm two households and two membership rows.
 
 ## Performance Considerations
 
@@ -238,7 +238,7 @@ The helper is `stable` and used as `in (select …)`, so Postgres evaluates it o
 
 ## Migration Notes
 
-First migration in the repo. Includes a backfill so any accounts already in a local or cloud project get a household. Rollback = drop trigger, functions, tables and schema `private` (no other objects depend on them yet).
+First migration in the repo. Includes a backfill so any accounts already in the hosted project get a household. Rollback = drop trigger, functions, tables and schema `private` (no other objects depend on them yet).
 
 ## References
 
@@ -256,24 +256,24 @@ First migration in the repo. Includes a backfill so any accounts already in a lo
 
 #### Automated
 
-- [x] 1.1 Migration applies cleanly on a fresh DB: `npx supabase db reset` — e0cfdfa
+- [x] 1.1 Migration applies cleanly to the hosted project: `npx supabase db push` — e0cfdfa
 - [x] 1.2 Supabase security advisors report no new issues for these tables/functions — e0cfdfa
 - [x] 1.3 Smoke test still passes against the dev server: `npm run smoke` — e0cfdfa
 - [x] 1.4 Lint passes: `npm run lint` — e0cfdfa
 
 #### Manual
 
-- [x] 1.5 New user has exactly one household and one membership row in Studio — e0cfdfa
+- [x] 1.5 New user has exactly one household and one membership row in the Supabase dashboard — e0cfdfa
 - [x] 1.6 Pre-existing users were backfilled with their own household — e0cfdfa
 
 ### Phase 2: Household Isolation Test
 
 #### Automated
 
-- [ ] 2.1 Isolation test passes: `npm run test:rls`
-- [ ] 2.2 Test fails when isolation is deliberately broken, then reverted
-- [ ] 2.3 Test leaves no residue in `auth.users`
-- [ ] 2.4 Lint passes: `npm run lint`
+- [x] 2.1 Isolation test passes: `npm run test:rls`
+- [x] 2.2 Test fails when isolation is deliberately broken, then reverted
+- [x] 2.3 Test leaves no residue in `auth.users`
+- [x] 2.4 Lint passes: `npm run lint`
 
 #### Manual
 

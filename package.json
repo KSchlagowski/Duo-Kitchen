@@ -10,7 +10,8 @@
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "format": "prettier --write .",
-    "smoke": "node scripts/smoke.mjs"
+    "smoke": "node scripts/smoke.mjs",
+    "test:rls": "supabase db query --linked -f supabase/tests/household_isolation.sql"
   },
   "dependencies": {
     "@astrojs/check": "^0.9.10",

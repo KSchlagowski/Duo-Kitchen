@@ -58,6 +58,7 @@ npm run dev
 - `npm run lint:fix` - Auto-fix ESLint issues
 - `npm run format` - Run Prettier
 - `npm run smoke` - Smoke test the auth flow against a running server (`BASE_URL`, defaults to `http://localhost:4321`)
+- `npm run test:rls` - Run the household isolation (RLS) test against the linked Supabase project (`supabase/tests/household_isolation.sql`); it runs in a rolled-back transaction, so it leaves no data behind
 
 ## Project Structure
 
@@ -77,9 +78,9 @@ npm run dev
 
 This project uses [Supabase](https://supabase.com/) for authentication. Environment variables are declared via Astro's `astro:env` schema and are treated as **server-only secrets** — they are never exposed to the client.
 
-### First-time setup (local, no cloud project needed)
+### Setup (hosted project)
 
-Requires [Docker](https://www.docker.com/) and ~7 GB RAM.
+This project uses a hosted Supabase project only.
 
 1. Create your `.env` file:
 
@@ -87,38 +88,7 @@ Requires [Docker](https://www.docker.com/) and ~7 GB RAM.
 cp .env.example .env
 ```
 
-2. Initialize the local Supabase project (creates a `supabase/` config folder):
-
-```bash
-npx supabase init
-```
-
-3. Start the local stack (downloads Docker images on first run):
-
-```bash
-npx supabase start
-```
-
-4. Copy the credentials printed by the CLI into your `.env` and `.dev.vars`:
-
-```
-SUPABASE_URL=http://127.0.0.1:54321
-SUPABASE_KEY=<anon key from CLI output>
-```
-
-5. To stop the stack when done:
-
-```bash
-npx supabase stop
-```
-
-The local Studio UI is available at `http://localhost:54323`.
-
-No database tables or migrations are required — this project uses Supabase Auth's built-in `auth.users` table only.
-
-### Using a cloud Supabase project instead
-
-If you prefer to use a hosted Supabase project, add these variables to your `.env` and `.dev.vars` files:
+2. Add these variables to your `.env` and `.dev.vars` files:
 
 | Variable       | Description                                                |
 | -------------- | ---------------------------------------------------------- |
@@ -130,9 +100,21 @@ SUPABASE_URL=https://<project-ref>.supabase.co
 SUPABASE_KEY=<anon-key>
 ```
 
-### Email confirmation in local development
+3. Link the Supabase CLI to the project (once):
 
-By default Supabase requires email confirmation before a user can sign in. To skip this during local development:
+```bash
+npx supabase link --project-ref <project-ref>
+```
+
+Database migrations live in `supabase/migrations/`. Apply new ones to the hosted project with:
+
+```bash
+npx supabase db push
+```
+
+### Email confirmation
+
+By default Supabase requires email confirmation before a user can sign in. To skip this during development:
 
 1. Open the Supabase dashboard for your project
 2. Go to **Authentication → Email → Confirm email**
@@ -178,7 +160,7 @@ npm run dev            # or: npm run build && npm run preview
 BASE_URL=http://localhost:4321 npm run smoke
 ```
 
-It needs a reachable Supabase instance (local or cloud) with email confirmation disabled.
+It needs the hosted Supabase project with email confirmation disabled.
 
 > **Note:** this script exists primarily to guard the development of the starter itself — it is a fast sanity check that dependency upgrades did not break the build, the Cloudflare adapter or the Supabase auth flow. It is **not** a substitute for a real test suite. Once you build your own product on top of this starter, add proper tests (unit, integration, end-to-end) suited to your application.
 
@@ -187,7 +169,7 @@ It needs a reachable Supabase instance (local or cloud) with email confirmation 
 GitHub Actions runs two jobs on every push and PR to `main`:
 
 - **ci** — lint, `astro check` and build. Configure `SUPABASE_URL` and `SUPABASE_KEY` as repository secrets for the build step.
-- **smoke** — starts a local Supabase via the Supabase CLI, builds, serves the production preview on the Cloudflare runtime and runs `npm run smoke` against it. No secrets required.
+- **smoke** — links the Supabase CLI to the hosted project, runs the household isolation test, builds, serves the production preview on the Cloudflare runtime and runs `npm run smoke` against it. Requires the `SUPABASE_URL` and `SUPABASE_KEY` secrets plus `SUPABASE_ACCESS_TOKEN` (a Supabase personal access token) and `SUPABASE_PROJECT_REF`. Each run signs up one `smoke-<timestamp>@example.com` account in the hosted project.
 
 ## License
 

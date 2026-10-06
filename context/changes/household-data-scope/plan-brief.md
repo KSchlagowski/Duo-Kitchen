@@ -47,15 +47,15 @@ Signing up automatically creates a household of one. A user can read only their 
 | Phase                          | What it delivers                                      | Key risk                                                            |
 | ------------------------------ | ----------------------------------------------------- | ------------------------------------------------------------------- |
 | 1. Schema, trigger & policies  | Enforced "every user has a household" + RLS pattern    | A broken trigger blocks sign-up (caught by smoke)                    |
-| 2. Isolation test              | `npm run test:rls` locally and in CI                   | `supabase db query` may not fail loudly; checked by deliberately breaking a rule |
+| 2. Isolation test              | `npm run test:rls` against the hosted project and in CI | `supabase db query` may not fail loudly; checked by deliberately breaking a rule |
 | 3. App layer                   | Service + dashboard shows household                    | Low; the dashboard must still render if the query fails             |
 
-**Prerequisites:** Docker + local Supabase (`npx supabase start`); Supabase CLI ≥ 2.117 (`db query`).
+**Prerequisites:** Hosted Supabase project linked via `npx supabase link`; Supabase CLI ≥ 2.117 (`db query --linked`).
 **Estimated effort:** ~1 session across 3 small phases.
 
 ## Open Risks & Assumptions
 
-- Assumes `supabase db query --local -f` runs a multi-statement file with `begin … rollback` and exits non-zero on `raise exception`. Fallback: `docker exec -i supabase_db_10x-astro-starter psql -U postgres -v ON_ERROR_STOP=1 < file`.
+- `supabase db query --linked -f` runs the multi-statement file with `begin … rollback` in one session and exits non-zero on `raise exception` (verified).
 - Deleting an account leaves its household behind. That's harmless for one couple and deferred.
 - The partner's solo household when they join is S-01's decision; nothing here blocks either choice.
 

@@ -5,13 +5,15 @@
 - **Supabase RLS**: every new table must enable RLS with granular per-operation, per-role policies. Migrations go in `supabase/migrations/` named `YYYYMMDDHHmmss_short_description.sql`.
 - **Household-scoped tables**: every household-owned table has `household_id uuid not null references public.households on delete cascade` (indexed) and per-operation RLS policies `to authenticated` with `using` / `with check (household_id in (select private.user_household_ids()))`. No `anon` policies. Never query `household_members` directly inside a policy — always go through `private.user_household_ids()`. Extend the isolation test (`supabase/tests/household_isolation.sql`) for each new table.
 - **Secrets**: `SUPABASE_URL` / `SUPABASE_KEY` are server-only — read them via `astro:env/server` (declared in `astro.config.mjs` `env.schema`), never `import.meta.env` in client code. Local Cloudflare secrets go in `.dev.vars` (gitignored).
+- **Supabase is cloud-only**: always work against the hosted Supabase project (`SUPABASE_URL=https://<project-ref>.supabase.co`). Do not run a local Supabase stack — no `npx supabase start` / `stop` / `db reset`, no Docker. Apply migrations to the cloud project with `npx supabase db push`; run SQL with `npx supabase db query --linked`. This applies to CI too.
 - **Tailwind class merging**: use the `cn()` helper from `@/lib/utils` for conditional/merged class names. Do not concatenate class strings manually.
 
 ## Commands
 
 Scripts: @package.json. Project-specific notes:
 
-- `npm run smoke` — dependency-free auth-flow smoke test (`scripts/smoke.mjs`) against a running server, `BASE_URL` env (default `http://localhost:4321`). Run after dependency upgrades; CI runs it against the production preview with a local Supabase.
+- `npm run smoke` — dependency-free auth-flow smoke test (`scripts/smoke.mjs`) against a running server, `BASE_URL` env (default `http://localhost:4321`). Run after dependency upgrades; CI runs it against the production preview backed by the hosted Supabase project.
+- `npm run test:rls` — household isolation test (`supabase/tests/household_isolation.sql`) against the hosted Supabase project (`--linked`); runs in a rolled-back transaction so it commits nothing, fails with a descriptive error on any broken assertion. CI runs it in the smoke job.
 - Pre-commit hooks: husky + lint-staged runs `eslint --fix` on `*.{ts,tsx,astro}` and `prettier --write` on `*.{json,css,md}`.
 
 ## Architecture
@@ -38,11 +40,11 @@ Scripts: @package.json. Project-specific notes:
 
 ### Environment
 
-Setup, local Supabase, and deploy: @README.md
+Setup and deploy: @README.md
 
 ## CI
 
 `.github/workflows/ci.yml` runs on every push and PR to `main`:
 
 - **ci** — lint, `astro check`, build. Requires `SUPABASE_URL` and `SUPABASE_KEY` repository secrets.
-- **smoke** — local Supabase + production preview + `npm run smoke`. No secrets required.
+- **smoke** — household isolation test + production preview + `npm run smoke`, all against the hosted Supabase project. Requires `SUPABASE_URL`, `SUPABASE_KEY`, `SUPABASE_ACCESS_TOKEN` and `SUPABASE_PROJECT_REF` repository secrets.
