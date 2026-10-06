@@ -3,6 +3,7 @@
 ## Hard rules
 
 - **Supabase RLS**: every new table must enable RLS with granular per-operation, per-role policies. Migrations go in `supabase/migrations/` named `YYYYMMDDHHmmss_short_description.sql`.
+- **Household-scoped tables**: every household-owned table has `household_id uuid not null references public.households on delete cascade` (indexed) and per-operation RLS policies `to authenticated` with `using` / `with check (household_id in (select private.user_household_ids()))`. No `anon` policies. Never query `household_members` directly inside a policy — always go through `private.user_household_ids()`. Extend the isolation test (`supabase/tests/household_isolation.sql`) for each new table.
 - **Secrets**: `SUPABASE_URL` / `SUPABASE_KEY` are server-only — read them via `astro:env/server` (declared in `astro.config.mjs` `env.schema`), never `import.meta.env` in client code. Local Cloudflare secrets go in `.dev.vars` (gitignored).
 - **Tailwind class merging**: use the `cn()` helper from `@/lib/utils` for conditional/merged class names. Do not concatenate class strings manually.
 
@@ -24,6 +25,7 @@ Scripts: @package.json. Project-specific notes:
 - API endpoints: `src/pages/api/auth/{signin,signup,signout}.ts`
 - Auth pages: `src/pages/auth/{signin,signup,confirm-email}.astro`
 - Protected page example: `src/pages/dashboard.astro`
+- Households: `public.households` / `public.household_members` (one household per account); the sign-up trigger `private.handle_new_user()` creates a household of one for every new account. Clients cannot write these tables directly.
 
 ### Key conventions
 

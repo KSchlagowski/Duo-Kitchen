@@ -4,6 +4,8 @@
 
 A modern, opinionated starter template for building fast, accessible web applications.
 
+**Live app:** https://duo-kitchen.mediewilnp.workers.dev
+
 ## Tech Stack
 
 - [Astro](https://astro.build/) v7 - Modern web framework with server-first rendering
@@ -151,7 +153,7 @@ Route protection is handled in `src/middleware.ts`. Add paths to the `PROTECTED_
 
 ## Deployment
 
-This project deploys to [Cloudflare Workers](https://workers.cloudflare.com/).
+This project deploys to [Cloudflare Workers](https://workers.cloudflare.com/). The production app is live at https://duo-kitchen.mediewilnp.workers.dev.
 
 1. Build the project:
 
