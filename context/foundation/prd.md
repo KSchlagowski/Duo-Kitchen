@@ -4,7 +4,7 @@ version: 1
 status: draft
 created: 2026-10-06
 context_type: greenfield
-product_type: web-app            # installable PWA (desktop browser, Android, iOS)
+product_type: web-app            # installable (desktop browser, Android, iOS)
 target_scale:
   users: small                   # one couple at launch
   qps: low
@@ -30,7 +30,7 @@ Insight: one large batch can be split deterministically between two people so th
 At launch the app serves one couple. Support for other couples is possible later, but the architecture does not need to solve it now.
 
 ### Secondary persona
-**AI agent (an external chat agent the user talks to)** acts as a separate user, **only on explicit command**: it imports recipes from a photo and description, edits recipes, and builds meal plans.
+**AI agent (an external chat agent the user talks to)** acts as a separate user named **"system"**, **only on explicit command**: it imports recipes from a photo and description, edits recipes, and builds meal plans.
 
 ## Success Criteria
 
@@ -87,12 +87,12 @@ At launch the app serves one couple. Support for other couples is possible later
 ### Recipes
 - FR-005: Person can browse recipe cards showing photo, name, cuisine and both partners' thumbs up/down. Priority: must-have
 - FR-006: Person can rate a recipe thumbs up/down and see their partner's rating. Priority: must-have
-- FR-007: Person can filter recipes by cuisine, meal type, prep-time bucket and minimum sensible calories. Priority: must-have
+- FR-007: Person can filter recipes by cuisine, meal type, prep-time bucket (≤ 20 min / 20–45 min / 45+ min) and minimum sensible calories. Priority: must-have
 - FR-008: Recipes rated thumbs-down by either person are sorted to the end of the list by default. Priority: must-have
 - FR-009: Person can view a recipe's ingredients (with quantities, macros and rounding step), its steps split into make-ahead and fresh, its divisible components (or a whole-dish-only flag), raw and cooked weights where relevant, 0–2 suggested meal types, cuisine and prep time. Priority: must-have
 - FR-010: Recipe macros are computed from products in the product database. Priority: must-have
-- FR-011: Person or the AI agent can extend the product database (nutrition values). Priority: must-have
-- FR-012: The app ships with a few seeded test recipes together with test data. Priority: must-have
+- FR-011: Person or the AI agent can extend the product database (nutrition values and store aisle). Priority: must-have
+- FR-012: The app ships with ~5–10 generated test recipes with plausible products and nutrition values. Priority: must-have
 
 ### Meal planning
 - FR-013: Person can build a plan of 3 consecutive days × up to 5 meals (breakfast, second breakfast, lunch, afternoon snack, dinner). Priority: must-have
@@ -108,7 +108,7 @@ At launch the app serves one couple. Support for other couples is possible later
 - FR-020: Person can always save and use a plan without solving. Priority: must-have
 
 ### Shopping list
-- FR-021: Person can see a shopping list generated from the plan with quantities for both people, grouped by store aisle, and check items off (online). Priority: must-have
+- FR-021: Person can see a shopping list generated from the plan with quantities for both people, grouped by store aisle, and check items off (online). Aisles come from a fixed list (produce, dairy, meat & fish, bakery, dry goods, spices, frozen, other); each product carries its aisle, set by whoever adds the product (person or AI agent). Priority: must-have
   > Socrates: Offline check-off and the A↔B Sync button are moved out of the MVP (user decision). They are the doc's only offline requirement, so they come back in v2.
 
 ### Meal-prep schedule & cooking
@@ -116,7 +116,7 @@ At launch the app serves one couple. Support for other couples is possible later
 - FR-023: Person can follow a session in a step-by-step cooking mode, with portions computed for A and B. Priority: must-have
 
 ### AI agent (recipe import through conversation)
-- FR-024: The AI agent, acting as a separate user on explicit command, can add a recipe from a photo and description through a dialogue, and save it only after user acceptance. Priority: must-have
+- FR-024: The AI agent, acting as a separate user named "system" on explicit command, can add a recipe from a photo and description through a dialogue, and save it only after user acceptance. Priority: must-have
 - FR-025: The AI agent can edit existing recipes and build meal plans on command. Priority: must-have
   > Socrates: Data source precedence for product nutrition (instruction for the agent): user-entered products → the app's product database → internet → the agent's own knowledge.
 
@@ -149,7 +149,7 @@ A second rule orders the cooking: steps from all planned recipes are merged into
 - One account per person; sign-up and sign-in with email + password.
 - Two accounts link into one household via an invite code/link. Linked accounts share recipes, plans and shopping lists; each person keeps their own macro targets and ratings (visible to the partner).
 - Flat role model inside a household (no admin/member split).
-- The AI agent connects as a separate user with access to the household's recipes and plans. It acts only on a user's explicit command.
+- The AI agent acts as a separate user named "system". It has no account of its own to sign up for; it reaches a household through a connection that a household member authorizes, and gets access to that household's recipes, plans and product data. Its changes are attributed to "system", not to person A or B. It acts only on a user's explicit command.
 - Unauthenticated users can reach only sign-in / sign-up / invite redemption.
 
 ## Non-Goals
@@ -164,7 +164,5 @@ A second rule orders the cooking: steps from all planned recipes are merged into
 - Later, not now: English recipe content; dietary filters (vegetarian, vegan, gluten-free, allergens); opening the app to other couples and users.
 
 ## Open Questions
-1. **How is the AI agent authenticated and bound to a household?** Owner: user. Resolve during planning.
-2. **Store-aisle taxonomy:** which aisles exist, and who assigns a product to an aisle (the product database, or the AI agent)? Owner: user.
-3. **What prep-time buckets does the filter use?** Owner: user.
-4. **Seed recipes:** generated or taken from the internet, and how many? Owner: user. Must be resolved before the solver can be tested.
+
+None open. Resolved on 2026-10-06: AI-agent identity (Access Control, FR-024), store-aisle taxonomy (FR-021, FR-011), prep-time buckets (FR-007), seed recipes (FR-012).
