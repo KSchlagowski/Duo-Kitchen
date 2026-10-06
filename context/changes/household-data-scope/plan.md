@@ -256,15 +256,15 @@ First migration in the repo. Includes a backfill so any accounts already in a lo
 
 #### Automated
 
-- [x] 1.1 Migration applies cleanly on a fresh DB: `npx supabase db reset`
-- [x] 1.2 Supabase security advisors report no new issues for these tables/functions
-- [x] 1.3 Smoke test still passes against the dev server: `npm run smoke`
-- [x] 1.4 Lint passes: `npm run lint`
+- [x] 1.1 Migration applies cleanly on a fresh DB: `npx supabase db reset` — e0cfdfa
+- [x] 1.2 Supabase security advisors report no new issues for these tables/functions — e0cfdfa
+- [x] 1.3 Smoke test still passes against the dev server: `npm run smoke` — e0cfdfa
+- [x] 1.4 Lint passes: `npm run lint` — e0cfdfa
 
 #### Manual
 
-- [x] 1.5 New user has exactly one household and one membership row in Studio
-- [x] 1.6 Pre-existing users were backfilled with their own household
+- [x] 1.5 New user has exactly one household and one membership row in Studio — e0cfdfa
+- [x] 1.6 Pre-existing users were backfilled with their own household — e0cfdfa
 
 ### Phase 2: Household Isolation Test
 
