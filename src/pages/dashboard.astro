@@ -1,7 +1,25 @@
 ---
 import Layout from "@/layouts/Layout.astro";
+import { createClient } from "@/lib/supabase";
+import { getCurrentHousehold } from "@/lib/services/household";
+import type { Household } from "@/types";
 
 const { user } = Astro.locals;
+
+let household: Household | null = null;
+const supabase = createClient(Astro.request.headers, Astro.cookies);
+if (supabase) {
+  try {
+    household = await getCurrentHousehold(supabase);
+  } catch {
+    // Fall back to the neutral message below instead of failing the page.
+  }
+}
+
+const memberCount = household?.members.length ?? 0;
+const householdLabel = household
+  ? `Household: ${household.id.slice(0, 8)} · ${memberCount} member${memberCount === 1 ? "" : "s"}`
+  : "Household information is unavailable right now.";
 ---
 
 <Layout title="Dashboard">
@@ -12,6 +30,9 @@ const { user } = Astro.locals;
       </h1>
       <p class="text-blue-100/80">
         Welcome, <span class="font-semibold text-white">{user?.email}</span>
+      </p>
+      <p class="mt-2 text-sm text-blue-100/80" data-testid="household">
+        {householdLabel}
       </p>
       <p class="mt-2 text-sm text-blue-100/50">This page is only for authenticated users.</p>
       <form method="POST" action="/api/auth/signout" class="mt-6">
