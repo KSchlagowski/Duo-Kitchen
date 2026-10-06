@@ -25,7 +25,7 @@ Core idea: cook in bulk in the morning and evening; during the day, only reheat 
 - **AI**: accessed through OpenRouter, used only where strictly necessary.
   - Macro recalculation and the cooking schedule are deterministic, with no LLM.
   - Goal: low running costs and predictable results.
-- **Claude integration**: via an MCP connector (details in section 12).
+- **Claude integration**: via an MCP connector, so the user can talk to an agent that imports recipes into the app (details in section 12).
 - The code is built by Claude Code.
 
 ---
@@ -193,6 +193,8 @@ Core idea: cook in bulk in the morning and evening; during the day, only reheat 
 ---
 
 ## 12. Claude as a user (MCP connector)
+
+Purpose: the user talks to an agent (Claude in Claude.ai), and the agent imports recipes into the app. The same agent can also edit recipes and build meal plans on command.
 
 - Claude has access to the app via an MCP connector added in Claude.ai and acts as a separate user.
 - It can:

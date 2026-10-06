@@ -25,7 +25,7 @@ Główna idea: gotujemy hurtowo rano i wieczorem, a w ciągu dnia tylko odgrzewa
 - **AI**: dostęp przez OpenRouter, używany tylko tam, gdzie to konieczne.
   - Przeliczanie makro i harmonogram gotowania są deterministyczne, bez LLM.
   - Cel: niskie koszty utrzymania i przewidywalne wyniki.
-- **Integracja z Claude**: przez konektor MCP (szczegóły w sekcji 12).
+- **Integracja z Claude**: przez konektor MCP, żeby użytkownik mógł rozmawiać z agentem, który importuje przepisy do aplikacji (szczegóły w sekcji 12).
 - Kod budowany jest przez Claude Code.
 
 ---
@@ -193,6 +193,8 @@ Główna idea: gotujemy hurtowo rano i wieczorem, a w ciągu dnia tylko odgrzewa
 ---
 
 ## 12. Claude jako użytkownik (konektor MCP)
+
+Cel: użytkownik rozmawia z agentem (Claude w Claude.ai), a agent importuje przepisy do aplikacji. Ten sam agent może też na polecenie edytować przepisy i układać plan posiłków.
 
 - Claude ma dostęp do aplikacji przez konektor MCP dodany w Claude.ai i działa jak osobny użytkownik.
 - Może:
