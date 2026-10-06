@@ -1,6 +1,6 @@
 import { fixupPluginRules } from "@eslint/compat";
 import eslint from "@eslint/js";
-import { defineConfig, includeIgnoreFile } from "eslint/config";
+import { defineConfig, globalIgnores, includeIgnoreFile } from "eslint/config";
 import eslintPluginPrettier from "eslint-plugin-prettier/recommended";
 import eslintPluginAstro from "eslint-plugin-astro";
 import pluginReact from "eslint-plugin-react";
@@ -79,6 +79,8 @@ const scriptsConfig = defineConfig({
 
 export default defineConfig(
   includeIgnoreFile(gitignorePath),
+  // Claude Code tooling (hooks, skills), not app code; tsconfig's **/* skips dot-folders, so typed linting can't load it.
+  globalIgnores([".claude/"]),
   baseConfig,
   reactConfig,
   eslintPluginAstro.configs["flat/recommended"],
