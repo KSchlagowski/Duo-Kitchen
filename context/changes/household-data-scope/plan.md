@@ -283,12 +283,12 @@ First migration in the repo. Includes a backfill so any accounts already in the 
 
 #### Automated
 
-- [x] 3.1 Type check passes: `npx astro check`
-- [x] 3.2 Lint passes: `npm run lint`
-- [x] 3.3 Build passes: `npm run build`
-- [x] 3.4 Smoke test passes: `npm run smoke`
+- [x] 3.1 Type check passes: `npx astro check` — 94426b3
+- [x] 3.2 Lint passes: `npm run lint` — 94426b3
+- [x] 3.3 Build passes: `npm run build` — 94426b3
+- [x] 3.4 Smoke test passes: `npm run smoke` — 94426b3
 
 #### Manual
 
-- [x] 3.5 New account's dashboard shows a household with 1 member
-- [x] 3.6 Second account's dashboard shows a different household id
+- [x] 3.5 New account's dashboard shows a household with 1 member — 94426b3
+- [x] 3.6 Second account's dashboard shows a different household id — 94426b3
