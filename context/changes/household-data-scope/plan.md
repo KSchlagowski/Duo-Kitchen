@@ -270,10 +270,10 @@ First migration in the repo. Includes a backfill so any accounts already in the 
 
 #### Automated
 
-- [x] 2.1 Isolation test passes: `npm run test:rls`
-- [x] 2.2 Test fails when isolation is deliberately broken, then reverted
-- [x] 2.3 Test leaves no residue in `auth.users`
-- [x] 2.4 Lint passes: `npm run lint`
+- [x] 2.1 Isolation test passes: `npm run test:rls` — f76ce70
+- [x] 2.2 Test fails when isolation is deliberately broken, then reverted — f76ce70
+- [x] 2.3 Test leaves no residue in `auth.users` — f76ce70
+- [x] 2.4 Lint passes: `npm run lint` — f76ce70
 
 #### Manual
 
