@@ -1,7 +1,7 @@
 ---
 change_id: link-partner-household
 title: Link partner into one shared household via invite and redemption
-status: planned
+status: plan_reviewed
 created: 2026-10-07
 updated: 2026-10-07
 archived_at: null
