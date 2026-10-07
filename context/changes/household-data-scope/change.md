@@ -1,9 +1,9 @@
 ---
 change_id: household-data-scope
 title: Household-scoped data access for all accounts
-status: implementing
+status: implemented
 created: 2026-10-06
-updated: 2026-10-06
+updated: 2026-10-07
 archived_at: null
 ---
 
