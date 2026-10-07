@@ -548,9 +548,9 @@ Shared types and a thin read service that later slices (S-03, S-05, S-07) build 
 
 #### Automated
 
-- [x] 3.1 Type check passes: `npx astro check`
-- [x] 3.2 Lint passes: `npm run lint`
-- [x] 3.3 Build passes: `npm run build`
+- [x] 3.1 Type check passes: `npx astro check` — 6e0504e
+- [x] 3.2 Lint passes: `npm run lint` — 6e0504e
+- [x] 3.3 Build passes: `npm run build` — 6e0504e
 - [ ] 3.4 Smoke test passes, including the library assertion: `npm run smoke`
 
 #### Manual
