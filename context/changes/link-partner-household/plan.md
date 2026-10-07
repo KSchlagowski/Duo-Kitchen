@@ -678,9 +678,9 @@ Nothing meaningful. Both RPCs touch single rows by unique key; the `KD006` guard
 
 #### Automated
 
-- [x] 0.1 `npm ci` completes and `node_modules` exists
-- [x] 0.2 `npm run lint` passes on the unmodified checkout
-- [x] 0.3 `npx astro check` passes on the unmodified checkout
+- [x] 0.1 `npm ci` completes and `node_modules` exists — edc1cd8
+- [x] 0.2 `npm run lint` passes on the unmodified checkout — edc1cd8
+- [x] 0.3 `npx astro check` passes on the unmodified checkout — edc1cd8
 - [ ] 0.4 `npm run test:rls` passes against the hosted project
 - [ ] 0.5 `npm run test:seed` passes against the hosted project
 
@@ -688,7 +688,7 @@ Nothing meaningful. Both RPCs touch single rows by unique key; the `KD006` guard
 
 #### Automated
 
-- [ ] 1.1 Migration file name matches `YYYYMMDDHHmmss_short_description.sql` and sorts after `20261007120100`
+- [x] 1.1 Migration file name matches `YYYYMMDDHHmmss_short_description.sql` and sorts after `20261007120100`
 - [ ] 1.2 `npx supabase db push` applies the migration to the hosted project cleanly
 - [ ] 1.3 `npm run test:rls` passes, including the catch-all now exercising `household_invites`
 - [ ] 1.4 `npm run test:seed` still passes
@@ -699,7 +699,7 @@ Nothing meaningful. Both RPCs touch single rows by unique key; the `KD006` guard
 
 - [ ] 1.7 Deployed grants: `authenticated` holds `select` only on `household_invites`; `anon` can execute neither new function
 - [ ] 1.8 Both new functions report `security definer` with an empty `search_path` in `pg_proc`
-- [ ] 1.9 Redemption block sits after every block reading the `rls_test.a_household` / `b_household` GUCs
+- [x] 1.9 Redemption block sits after every block reading the `rls_test.a_household` / `b_household` GUCs
 
 ### Phase 2: App layer — service, API routes, cookie and pages
 
@@ -763,10 +763,51 @@ than claimed:
 | 0.4, 0.5 | `npm run test:rls` / `npm run test:seed` need `--linked` |
 | 1.2, 1.3, 1.4, 1.5 | `npx supabase db push` and the two SQL suites |
 | 1.6 | the `curl` RPC-reachability probe needs `$SUPABASE_URL` / `$SUPABASE_KEY` |
-| 1.7, 1.8, 1.9 | 1.9 is a static file-order check and is **verified** below; 1.7/1.8 read deployed catalogs |
+| 1.7, 1.8 | these read deployed catalogs — both were verified on the local validation cluster (below) |
 | 2.5 – 2.12 | a browser against a server backed by the hosted project |
 | 3.2, 3.3, 3.4, 3.5, 3.6 | `npm run smoke` needs a running preview + the hosted project |
 | 4.3, 4.4, 4.6 | the cleanup query and the smoke-run accounting need the hosted project |
+
+**The SQL was nonetheless validated, and the validation found two real defects.** A throwaway
+PostgreSQL 16.15 cluster was started from the distro binaries with a hand-written Supabase-shaped
+harness (`anon` / `authenticated` / `service_role` roles, an `auth` schema with `users` and `uid()`,
+and Supabase's `alter default privileges … grant all … to anon, authenticated` — the thing that makes
+the migrations' `revoke` statements load-bearing). This is **not** a local Supabase stack: no Docker,
+no `supabase` CLI, no local project, no link. It exists only to run SQL that otherwise could not be
+run at all, and it never touched the hosted project. All four migrations apply cleanly and both
+`household_isolation.sql` and `seed_integrity.sql` pass end to end on it.
+
+Ten mutations were then applied to the new migration to prove the new assertions are not vacuous —
+each mutation must make `household_isolation.sql` fail. Two findings came out of this:
+
+1. **The "no re-seed" assertion the plan specifies is vacuous.** Phase 1 change 6 step 5 asserts the
+   target household's `seed_id is not null` counts still equal the `private.seed_*` counts. But
+   `private.seed_household()` is `on conflict (household_id, seed_id) do nothing`, so re-seeding an
+   already-seeded household inserts nothing and every count still matches. Injecting
+   `perform private.seed_household(v_invite.household_id)` into the RPC left the suite **green**.
+   The count assertion was kept (it does prove "no merge, no duplicate seed set") and a direct
+   assertion on `pg_proc.prosrc` was added: `redeem_household_invite`'s body must not reference
+   `seed_household`. That is the only non-vacuous form of the stated guarantee, and it is what makes
+   the property hold once S-05 lets households delete seed rows.
+2. **Three assertions were caught only by accident, with misleading messages.** The invite-insert
+   denial collided with `household_invites_one_unredeemed_idx` before the privilege check could fire
+   (masking the three assertions after it in the same block — fixed by inserting a redeemed row); the
+   anon RPC-grant checks reported "no household for caller" instead of naming the missing revoke
+   (fixed with explicit `KD007` branches); and because the validations are ordered, removing one
+   check surfaced the *next* one's message (dropping the `KD005` cap reported the `KD006` guard —
+   fixed with a `when others` branch that names the code that fired and the one expected).
+
+After the fixes all ten mutations are caught, each with a message that names the actual defect.
+
+**One gap found that was left unfixed, deliberately — it needs a product decision.**
+`redeem_household_invite` caps the **target** household at two members but has no symmetric cap on
+the caller's own household, and S-01 ships no leave/unlink path. So an **already-linked** user who
+follows a third party's invite link is moved out of the couple, leaving their partner alone in the
+shared household; only `KD006` can stop it, and only if the couple had added non-seed rows.
+`/join` renders the confirm form for such a user. Closing it is a one-line origin-side check, but it
+needs an eighth SQLSTATE and a user-facing message, so it is scope the approved plan bounded out
+rather than something to add silently. The reasoning is recorded as a comment at the `KD005` check in
+the migration so it cannot be lost.
 
 **Pre-merge order still applies.** CI runs `test:rls` against the *deployed* schema, so
 `npx supabase db push` must run before this branch merges, or `test:rls` fails on a missing
