@@ -130,9 +130,12 @@ Users can then sign in immediately after sign-up without clicking a confirmation
 | `/auth/signin`        | Email/password sign-in form                                             |
 | `/auth/signup`        | Email/password sign-up form                                             |
 | `/auth/confirm-email` | Post-signup "check your inbox" page                                     |
+| `/join`               | Invite redemption — intentionally **unprotected** (see below)           |
 | `/dashboard`          | Example protected page (redirects to `/auth/signin` if unauthenticated) |
 
 Route protection is handled in `src/middleware.ts`. Add paths to the `PROTECTED_ROUTES` array there to require authentication.
+
+`/join` is deliberately left out of `PROTECTED_ROUTES`: an invited partner has to be able to open the link before they have an account. It takes the code from `?code=` or from the `httpOnly` `dk_invite` cookie it sets, and that cookie is what survives the sign-up → confirm-email → sign-in round trip — while it is present, `/api/auth/signin` redirects to `/join` instead of `/`. Redemption itself always takes an explicit POST, because no application path can undo it.
 
 ## Deployment
 
@@ -161,7 +164,11 @@ npm run dev            # or: npm run build && npm run preview
 BASE_URL=http://localhost:4321 npm run smoke
 ```
 
-It needs the hosted Supabase project with email confirmation disabled.
+It needs the hosted Supabase project with email confirmation disabled. It drives two independent
+sessions (one cookie jar each) so it can prove the S-01 flow end to end: the first account generates
+an invite code, the second opens the link while signed out, signs up, signs in (landing on `/join`
+rather than `/`, from the `dk_invite` cookie), redeems, and both dashboards then show the same
+household with `2 members` and the same library counts.
 
 > **Note:** this script exists primarily to guard the development of the starter itself — it is a fast sanity check that dependency upgrades did not break the build, the Cloudflare adapter or the Supabase auth flow. It is **not** a substitute for a real test suite. Once you build your own product on top of this starter, add proper tests (unit, integration, end-to-end) suited to your application.
 
@@ -170,7 +177,29 @@ It needs the hosted Supabase project with email confirmation disabled.
 GitHub Actions runs two jobs on every push and PR to `main`:
 
 - **ci** — lint, `astro check` and build. Configure `SUPABASE_URL` and `SUPABASE_KEY` as repository secrets for the build step.
-- **smoke** — links the Supabase CLI to the hosted project, runs the household isolation test and the seed integrity test, builds, serves the production preview on the Cloudflare runtime and runs `npm run smoke` against it (including a check that the new account's dashboard shows the seeded recipe library). Requires the `SUPABASE_URL` and `SUPABASE_KEY` secrets plus `SUPABASE_ACCESS_TOKEN` (a Supabase personal access token) and `SUPABASE_PROJECT_REF`. Each run signs up one `smoke-<timestamp>@example.com` account in the hosted project, and that account's household keeps its seeded copy of the products and recipes (~170 rows). To clean up, run `delete from auth.users where email like 'smoke-%@example.com'`. This removes the accounts and their memberships but leaves the households (and their seed rows) orphaned; then run `delete from public.households h where not exists (select 1 from public.household_members m where m.household_id = h.id)` to remove the memberless households, which cascades to their products and recipes.
+- **smoke** — links the Supabase CLI to the hosted project, runs the household isolation test and the seed integrity test, builds, serves the production preview on the Cloudflare runtime and runs `npm run smoke` against it (including a check that the new account's dashboard shows the seeded recipe library, and that two accounts can be linked into one household). Requires the `SUPABASE_URL` and `SUPABASE_KEY` secrets plus `SUPABASE_ACCESS_TOKEN` (a Supabase personal access token) and `SUPABASE_PROJECT_REF`.
+
+### Cleaning up after smoke runs
+
+Each run signs up **two** accounts, `smoke-<timestamp>@example.com` and `smoke-b-<timestamp>@example.com`, and leaves **two** households behind: the shared one both accounts end up in, and the second account's pre-redemption household, which S-01 preserves memberless with its ~170 seeded rows intact. So each run adds roughly 340 rows, not 170.
+
+> **⚠️ Do not use the obvious memberless-household cleanup query.** Since S-01, a memberless household is no longer necessarily garbage: `redeem_household_invite()` deliberately leaves the redeemer's old household intact so their pre-redemption data is never silently destroyed, and `household_invites.redeemed_from_household_id` is the only record of which household that was. A bare `delete … where not exists (… household_members …)` deletes exactly those preserved households, cascading away a real partner's products and recipes.
+
+Delete the accounts first:
+
+```sql
+delete from auth.users where email like 'smoke-%@example.com';
+```
+
+That removes the accounts and their memberships but leaves the households orphaned. Then remove the memberless households, **sparing any that are still referenced as a redemption origin**:
+
+```sql
+delete from public.households h
+where not exists (select 1 from public.household_members m where m.household_id = h.id)
+  and not exists (select 1 from public.household_invites i where i.redeemed_from_household_id = h.id);
+```
+
+Run that **until it deletes 0 rows**. It needs more than one pass by design: deleting a shared household cascades its `household_invites` rows, and only then is the pre-redemption household it pointed at released for the next pass.
 
 ## License
 
