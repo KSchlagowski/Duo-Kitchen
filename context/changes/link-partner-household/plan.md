@@ -739,14 +739,14 @@ Nothing meaningful. Both RPCs touch single rows by unique key; the `KD006` guard
 
 #### Automated
 
-- [x] 4.1 `npm run lint` passes
+- [x] 4.1 `npm run lint` passes — 25c2cbd
 - [ ] 4.2 `npm run format` leaves no diff
 - [ ] 4.3 The amended README cleanup query runs without error against the hosted project
 
 #### Manual
 
 - [ ] 4.4 Amended cleanup query run twice removes smoke households and spares referenced origins
-- [x] 4.5 CLAUDE.md alone explains why `household_invites` has policies no grant can reach
+- [x] 4.5 CLAUDE.md alone explains why `household_invites` has policies no grant can reach — 25c2cbd
 - [ ] 4.6 README's CI accounting matches what a real smoke run leaves behind
 
 ### Progress notes
@@ -904,6 +904,12 @@ the migration so it cannot be lost.
    were enough to make `lint` / `astro check` / `build` green, and `astro sync` turned out to be a
    genuine prerequisite the plan omits: without the generated `.astro/types.d.ts`, `npm run lint`
    fails with 20 `no-unsafe-*` errors on untouched files.
-5. **Final "stragglers" prompt → "Proceed to epilogue."** The pending hosted rows above are expected,
-   not forgotten, so `change.md` was flipped to `implemented` and the epilogue commit was made.
-   `/10x-archive` will surface the pending rows as warnings — which is the correct signal here.
+5. **Final "stragglers" prompt → "Pause."** All four phases are code-complete and committed, but
+   **`change.md` stays `status: implementing`** and was deliberately _not_ flipped to `implemented`.
+   24 Progress rows are still pending, and they are not cosmetic: the migration has never been
+   applied to the hosted project, so `npm run test:rls` has never run against the deployed schema —
+   which is the one thing CLAUDE.md's hard rule requires before this branch merges. Marking the
+   change `implemented` would invite `/10x-archive` to close out work whose central gate has not run.
+   The next person should, in this order: `npx supabase db push`, `npm run test:rls`,
+   `npm run test:seed`, the Phase 1 `curl` probe, then `npm run smoke` against a preview, then settle
+   the remaining manual rows and flip the status.
