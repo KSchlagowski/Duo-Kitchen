@@ -705,34 +705,34 @@ Nothing meaningful. Both RPCs touch single rows by unique key; the `KD006` guard
 
 #### Automated
 
-- [x] 2.1 `npm run lint` passes (`strictTypeChecked` on `rpc()` results and the error guard)
-- [x] 2.2 `npx astro check` passes
-- [x] 2.3 `npm run build` succeeds
+- [x] 2.1 `npm run lint` passes (`strictTypeChecked` on `rpc()` results and the error guard) — 348a3c2
+- [x] 2.2 `npx astro check` passes — 348a3c2
+- [x] 2.3 `npm run build` succeeds — 348a3c2
 - [ ] 2.4 `npm run test:rls` still passes
 
 #### Manual
 
 - [ ] 2.5 Fresh account can generate an invite; dashboard shows a 16-hex code and a `/join?code=…` link
 - [ ] 2.6 "Generate new code" yields a different code and the old code is rejected
-- [x] 2.7 Signed-out `/join` shows the invite message with auth links and no confirm form
+- [x] 2.7 Signed-out `/join` shows the invite message with auth links and no confirm form — 348a3c2
 - [ ] 2.8 Default config (confirmation off): sign-up → `/auth/confirm-email` → sign-in lands on `/join` with the right code
 - [ ] 2.9 Full inbox round-trip with **Confirm email** temporarily enabled on the hosted project, **and the toggle turned back off** before Phase 3 / any `npm run smoke` run
 - [ ] 2.10 Confirming the join gives both dashboards the same household prefix, `2 members` and identical library counts
 - [ ] 2.11 Tampered and unknown codes produce readable messages, not stack traces
-- [x] 2.12 Both new API routes redirect rather than erroring when called without a session
+- [x] 2.12 Both new API routes redirect rather than erroring when called without a session — 348a3c2
 
 ### Phase 3: Smoke test — two accounts, end to end
 
 #### Automated
 
-- [ ] 3.1 `npm run lint` passes (scripts globals allowlist)
+- [x] 3.1 `npm run lint` passes (scripts globals allowlist)
 - [ ] 3.2 `BASE_URL=http://localhost:4321 npm run smoke` reports all steps passed against the production preview
 - [ ] 3.3 The eight pre-existing steps still pass unchanged, including `signin accepts correct password → /`
 - [ ] 3.4 A second consecutive `npm run smoke` run passes
 
 #### Manual
 
-- [ ] 3.5 A deliberately broken assertion prints a diagnosable failure naming the step and the extracted text
+- [x] 3.5 A deliberately broken assertion prints a diagnosable failure naming the step and the extracted text
 - [ ] 3.6 A run leaves exactly two new accounts and one extra memberless household on the hosted project
 
 ### Phase 4: Documentation and conventions
@@ -765,7 +765,7 @@ than claimed:
 | 1.6 | the `curl` RPC-reachability probe needs `$SUPABASE_URL` / `$SUPABASE_KEY` |
 | 1.7, 1.8 | these read deployed catalogs — both were verified on the local validation cluster (below) |
 | 2.5, 2.6, 2.8 – 2.11 | a browser against a server backed by the hosted project (2.7 and 2.12 were settled without one — see below) |
-| 3.2, 3.3, 3.4, 3.5, 3.6 | `npm run smoke` needs a running preview + the hosted project |
+| 3.2, 3.3, 3.4, 3.6 | `npm run smoke` needs the hosted project (3.1 and 3.5 were settled here) |
 | 4.3, 4.4, 4.6 | the cleanup query and the smoke-run accounting need the hosted project |
 
 **The SQL was nonetheless validated, and the validation found two real defects.** A throwaway
@@ -821,6 +821,38 @@ the order of `.trim()` / `.toLowerCase()` relative to `.regex()` is load-bearing
 version-dependent: whitespace-padded and UPPERCASE codes are normalised and **accepted**, while
 15/17-character, non-hex, empty and missing codes are rejected. The transforms do run before the
 regex check.
+
+**Phase 3's refactor was exercised against the preview, and that found two more defects.** The script
+cannot *pass* without the hosted project, but running it proves the machinery: two independent jars,
+thunks resolving at call time rather than at module load, and the failure printout. Both defects are
+in assertions the plan relies on:
+
+1. **`location: "/"` was a vacuous assertion, and the plan leans on it.** The harness compares
+   `location` with `startsWith`, so `"/"` is a prefix of *every* redirect — including `/join`.
+   Plan-review F3's accepted fix says the no-pending-invite guard "is preserved for free by A's
+   pre-existing `signin accepts correct password → /` step", but that step would have accepted a
+   regression redirecting **everyone** to `/join`, which is precisely the regression F3 set out to
+   guard. The same masking applied to `"/dashboard"`, which the `"/dashboard?error=…"` failure
+   redirect is a prefix of — so a broken `create_household_invite` would have passed too. `location`
+   now also accepts a RegExp for an exact assertion (mirroring how `body` already works, so no new
+   assertion channel), and the five steps where a prefix could mask a failure use one. Re-running
+   confirmed the two formerly-vacuous steps now fail, while `signout → /` still passes.
+2. **`storeCookies` could not see Astro's cookie deletions.** The plan says to keep `storeCookies`
+   semantics identical "including the `max-age=0` deletion handling". But that only covers how
+   Supabase's SSR client expires cookies. Astro's own `cookies.delete()` — which
+   `/api/household/redeem` uses to clear `dk_invite` — sends `expires` in the past and *deliberately
+   unsets* `max-age` (`astro/dist/core/cookies/cookies.js`). The jar would therefore have stored
+   `dk_invite=deleted` instead of dropping it, so the plan's own "cookie cleared" assertion could not
+   have passed, and B's jar would have kept sending a bogus code on every later request. The jar now
+   honours a past `expires` as well.
+
+Two smaller deviations, both deliberate: the cookie-set/cookie-cleared checks are asserted through
+behaviour rather than through `Set-Cookie` headers (the confirm form rendering from the cookie alone,
+and `/join` afterwards saying the link is incomplete), which keeps the script inside the plan's three
+assertion channels and avoids the `check` channel plan-review F7 ruled out; and four steps beyond the
+plan's ten were added because they were nearly free and automate manual steps 7, 8 and 9 — the
+two-member cap hiding the invite form, the reused code, and the non-hex code rejected by zod rather
+than by the database.
 
 **One gap found that was left unfixed, deliberately — it needs a product decision.**
 `redeem_household_invite` caps the **target** household at two members but has no symmetric cap on
