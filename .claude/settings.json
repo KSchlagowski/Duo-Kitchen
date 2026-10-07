@@ -1,5 +1,8 @@
 {
   "permissions": {
-    "allow": ["Bash(npx supabase db query --linked:*)"]
+    "allow": [
+      "Bash(npm run test:rls)",
+      "Bash(npx supabase db query --linked -f supabase/tests/household_isolation.sql)"
+    ]
   }
 }

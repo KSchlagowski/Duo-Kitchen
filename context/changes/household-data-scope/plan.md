@@ -277,7 +277,7 @@ First migration in the repo. Includes a backfill so any accounts already in the 
 
 #### Manual
 
-- [x] 2.5 CI smoke job shows the new step passing — f76ce70
+- [x] 2.5 CI smoke job shows the new step passing — 4ce8b72
 
 ### Phase 3: App Layer — Household Service & Dashboard
 

@@ -11,8 +11,10 @@ const supabase = createClient(Astro.request.headers, Astro.cookies);
 if (supabase) {
   try {
     household = await getCurrentHousehold(supabase);
-  } catch {
-    // Fall back to the neutral message below instead of failing the page.
+  } catch (error) {
+    // Fall back to the neutral message below instead of failing the page, but keep the failure in the Worker logs.
+    // eslint-disable-next-line no-console -- surfaced in Cloudflare Workers observability logs
+    console.error("getCurrentHousehold failed", error);
   }
 }
 

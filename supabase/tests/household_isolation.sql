@@ -240,13 +240,58 @@ end;
 $$;
 
 -- ---------------------------------------------------------------------------
--- Done.
+-- Catch-all (as postgres): every public table with a household_id column has RLS enabled and
+-- per-operation policies for authenticated that go through the helper, and none for anon.
+-- household_members is exempt: it is read-only for clients by design (writes via definer functions).
 -- ---------------------------------------------------------------------------
 reset role;
 
 do $$
+declare
+  t record;
+  op text;
+  bad_policy text;
 begin
-  raise notice 'household_isolation: all assertions passed (trigger, read isolation, write denial, anon denial, helper grants)';
+  for t in
+    select c.oid, c.relname, c.relrowsecurity
+    from pg_class c
+    join pg_namespace n on n.oid = c.relnamespace
+    join pg_attribute a on a.attrelid = c.oid and a.attname = 'household_id' and not a.attisdropped
+    where n.nspname = 'public' and c.relkind = 'r' and c.relname <> 'household_members'
+  loop
+    if not t.relrowsecurity then
+      raise exception 'catch-all: public.% has household_id but RLS is not enabled', t.relname;
+    end if;
+
+    foreach op in array array['SELECT', 'INSERT', 'UPDATE', 'DELETE'] loop
+      if not exists (
+        select 1 from pg_policies p
+        where p.schemaname = 'public' and p.tablename = t.relname
+          and p.cmd in (op, 'ALL') and 'authenticated' = any(p.roles)
+      ) then
+        raise exception 'catch-all: public.% has no % policy for authenticated', t.relname, op;
+      end if;
+    end loop;
+
+    select p.policyname into bad_policy
+    from pg_policies p
+    where p.schemaname = 'public' and p.tablename = t.relname
+      and ('anon' = any(p.roles) or 'public' = any(p.roles)
+        or coalesce(p.qual, '') || coalesce(p.with_check, '') not like '%user_household_ids%')
+    limit 1;
+    if bad_policy is not null then
+      raise exception 'catch-all: policy "%" on public.% targets anon/public or bypasses private.user_household_ids()', bad_policy, t.relname;
+    end if;
+  end loop;
+end;
+$$;
+
+-- ---------------------------------------------------------------------------
+-- Done.
+-- ---------------------------------------------------------------------------
+do $$
+begin
+  raise notice 'household_isolation: all assertions passed (trigger, read isolation, write denial, anon denial, helper grants, household_id catch-all)';
 end;
 $$;
 
