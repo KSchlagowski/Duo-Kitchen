@@ -3,12 +3,15 @@ import Layout from "@/layouts/Layout.astro";
 import { createClient } from "@/lib/supabase";
 import { getCurrentHousehold } from "@/lib/services/household";
 import { getRecipeLibrarySummary } from "@/lib/services/recipes";
-import type { Household, RecipeLibrarySummary } from "@/types";
+import { getActiveInvite } from "@/lib/services/invites";
+import type { Household, HouseholdInvite, RecipeLibrarySummary } from "@/types";
 
 const { user } = Astro.locals;
 
 let household: Household | null = null;
 let library: RecipeLibrarySummary | null = null;
+let invite: HouseholdInvite | null = null;
+let inviteUnavailable = false;
 const supabase = createClient(Astro.request.headers, Astro.cookies);
 if (supabase) {
   try {
@@ -24,6 +27,13 @@ if (supabase) {
     // eslint-disable-next-line no-console -- surfaced in Cloudflare Workers observability logs
     console.error("getRecipeLibrarySummary failed", error);
   }
+  try {
+    invite = await getActiveInvite(supabase);
+  } catch (error) {
+    inviteUnavailable = true;
+    // eslint-disable-next-line no-console -- surfaced in Cloudflare Workers observability logs
+    console.error("getActiveInvite failed", error);
+  }
 }
 
 const memberCount = household?.members.length ?? 0;
@@ -33,6 +43,20 @@ const householdLabel = household
 const libraryLabel = library
   ? `Library: ${library.recipeCount} recipes · ${library.productCount} products`
   : "Recipe library is unavailable right now.";
+
+const isLinked = memberCount >= 2;
+// Built from the request origin so the link works in dev, preview and production unconfigured.
+const inviteLink = invite ? `${Astro.url.origin}/join?code=${invite.code}` : null;
+const inviteLabel = isLinked
+  ? "Linked with your partner."
+  : inviteUnavailable
+    ? "Invite information is unavailable right now."
+    : invite
+      ? `Invite code: ${invite.code}`
+      : "No invite code yet.";
+
+const notice = Astro.url.searchParams.get("error");
+const joined = Astro.url.searchParams.get("joined") === "1";
 ---
 
 <Layout title="Dashboard">
@@ -50,7 +74,35 @@ const libraryLabel = library
       <p class="mt-2 text-sm text-blue-100/80" data-testid="library">
         {libraryLabel}
       </p>
-      <p class="mt-2 text-sm text-blue-100/50">This page is only for authenticated users.</p>
+
+      {joined && (
+        <p class="mt-4 rounded-lg border border-emerald-400/30 bg-emerald-500/10 p-3 text-sm text-emerald-200">
+          You've joined the household.
+        </p>
+      )}
+      {notice && (
+        <p class="mt-4 rounded-lg border border-red-400/30 bg-red-500/10 p-3 text-sm text-red-200">{notice}</p>
+      )}
+
+      <p class="mt-4 text-sm text-blue-100/80" data-testid="invite">
+        {inviteLabel}
+      </p>
+      {inviteLink && (
+        /* Selectable text, not a clipboard island: this slice adds no React components. */
+        <p class="mt-1 text-xs break-all text-blue-100/60">{inviteLink}</p>
+      )}
+      {!isLinked && !inviteUnavailable && (
+        <form method="POST" action="/api/household/invite" class="mt-3">
+          <button
+            type="submit"
+            class="rounded-lg border border-white/20 bg-white/10 px-4 py-2 text-sm transition-colors hover:bg-white/20"
+          >
+            {invite ? "Generate new code" : "Generate invite code"}
+          </button>
+        </form>
+      )}
+
+      <p class="mt-4 text-sm text-blue-100/50">This page is only for authenticated users.</p>
       <form method="POST" action="/api/auth/signout" class="mt-6">
         <button
           type="submit"

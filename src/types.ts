@@ -9,6 +9,15 @@ export interface Household {
   members: HouseholdMember[];
 }
 
+// The inviter's own live invite code (S-01). The redeemed/provenance columns are never surfaced to
+// the UI in this slice, so they are deliberately absent.
+export interface HouseholdInvite {
+  id: string;
+  code: string;
+  createdAt: string;
+  expiresAt: string;
+}
+
 // Language-neutral keys matching the Postgres enums (labels are mapped in the UI).
 export type StoreAisle = "produce" | "dairy" | "meat_fish" | "bakery" | "dry_goods" | "spices" | "frozen" | "other";
 export type MealType = "breakfast" | "second_breakfast" | "lunch" | "afternoon_snack" | "dinner";

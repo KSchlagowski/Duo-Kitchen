@@ -688,7 +688,7 @@ Nothing meaningful. Both RPCs touch single rows by unique key; the `KD006` guard
 
 #### Automated
 
-- [x] 1.1 Migration file name matches `YYYYMMDDHHmmss_short_description.sql` and sorts after `20261007120100`
+- [x] 1.1 Migration file name matches `YYYYMMDDHHmmss_short_description.sql` and sorts after `20261007120100` — 2bc3c2c
 - [ ] 1.2 `npx supabase db push` applies the migration to the hosted project cleanly
 - [ ] 1.3 `npm run test:rls` passes, including the catch-all now exercising `household_invites`
 - [ ] 1.4 `npm run test:seed` still passes
@@ -699,27 +699,27 @@ Nothing meaningful. Both RPCs touch single rows by unique key; the `KD006` guard
 
 - [ ] 1.7 Deployed grants: `authenticated` holds `select` only on `household_invites`; `anon` can execute neither new function
 - [ ] 1.8 Both new functions report `security definer` with an empty `search_path` in `pg_proc`
-- [x] 1.9 Redemption block sits after every block reading the `rls_test.a_household` / `b_household` GUCs
+- [x] 1.9 Redemption block sits after every block reading the `rls_test.a_household` / `b_household` GUCs — 2bc3c2c
 
 ### Phase 2: App layer — service, API routes, cookie and pages
 
 #### Automated
 
-- [ ] 2.1 `npm run lint` passes (`strictTypeChecked` on `rpc()` results and the error guard)
-- [ ] 2.2 `npx astro check` passes
-- [ ] 2.3 `npm run build` succeeds
+- [x] 2.1 `npm run lint` passes (`strictTypeChecked` on `rpc()` results and the error guard)
+- [x] 2.2 `npx astro check` passes
+- [x] 2.3 `npm run build` succeeds
 - [ ] 2.4 `npm run test:rls` still passes
 
 #### Manual
 
 - [ ] 2.5 Fresh account can generate an invite; dashboard shows a 16-hex code and a `/join?code=…` link
 - [ ] 2.6 "Generate new code" yields a different code and the old code is rejected
-- [ ] 2.7 Signed-out `/join` shows the invite message with auth links and no confirm form
+- [x] 2.7 Signed-out `/join` shows the invite message with auth links and no confirm form
 - [ ] 2.8 Default config (confirmation off): sign-up → `/auth/confirm-email` → sign-in lands on `/join` with the right code
 - [ ] 2.9 Full inbox round-trip with **Confirm email** temporarily enabled on the hosted project, **and the toggle turned back off** before Phase 3 / any `npm run smoke` run
 - [ ] 2.10 Confirming the join gives both dashboards the same household prefix, `2 members` and identical library counts
 - [ ] 2.11 Tampered and unknown codes produce readable messages, not stack traces
-- [ ] 2.12 Both new API routes redirect rather than erroring when called without a session
+- [x] 2.12 Both new API routes redirect rather than erroring when called without a session
 
 ### Phase 3: Smoke test — two accounts, end to end
 
@@ -764,7 +764,7 @@ than claimed:
 | 1.2, 1.3, 1.4, 1.5 | `npx supabase db push` and the two SQL suites |
 | 1.6 | the `curl` RPC-reachability probe needs `$SUPABASE_URL` / `$SUPABASE_KEY` |
 | 1.7, 1.8 | these read deployed catalogs — both were verified on the local validation cluster (below) |
-| 2.5 – 2.12 | a browser against a server backed by the hosted project |
+| 2.5, 2.6, 2.8 – 2.11 | a browser against a server backed by the hosted project (2.7 and 2.12 were settled without one — see below) |
 | 3.2, 3.3, 3.4, 3.5, 3.6 | `npm run smoke` needs a running preview + the hosted project |
 | 4.3, 4.4, 4.6 | the cleanup query and the smoke-run accounting need the hosted project |
 
@@ -798,6 +798,29 @@ each mutation must make `household_isolation.sql` fail. Two findings came out of
    fixed with a `when others` branch that names the code that fired and the one expected).
 
 After the fixes all ten mutations are caught, each with a message that names the actual defect.
+
+**Part of Phase 2 was verified over HTTP without credentials.** With no `SUPABASE_URL` /
+`SUPABASE_KEY`, `createClient()` returns null and `locals.user` is always null — but that is exactly
+the state the anonymous paths run in, so `npm run build && npm run preview` plus `curl` settles three
+things that needed no database:
+
+- **2.7** — `/join?code=…` signed out returns 200 with the invite message and the sign-in/sign-up
+  links and **no** confirm form; `/join` with no code renders "This invite link is incomplete."; and
+  `/join` with no query but a `dk_invite` cookie renders the invited state, proving the cookie
+  fallback read.
+- **2.12** — `POST /api/household/invite` and `POST /api/household/redeem` with no session both
+  `302 → /auth/signin` rather than erroring. (Both need an `Origin` header, or Astro's CSRF check
+  answers 403 first — which is also why `scripts/smoke.mjs` sends one.)
+- **Plan-review F3's recorded blind spot**, which it could not check: *"Not verified whether `/join`
+  sets `dk_invite` on a GET from an unauthenticated visitor in Astro's SSR response path for a 200."*
+  It does — `set-cookie: dk_invite=…; Max-Age=604800; Path=/; HttpOnly; Secure; SameSite=Lax`, on a
+  200, to an anonymous visitor. The whole email-round-trip mechanism hangs off this.
+
+The redeem route's zod schema was also exercised directly against the installed zod 4.6.5, because
+the order of `.trim()` / `.toLowerCase()` relative to `.regex()` is load-bearing and silently
+version-dependent: whitespace-padded and UPPERCASE codes are normalised and **accepted**, while
+15/17-character, non-hex, empty and missing codes are rejected. The transforms do run before the
+regex check.
 
 **One gap found that was left unfixed, deliberately — it needs a product decision.**
 `redeem_household_invite` caps the **target** household at two members but has no symmetric cap on
