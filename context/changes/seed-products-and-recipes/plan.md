@@ -486,7 +486,7 @@ Shared types and a thin read service that later slices (S-03, S-05, S-07) build 
 
 - Each household copy is ~170 rows: ~40 products, 8 recipes, ~20 components, ~60 ingredients, ~40 steps. This adds a few milliseconds to the sign-up transaction and is negligible at MVP scale.
 - The Phase 2 backfill scales with the number of existing households (the couple plus accumulated smoke accounts). Even hundreds of households is well under a second's worth of inserts.
-- Each CI smoke run leaves one seeded household (~170 rows) behind, on top of its `smoke-<ts>@example.com` account. Cleanup query: `delete from auth.users where email like 'smoke-%@example.com'`; this leaves the households orphaned, since account deletion removes only memberships. Automated cleanup is out of scope.
+- Each CI smoke run leaves one seeded household (~170 rows) behind, on top of its `smoke-<ts>@example.com` account. Cleanup query: `delete from auth.users where email like 'smoke-%@example.com'`; this leaves the households orphaned, since account deletion removes only memberships. Follow it with `delete from public.households h where not exists (select 1 from public.household_members m where m.household_id = h.id)`, which cascades to the orphans' products and recipes (impl-review F3). Automated cleanup is out of scope.
 - Policies use the `in (select …)` initPlan form, as in F-01.
 - The component-as-scalable-unit shape keeps S-04's problem to one variable per component per person.
 
