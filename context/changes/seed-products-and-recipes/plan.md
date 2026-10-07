@@ -518,9 +518,9 @@ Shared types and a thin read service that later slices (S-03, S-05, S-07) build 
 - [ ] 1.1 Migration applies cleanly to the hosted project: `npx supabase db push`
 - [ ] 1.2 Supabase advisors report no new issues for the new tables/functions
 - [ ] 1.3 Extended isolation test passes, including the catch-all over the five new tables: `npm run test:rls`
-- [x] 1.4 Isolation test fails when isolation is deliberately broken (scratch copy), then scratch removed
+- [x] 1.4 Isolation test fails when isolation is deliberately broken (scratch copy), then scratch removed — 7edd598
 - [ ] 1.5 Smoke test still passes: `npm run smoke`
-- [x] 1.6 Lint passes: `npm run lint`
+- [x] 1.6 Lint passes: `npm run lint` — 7edd598
 
 #### Manual
 
@@ -533,11 +533,11 @@ Shared types and a thin read service that later slices (S-03, S-05, S-07) build 
 
 - [ ] 2.1 Content migration applies cleanly: `npx supabase db push`
 - [ ] 2.2 Seed integrity test passes: `npm run test:seed`
-- [ ] 2.3 Integrity test fails when content is deliberately broken (scratch copy), then scratch removed
+- [x] 2.3 Integrity test fails when content is deliberately broken (scratch copy), then scratch removed
 - [ ] 2.4 Isolation test still passes with non-zero seed counts: `npm run test:rls`
 - [ ] 2.5 Backfill reached every existing household (query returns 0)
 - [ ] 2.6 Smoke test passes: `npm run smoke`
-- [ ] 2.7 Lint passes: `npm run lint`
+- [x] 2.7 Lint passes: `npm run lint`
 
 #### Manual
 
@@ -564,3 +564,15 @@ Shared types and a thin read service that later slices (S-03, S-05, S-07) build 
 - **Local substitute verification.** Both migrations, `household_isolation.sql` and `seed_integrity.sql` were executed against PGlite (PostgreSQL 17 in WASM, scratchpad only; no Docker, no local Supabase stack). A minimal Supabase-like bootstrap provided: the roles `anon`/`authenticated`/`service_role`, Supabase's default `public` grants, and `auth.users`/`auth.uid()`. The deliberate-break runs (1.4, 2.3) were done the same way. This proves the SQL is valid and the assertions behave, but it does not replace the hosted runs.
 - **Deviation: RESTRICT error code.** `on delete restrict` raises `restrict_violation` (23001), not `foreign_key_violation`. The isolation test's "delete a product still used by an ingredient" assertion catches both codes.
 - **Deviation: composite-FK indexes.** Indexes are created on the full composite FK column lists: components `(recipe_id, household_id)`; ingredients `(component_id, household_id)` and `(product_id, household_id)`; steps `(recipe_id, household_id)` and `(component_id, recipe_id, household_id)`. This keeps the Supabase "unindexed foreign keys" advisor quiet. The plan's single-column wording would not have satisfied it. `household_id` alone is covered by the leading column of `unique (household_id, seed_id)`.
+- **Phase 2 local results (PGlite).** Steps run: an existing account was inserted before the content migration, then the content migration, then the backfill query (returned 0; 8 recipes per household), then `seed_integrity.sql`, then `household_isolation.sql` (now with non-zero seed counts). All passed. Deliberate breaks each failed with a descriptive message:
+  - whole-dish Leczo set to `per_component`;
+  - all `fresh` steps deleted;
+  - Ryż basmati set to 500 kcal (Atwater).
+  
+  The 15 % Atwater tolerance is intentionally loose: 400 kcal for rice still passed. The household-delete cascade through the `restrict` product FK works.
+- **Seed content as built:**
+  - 46 products: 41 used by the recipes, plus 5 extras;
+  - 8 recipes (research §7 set, unchanged), 14 components, 68 ingredients, 33 steps.
+  
+  Only cocoa is in `atwater_exempt`. Spices are exempt by aisle. Ingredient product ids are resolved by name through a session-scoped `pg_temp.seed_product()` helper, which raises on a typo. This keeps the content readable instead of repeating 68 product UUIDs.
+- **Not done: `.claude/settings.json` allowlist entry for `npm run test:seed`.** The session was not granted permission to edit that file. Add `"Bash(npm run test:seed)"` and `"Bash(npx supabase db query --linked -f supabase/tests/seed_integrity.sql)"` by hand.
