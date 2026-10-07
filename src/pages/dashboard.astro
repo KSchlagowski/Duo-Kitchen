@@ -2,11 +2,13 @@
 import Layout from "@/layouts/Layout.astro";
 import { createClient } from "@/lib/supabase";
 import { getCurrentHousehold } from "@/lib/services/household";
-import type { Household } from "@/types";
+import { getRecipeLibrarySummary } from "@/lib/services/recipes";
+import type { Household, RecipeLibrarySummary } from "@/types";
 
 const { user } = Astro.locals;
 
 let household: Household | null = null;
+let library: RecipeLibrarySummary | null = null;
 const supabase = createClient(Astro.request.headers, Astro.cookies);
 if (supabase) {
   try {
@@ -16,12 +18,21 @@ if (supabase) {
     // eslint-disable-next-line no-console -- surfaced in Cloudflare Workers observability logs
     console.error("getCurrentHousehold failed", error);
   }
+  try {
+    library = await getRecipeLibrarySummary(supabase);
+  } catch (error) {
+    // eslint-disable-next-line no-console -- surfaced in Cloudflare Workers observability logs
+    console.error("getRecipeLibrarySummary failed", error);
+  }
 }
 
 const memberCount = household?.members.length ?? 0;
 const householdLabel = household
   ? `Household: ${household.id.slice(0, 8)} · ${memberCount} member${memberCount === 1 ? "" : "s"}`
   : "Household information is unavailable right now.";
+const libraryLabel = library
+  ? `Library: ${library.recipeCount} recipes · ${library.productCount} products`
+  : "Recipe library is unavailable right now.";
 ---
 
 <Layout title="Dashboard">
@@ -35,6 +46,9 @@ const householdLabel = household
       </p>
       <p class="mt-2 text-sm text-blue-100/80" data-testid="household">
         {householdLabel}
+      </p>
+      <p class="mt-2 text-sm text-blue-100/80" data-testid="library">
+        {libraryLabel}
       </p>
       <p class="mt-2 text-sm text-blue-100/50">This page is only for authenticated users.</p>
       <form method="POST" action="/api/auth/signout" class="mt-6">

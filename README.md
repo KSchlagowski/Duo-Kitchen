@@ -59,6 +59,7 @@ npm run dev
 - `npm run format` - Run Prettier
 - `npm run smoke` - Smoke test the auth flow against a running server (`BASE_URL`, defaults to `http://localhost:4321`)
 - `npm run test:rls` - Run the household isolation (RLS) test against the linked Supabase project (`supabase/tests/household_isolation.sql`); it runs in a rolled-back transaction, so it leaves no data behind
+- `npm run test:seed` - Run the seed integrity test against the linked Supabase project (`supabase/tests/seed_integrity.sql`): checks that the seeded products and recipes cover every solver rule and copy correctly into a household; also rolled back
 
 ## Project Structure
 
@@ -169,7 +170,7 @@ It needs the hosted Supabase project with email confirmation disabled.
 GitHub Actions runs two jobs on every push and PR to `main`:
 
 - **ci** — lint, `astro check` and build. Configure `SUPABASE_URL` and `SUPABASE_KEY` as repository secrets for the build step.
-- **smoke** — links the Supabase CLI to the hosted project, runs the household isolation test, builds, serves the production preview on the Cloudflare runtime and runs `npm run smoke` against it. Requires the `SUPABASE_URL` and `SUPABASE_KEY` secrets plus `SUPABASE_ACCESS_TOKEN` (a Supabase personal access token) and `SUPABASE_PROJECT_REF`. Each run signs up one `smoke-<timestamp>@example.com` account in the hosted project.
+- **smoke** — links the Supabase CLI to the hosted project, runs the household isolation test and the seed integrity test, builds, serves the production preview on the Cloudflare runtime and runs `npm run smoke` against it (including a check that the new account's dashboard shows the seeded recipe library). Requires the `SUPABASE_URL` and `SUPABASE_KEY` secrets plus `SUPABASE_ACCESS_TOKEN` (a Supabase personal access token) and `SUPABASE_PROJECT_REF`. Each run signs up one `smoke-<timestamp>@example.com` account in the hosted project, and that account's household keeps its seeded copy of the products and recipes (~170 rows). To clean up, run `delete from auth.users where email like 'smoke-%@example.com'`. This removes the accounts and their memberships but leaves the households (and their seed rows) orphaned.
 
 ## License
 

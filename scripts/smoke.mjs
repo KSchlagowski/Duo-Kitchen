@@ -32,7 +32,16 @@ async function request(path, { method = "GET", form } = {}) {
     body: form ? new URLSearchParams(form).toString() : undefined,
   });
   storeCookies(response);
-  return { status: response.status, location: response.headers.get("location") ?? "" };
+  return {
+    status: response.status,
+    location: response.headers.get("location") ?? "",
+    body: await response.text(),
+  };
+}
+
+function libraryLine(body) {
+  const match = /<p[^>]*data-testid="library"[^>]*>([\s\S]*?)<\/p>/.exec(body);
+  return match ? match[1].trim() : "library line missing";
 }
 
 const steps = [
@@ -53,7 +62,11 @@ const steps = [
     () => request("/api/auth/signin", { method: "POST", form: { email, password } }),
     { status: 302, location: "/" },
   ],
-  ["dashboard renders for signed-in user", () => request("/dashboard"), { status: 200 }],
+  [
+    "dashboard renders for signed-in user with seeded library",
+    () => request("/dashboard"),
+    { status: 200, body: /data-testid="library"[^>]*>\s*Library: [1-9]\d* recipes/ },
+  ],
   ["signout clears session", () => request("/api/auth/signout", { method: "POST" }), { status: 302, location: "/" }],
   ["dashboard redirects after signout", () => request("/dashboard"), { status: 302, location: "/auth/signin" }],
 ];
@@ -63,11 +76,15 @@ for (const [name, run, expected] of steps) {
   const actual = await run();
   const ok =
     actual.status === expected.status &&
-    (expected.location === undefined || actual.location.startsWith(expected.location));
+    (expected.location === undefined || actual.location.startsWith(expected.location)) &&
+    (expected.body === undefined || expected.body.test(actual.body));
   console.log(`${ok ? "PASS" : "FAIL"}  ${name}  -> ${actual.status} ${actual.location}`);
   if (!ok) {
     failed++;
     console.log(`      expected ${expected.status} ${expected.location ?? ""}`);
+    if (expected.body !== undefined) {
+      console.log(`      expected body ${expected.body}, got: ${libraryLine(actual.body)}`);
+    }
   }
 }
 

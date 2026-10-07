@@ -14,6 +14,7 @@ Scripts: @package.json. Project-specific notes:
 
 - `npm run smoke` — dependency-free auth-flow smoke test (`scripts/smoke.mjs`) against a running server, `BASE_URL` env (default `http://localhost:4321`). Run after dependency upgrades; CI runs it against the production preview backed by the hosted Supabase project.
 - `npm run test:rls` — household isolation test (`supabase/tests/household_isolation.sql`) against the hosted Supabase project (`--linked`); runs in a rolled-back transaction so it commits nothing, fails with a descriptive error on any broken assertion. CI runs it in the smoke job.
+- `npm run test:seed` — seed integrity test (`supabase/tests/seed_integrity.sql`) against the hosted project (`--linked`), rolled back: seed content covers every solver rule (rounding steps, pieces, raw/cooked, division modes, step timings, meal types, aisles, macro levers) and copies into a household faithfully. Run it after every seed content migration; CI runs it in the smoke job.
 - Pre-commit hooks: husky + lint-staged runs `eslint --fix` on `*.{ts,tsx,astro}` and `prettier --write` on `*.{json,css,md}`.
 
 ## Architecture
@@ -28,6 +29,7 @@ Scripts: @package.json. Project-specific notes:
 - Auth pages: `src/pages/auth/{signin,signup,confirm-email}.astro`
 - Protected page example: `src/pages/dashboard.astro`
 - Households: `public.households` / `public.household_members` (one household per account); the sign-up trigger `private.handle_new_user()` creates a household of one for every new account. Clients cannot write these tables directly.
+- Products and recipes (`products`, `recipes`, `recipe_components`, `recipe_ingredients`, `recipe_steps`) are household-scoped copies of the `private.seed_*` templates, made by `private.seed_household()` from the sign-up trigger; each copy keeps `seed_id` → its template row. Child tables carry `household_id` with composite FKs to their parent, so cross-household references are impossible. `seed_household()` is for new or empty households only: once households can edit or delete seed rows, never re-run it on existing households (it re-inserts deleted seed rows). Seed content changes go in a new data-only migration that inserts the new templates and copies only those new rows into existing households with targeted `insert … select` keyed on the new seed ids.
 
 ### Key conventions
 

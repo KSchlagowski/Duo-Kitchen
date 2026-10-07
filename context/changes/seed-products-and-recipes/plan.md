@@ -533,11 +533,11 @@ Shared types and a thin read service that later slices (S-03, S-05, S-07) build 
 
 - [ ] 2.1 Content migration applies cleanly: `npx supabase db push`
 - [ ] 2.2 Seed integrity test passes: `npm run test:seed`
-- [x] 2.3 Integrity test fails when content is deliberately broken (scratch copy), then scratch removed
+- [x] 2.3 Integrity test fails when content is deliberately broken (scratch copy), then scratch removed — 374ec05
 - [ ] 2.4 Isolation test still passes with non-zero seed counts: `npm run test:rls`
 - [ ] 2.5 Backfill reached every existing household (query returns 0)
 - [ ] 2.6 Smoke test passes: `npm run smoke`
-- [x] 2.7 Lint passes: `npm run lint`
+- [x] 2.7 Lint passes: `npm run lint` — 374ec05
 
 #### Manual
 
@@ -548,9 +548,9 @@ Shared types and a thin read service that later slices (S-03, S-05, S-07) build 
 
 #### Automated
 
-- [ ] 3.1 Type check passes: `npx astro check`
-- [ ] 3.2 Lint passes: `npm run lint`
-- [ ] 3.3 Build passes: `npm run build`
+- [x] 3.1 Type check passes: `npx astro check`
+- [x] 3.2 Lint passes: `npm run lint`
+- [x] 3.3 Build passes: `npm run build`
 - [ ] 3.4 Smoke test passes, including the library assertion: `npm run smoke`
 
 #### Manual
@@ -575,4 +575,11 @@ Shared types and a thin read service that later slices (S-03, S-05, S-07) build 
   - 8 recipes (research §7 set, unchanged), 14 components, 68 ingredients, 33 steps.
   
   Only cocoa is in `atwater_exempt`. Spices are exempt by aisle. Ingredient product ids are resolved by name through a session-scoped `pg_temp.seed_product()` helper, which raises on a typo. This keeps the content readable instead of repeating 68 product UUIDs.
+- **Phase 3 local results:**
+  - `npx astro check` (after `npx astro sync`, as CI does): 0 errors.
+  - `npm run lint` and `npm run build` pass.
+  - The smoke script passes `node --check`, and the library regex was checked on sample markup: it matches "Library: 8 recipes", and rejects "0 recipes" and the fallback text.
+  - The smoke step was renamed to "dashboard renders for signed-in user with seeded library".
+  - `getRecipeLibrarySummary` runs the two head-only counts in parallel.
+- **Status left at `implementing`.** Hosted verification (1.1–1.3, 1.5, 2.1, 2.2, 2.4–2.6, 3.4) and all manual rows are still pending. Flip `change.md` to `implemented` once they pass.
 - **Not done: `.claude/settings.json` allowlist entry for `npm run test:seed`.** The session was not granted permission to edit that file. Add `"Bash(npm run test:seed)"` and `"Bash(npx supabase db query --linked -f supabase/tests/seed_integrity.sql)"` by hand.
