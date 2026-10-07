@@ -3,7 +3,7 @@ project: "Duo Kitchen"
 version: 1
 status: draft
 created: 2026-10-06
-updated: 2026-10-06
+updated: 2026-10-07
 prd_version: 1
 main_goal: market-feedback
 top_blocker: time
@@ -29,7 +29,7 @@ A couple who cook together in bulk, but have different daily macro targets, impr
 
 | ID   | Change ID                     | Outcome (user can …)                                                              | Prerequisites       | PRD refs                                   | Status   |
 | ---- | ----------------------------- | --------------------------------------------------------------------------------- | ------------------- | ------------------------------------------ | -------- |
-| F-01 | household-data-scope          | (foundation) every account belongs to a household; data access is household-scoped | —                   | Access Control, NFR (household privacy)    | ready    |
+| F-01 | household-data-scope          | (foundation) every account belongs to a household; data access is household-scoped | —                   | Access Control, NFR (household privacy)    | done     |
 | F-02 | seed-products-and-recipes     | (foundation) product database and 5–10 seed recipes with solver-relevant attributes exist | F-01          | FR-010, FR-012                             | proposed |
 | F-03 | deploy-and-install-skeleton   | (foundation) merges to main auto-deploy; the app installs on desktop, Android, iOS | —                   | NFR (installable), FR-024 (public endpoint) | ready    |
 | S-01 | link-partner-household        | invite their partner and share one household                                      | F-01                | US-01, FR-001, FR-002, FR-003              | proposed |
@@ -84,7 +84,7 @@ Foundations below assume these are present and do NOT re-scaffold them.
 - **Blockers:** —
 - **Unknowns:** —
 - **Risk:** Sequenced first because retrofitting household scoping onto existing tables is costly; scope is only the household concept and the access pattern, not domain tables — those arrive with the slices that use them.
-- **Status:** ready
+- **Status:** done
 
 ### F-02: Seed product database and test recipes
 
@@ -337,4 +337,4 @@ Foundations below assume these are present and do NOT re-scaffold them.
 
 ## Done
 
-(Empty on first generation. `/10x-archive` appends entries here.)
+- **F-01: (foundation) every signed-up person belongs to a household (initially of one), and a household-scoped access policy pattern is in place for all household data.** — Archived 2026-10-07 → `context/archive/2026-10-06-household-data-scope/`. Lesson: —.
