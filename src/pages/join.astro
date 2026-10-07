@@ -1,17 +1,40 @@
 ---
 import Layout from "@/layouts/Layout.astro";
-import { readInviteCookie, setInviteCookie } from "@/lib/invite-cookie";
+import { createClient } from "@/lib/supabase";
+import { getCurrentHousehold } from "@/lib/services/household";
+import { INVITE_CODE_PATTERN, readInviteCookie, setInviteCookie } from "@/lib/invite-cookie";
 
 // Deliberately NOT in middleware.ts's PROTECTED_ROUTES: besides sign-in and sign-up, this is the one
 // page an unauthenticated visitor may reach (PRD §Access Control).
 const { user } = Astro.locals;
 
 // The query wins, so a fresh link always overrides a stale cookie. The cookie is the fallback that
-// survives the sign-up -> confirm-email -> sign-in detour.
-const queryCode = Astro.url.searchParams.get("code");
+// survives the sign-up -> confirm-email -> sign-in detour. An empty `?code=` is normalised to null
+// first, so it falls through to the cookie instead of shadowing a good code with an empty one.
+const rawQueryCode = Astro.url.searchParams.get("code");
+const queryCode = rawQueryCode !== null && rawQueryCode !== "" ? rawQueryCode : null;
 const code = queryCode ?? readInviteCookie(Astro.cookies);
-if (queryCode) {
+// Only a well-formed code is persisted; a malformed one still renders below, where the redeem route's
+// zod schema rejects it with a readable message.
+if (queryCode !== null && INVITE_CODE_PATTERN.test(queryCode)) {
   setInviteCookie(Astro.cookies, queryCode);
+}
+
+// redeem_household_invite() refuses an already-linked caller (KD008), because moving them would leave
+// their partner alone in the shared household with no way back. Ask here too, so the page explains
+// that instead of offering a button that cannot work.
+let alreadyLinked = false;
+if (user) {
+  const supabase = createClient(Astro.request.headers, Astro.cookies);
+  if (supabase) {
+    try {
+      const household = await getCurrentHousehold(supabase);
+      alreadyLinked = (household?.members.length ?? 0) >= 2;
+    } catch (error) {
+      // eslint-disable-next-line no-console -- surfaced in Cloudflare Workers observability logs
+      console.error("getCurrentHousehold failed on /join", error);
+    }
+  }
 }
 
 const error = Astro.url.searchParams.get("error");
@@ -47,6 +70,11 @@ const error = Astro.url.searchParams.get("error");
             {" to continue."}
           </p>
         </>
+      ) : alreadyLinked ? (
+        <p class="text-sm text-blue-100/80" data-testid="join">
+          You're already linked with a partner, so this invite can't be accepted. Leaving a shared household isn't
+          supported yet.
+        </p>
       ) : (
         <>
           <p class="text-sm text-blue-100/80" data-testid="join">

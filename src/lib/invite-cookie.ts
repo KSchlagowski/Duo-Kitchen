@@ -4,6 +4,11 @@ import type { AstroCookies } from "astro";
 // route and the signin route cannot disagree about the cookie's name or options.
 export const INVITE_COOKIE = "dk_invite";
 
+// The shape create_household_invite() mints: 16 lowercase hex characters. Shared so /join cannot
+// park a value in the cookie that the redeem route would then reject -- the cookie diverts every
+// later sign-in to /join for 7 days, so only a well-formed code may be stored.
+export const INVITE_CODE_PATTERN = /^[0-9a-f]{16}$/;
+
 // Matches the invite TTL in create_household_invite() (7 days). sameSite "lax" is required, not
 // incidental: the invite link is followed from an email client, i.e. a cross-site top-level GET,
 // which "strict" would strip the cookie from.

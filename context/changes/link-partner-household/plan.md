@@ -875,6 +875,17 @@ the row literally would produce a 67-file reformat diff unrelated to S-01, which
 slice's call to make. Instead every file this change touches is Prettier-clean — which is also
 exactly what the`lint-staged`pre-commit hook enforces, since it runs`prettier --write`on staged`*.{json,css,md}` only. A repo-wide reformat is worth its own change.
 
+**Superseded by the implementation review.** The gap described in the next paragraph was **fixed** during
+`/10x-impl-review` (`reviews/impl-review.md` F1, rated CRITICAL): refusing an irreversible action is the
+conservative default rather than new scope, and `create_household_invite()` already capped the caller's
+own household at two members — so the asymmetry was internal to the slice, not a boundary this plan drew.
+`redeem_household_invite()` now raises `KD008` for an already-linked caller, `/join` renders an
+explanatory state instead of the confirm form, and the isolation test asserts it. The review also added
+`KD009` (invite pointing at a household nobody is left in), an origin-household lock closing a race that
+let a concurrently minted code survive the move, and a correction to the KD006 comment's premise — see
+the report for all ten findings and their decisions. The paragraph below is kept as the record of what the
+implementation run concluded at the time.
+
 **One gap found that was left unfixed, deliberately — it needs a product decision.**
 `redeem_household_invite` caps the **target** household at two members but has no symmetric cap on
 the caller's own household, and S-01 ships no leave/unlink path. So an **already-linked** user who

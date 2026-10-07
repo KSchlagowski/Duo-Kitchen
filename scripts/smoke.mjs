@@ -2,7 +2,9 @@
 // together, and that two accounts can be linked into one household (S-01, FR-002/FR-003).
 // Zero dependencies on purpose. Run against a live server: BASE_URL=http://localhost:4321 node scripts/smoke.mjs
 
-const BASE_URL = process.env.BASE_URL ?? "http://localhost:4321";
+// Trailing slash stripped deliberately: BASE_URL is sent verbatim as the Origin header, and Astro's
+// origin check compares it to url.origin, so "http://localhost:4321/" would 403 every POST.
+const BASE_URL = (process.env.BASE_URL ?? "http://localhost:4321").replace(/\/$/, "");
 const stamp = Date.now();
 // Both must still match README's `smoke-%@example.com` cleanup glob.
 const emailA = `smoke-${stamp}@example.com`;
@@ -191,7 +193,12 @@ const steps = [
   [
     "A is linked, so no invite form is offered",
     () => a.request("/dashboard"),
-    { status: 200, body: /data-testid="invite"[^>]*>\s*Linked with your partner\.\s*</ },
+    {
+      status: 200,
+      // The negative lookahead is the half that matches the step's name: the label alone would still
+      // pass if the form were rendered anyway.
+      body: /^(?![\s\S]*action="\/api\/household\/invite")[\s\S]*data-testid="invite"[^>]*>\s*Linked with your partner\.\s*</,
+    },
   ],
   [
     "the used code cannot be redeemed again",

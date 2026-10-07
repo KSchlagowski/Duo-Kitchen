@@ -15,6 +15,8 @@ const INVITE_ERRORS: Record<string, string> = {
   KD005: "That household already has two members.",
   KD006: "Your kitchen has data that would be left behind. Contact support before joining.",
   KD007: "You need an account to join a household.",
+  KD008: "You're already linked with a partner. Leaving a shared household isn't supported yet.",
+  KD009: "That invite is no longer available.",
 };
 
 const FALLBACK_ERROR = "Something went wrong with that invite. Please try again.";

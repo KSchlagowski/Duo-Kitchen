@@ -820,6 +820,10 @@ $$;
 --
 -- The partial unique index permits only one unredeemed invite per household, so each case needs its
 -- own host household. Every case here raises before any write, so no state is disturbed.
+--
+-- The ordering is load-bearing, not incidental: the KD006 case is last because it is the one probe
+-- that WOULD mutate on regression (user A actually moves), and nothing after it may read the
+-- rls_test.a_household / b_household GUCs.
 -- ---------------------------------------------------------------------------
 
 -- KD003: the same code cannot be redeemed twice (checked before KD004, so D re-redeeming its own
@@ -928,9 +932,38 @@ begin
 end;
 $$;
 
--- As postgres: two invites that only a direct insert can create -- an expired one, and a live one
--- pointing at a household that is already full. Both target households have a free unredeemed slot
--- (C's and E's codes were both redeemed above).
+-- KD008: an already-linked caller cannot be moved out of their couple. C is in a two-member household
+-- after the redemption above; B's fixture invite is live and points at B's one-member household, so
+-- KD004/KD002/KD003 all pass and the origin-side cap is the first check that can fire. Without it C
+-- would leave D alone in the shared household with no application path back.
+reset role;
+set local role authenticated;
+select set_config(
+  'request.jwt.claims',
+  json_build_object('sub', '00000000-0000-4000-a000-00000000000c', 'role', 'authenticated')::text,
+  true
+);
+
+do $$
+declare
+  v_state text;
+  v_msg text;
+begin
+  perform public.redeem_household_invite('b0b0b0b0b0b0b002');
+  raise exception 'redeem[KD008]: an already-linked caller was moved out of their household, abandoning their partner';
+exception
+  when sqlstate 'KD008' then null;
+  when others then
+    get stacked diagnostics v_state = returned_sqlstate, v_msg = message_text;
+    if v_state = 'P0001' then raise; end if;
+    raise exception 'redeem[KD008]: rejected with % ("%") instead of KD008', v_state, v_msg;
+end;
+$$;
+
+-- As postgres: three invites that only a direct insert can create -- an expired one, a live one
+-- pointing at a household that is already full, and a live one pointing at a household nobody is in
+-- (the shape left behind when an inviter deletes their account inside the 7-day TTL; D's former
+-- household is memberless after the redemption above and its unredeemed slot is free).
 reset role;
 
 insert into public.household_invites (household_id, code, created_by, expires_at)
@@ -938,7 +971,9 @@ values
   (current_setting('rls_test.c_household')::uuid, 'e0e0e0e0e0e0e001',
     '00000000-0000-4000-a000-00000000000c', now() - interval '1 day'),
   (current_setting('rls_test.e_household')::uuid, 'f0f0f0f0f0f0f002',
-    '00000000-0000-4000-a000-00000000000e', now() + interval '7 days');
+    '00000000-0000-4000-a000-00000000000e', now() + interval '7 days'),
+  (current_setting('rls_test.d_household')::uuid, 'd0d0d0d0d0d0d009',
+    null, now() + interval '7 days');
 
 -- User A is the rejection probe for the rest: it never moved, still owns a one-person household,
 -- holds its own fixture invite, and its household holds fixture rows with seed_id is null.
@@ -963,7 +998,10 @@ declare
     -- A's household holds the fixture rows, which have seed_id is null, so redeeming would leave
     -- real data behind. B's fixture invite is live and B's household has one member, so KD006 is
     -- the first check that can fire.
-    array['b0b0b0b0b0b0b002', 'KD006', 'a caller holding non-seed rows was allowed to leave them behind']
+    array['b0b0b0b0b0b0b002', 'KD006', 'a caller holding non-seed rows was allowed to leave them behind'],
+    -- D's former household survived the redemption memberless, so this invite points at a household
+    -- nobody is in. Checked before KD006, so A's non-seed fixture rows do not mask it.
+    array['d0d0d0d0d0d0d009', 'KD009', 'an invite to a household with no members left was accepted']
   ];
   i int;
   v_state text;
@@ -993,10 +1031,10 @@ reset role;
 -- ---------------------------------------------------------------------------
 do $$
 begin
-  raise notice 'household_isolation: all assertions passed (trigger, seed copy, read isolation, write denial, products/recipes isolation and cross-household FKs, template/seed-function denial, anon denial, helper grants, household_id catch-all, invite read isolation, invite write denial, RPC grants, redemption with provenance and unchanged seed counts, six rejection SQLSTATEs)';
+  raise notice 'household_isolation: all assertions passed (trigger, seed copy, read isolation, write denial, products/recipes isolation and cross-household FKs, template/seed-function denial, anon denial, helper grants, household_id catch-all, invite read isolation, invite write denial, RPC grants, redemption with provenance and unchanged seed counts, eight rejection SQLSTATEs)';
 end;
 $$;
 
-select 'household_isolation: all assertions passed' as result;
+select 'household_isolation: all assertions passed (incl. invite isolation, RPC grants, redemption and eight rejection SQLSTATEs)' as result;
 
 rollback;

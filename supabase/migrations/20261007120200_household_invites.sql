@@ -55,7 +55,7 @@ create unique index household_invites_one_unredeemed_idx
 --
 -- Policies + revokes are independent levers (F-01 precedent, 20261006120000:66-69):
 -- the policies below satisfy supabase/tests/household_isolation.sql's household_id
--- catch-all, which inspects pg_policies only; the revokes above make the
+-- catch-all, which inspects pg_policies only; the revokes that follow make the
 -- insert/update/delete ones unreachable. Writes go through the definer RPCs only.
 -- Do not "simplify" by dropping either half.
 --
@@ -92,6 +92,8 @@ create policy "household_invites_delete_authenticated" on public.household_invit
 --   KD005  the target household already has two members
 --   KD006  the caller's household holds non-seed rows that would be left behind
 --   KD007  no authenticated caller, or the caller has no household
+--   KD008  the caller is already linked with a partner (their own household has two members)
+--   KD009  the invite's household has no members left
 -- ---------------------------------------------------------------------------
 
 -- ---------------------------------------------------------------------------
@@ -116,26 +118,40 @@ begin
     raise exception 'no household for caller' using errcode = 'KD007';
   end if;
 
-  select count(*) into v_members
-  from public.household_members
-  where household_id = v_household;
-  if v_members >= 2 then
-    raise exception 'household already has two members' using errcode = 'KD005';
-  end if;
-
   -- Serialise concurrent calls (a double-clicked "Generate new code") on the household row.
   -- Without this both callers find nothing to delete, both insert, and the loser hits
   -- household_invites_one_unredeemed_idx with unique_violation (23505) -- which is not a KD0xx
   -- code and so could only surface as inviteErrorMessage()'s neutral fallback. With the lock the
   -- second caller simply mints the next code and no new SQLSTATE is needed.
+  --
+  -- redeem_household_invite() takes this same lock on the household it is leaving, so the two
+  -- functions serialise against each other too. Both locks are taken before either function touches
+  -- household_invites, which keeps the lock order households -> household_invites in both.
   perform 1 from public.households where id = v_household for update;
+
+  -- Counted AFTER the lock, not before: a concurrent redeem_household_invite() may have moved the
+  -- caller out of v_household (leaving it memberless) or linked a partner into it since the resolve
+  -- above. Minting a code for a household the caller has just left would hand a live bearer code to
+  -- that orphan -- precisely what redeem's origin-side delete exists to prevent.
+  select count(*) into v_members
+  from public.household_members
+  where household_id = v_household;
+  if v_members < 1 then
+    raise exception 'caller is no longer a member of that household' using errcode = 'KD007';
+  end if;
+  if v_members >= 2 then
+    raise exception 'household already has two members' using errcode = 'KD005';
+  end if;
 
   delete from public.household_invites
   where household_id = v_household and redeemed_at is null;
 
-  -- 64 bits, no extension dependency: gen_random_uuid() is a pg13+ built-in and so
-  -- resolves under `set search_path = ''`. extensions.gen_random_bytes() would also
-  -- work but needs schema qualification that extra_search_path does not supply here.
+  -- No extension dependency: gen_random_uuid() is a pg13+ built-in and so resolves under
+  -- `set search_path = ''`. extensions.gen_random_bytes() would also work but needs schema
+  -- qualification that extra_search_path does not supply here.
+  -- 60 random bits, not 64: these 16 hex characters are bytes 0-7 of a UUIDv4, and character 13 is
+  -- the version nibble, always '4'. Far beyond brute-forcing a single-use 7-day code, but the
+  -- constant is real -- do not quote this as 64 bits of entropy.
   v_code := substr(replace(gen_random_uuid()::text, '-', ''), 1, 16);
 
   insert into public.household_invites (household_id, code, created_by, expires_at)
@@ -149,7 +165,7 @@ revoke execute on function public.create_household_invite() from public, anon;
 grant execute on function public.create_household_invite() to authenticated;
 
 comment on function public.create_household_invite() is
-  'Mints a 16-hex bearer code valid 7 days for the caller''s household, replacing any previous unredeemed one. Refuses at two members (KD005) or with no household (KD007).';
+  'Mints a 16-hex bearer code valid 7 days for the caller''s household, replacing any previous unredeemed one. Refuses at two members (KD005), or with no household or after a concurrent redemption moved the caller out of it (KD007).';
 
 -- ---------------------------------------------------------------------------
 -- redeem_household_invite(): the S-01 join function reserved at
@@ -169,6 +185,7 @@ as $$
 declare
   v_origin_household uuid;
   v_invite public.household_invites;
+  v_origin_members int;
   v_members int;
   v_non_seed int;
 begin
@@ -181,6 +198,16 @@ begin
   if (select auth.uid()) is null or v_origin_household is null then
     raise exception 'no household for caller' using errcode = 'KD007';
   end if;
+
+  -- Serialise against create_household_invite() on the household this caller is about to leave --
+  -- the same row that function locks. Without it a code minted concurrently for the origin survives
+  -- the move, in either interleaving: redeem-first lets create's insert land just after the
+  -- origin-side delete below, and create-first puts the new row outside that delete's statement
+  -- snapshot (a blocked DELETE re-checks only the rows it blocked on; it does not re-scan). Either
+  -- way a live bearer code is left pointing at the orphaned household, which is exactly the hazard
+  -- that delete exists to prevent. Locking households before household_invites in both functions
+  -- keeps the lock order consistent.
+  perform 1 from public.households where id = v_origin_household for update;
 
   -- `for update` BEFORE validating, so two concurrent redemptions of the same code cannot both
   -- see redeemed_at is null.
@@ -202,23 +229,47 @@ begin
     raise exception 'already in that household' using errcode = 'KD004';
   end if;
 
-  -- Caps the TARGET household only. There is deliberately no symmetric cap on the caller's own
-  -- household, because S-01 ships no leave/unlink path and adding one was out of scope -- but that
-  -- means an ALREADY-LINKED caller who follows a third party's invite link is moved out of the
-  -- couple, leaving their partner alone in the shared household, and only KD006 can stop it (and
-  -- only if the couple had added non-seed rows). /join renders the confirm form for such a caller.
-  -- If that path matters, the fix is an origin-side `v_origin_members >= 2` check with its own
-  -- SQLSTATE; it needs a user-facing message, so it is a product decision, not a silent addition.
+  -- Origin-side cap, symmetric with create_household_invite()'s own two-member refusal. An
+  -- ALREADY-LINKED caller who follows a third party's invite link would otherwise be moved out of
+  -- the couple, leaving their partner alone in the shared household -- and S-01 ships no
+  -- leave/unlink path, so nothing in the application can put them back. The origin-side delete below
+  -- would also take the partner's own live invite code with it on the way out. KD006 is no
+  -- substitute: it fires only once the couple has added a non-seed row, so a freshly linked couple
+  -- is unprotected, and its message describes the wrong problem. Refusing is the conservative
+  -- default; a deliberate "move to a different household" flow needs its own slice.
+  select count(*) into v_origin_members
+  from public.household_members
+  where household_id = v_origin_household;
+  if v_origin_members >= 2 then
+    raise exception 'caller is already linked with a partner' using errcode = 'KD008';
+  end if;
+
   select count(*) into v_members
   from public.household_members
   where household_id = v_invite.household_id;
+  if v_members < 1 then
+    -- The inviter deleted their account inside the 7-day TTL: their household_members row cascades
+    -- away, but created_by is `on delete set null`, so the invite row survives pointing at a
+    -- household nobody is in. Without this branch the caller would abandon their own kitchen to land
+    -- alone in a deleted stranger's household, irreversibly.
+    raise exception 'invite household has no members left' using errcode = 'KD009';
+  end if;
   if v_members >= 2 then
     raise exception 'target household already has two members' using errcode = 'KD005';
   end if;
 
-  -- Guards additions, not deletions: a household that deleted seed rows passes this
-  -- check and loses those deletions. Nothing can delete seed rows today (S-05 is
-  -- proposed); the slice that enables it must revisit this guard.
+  -- Guards ADDITIONS only, and is already incomplete today -- not merely once S-05 ships.
+  -- 20261007120000_products_and_recipes.sql revokes only truncate/references/trigger from
+  -- authenticated and grants full per-operation insert/update/delete policies, so a client can
+  -- already delete and edit its own household's seed rows through PostgREST. Both pass this check:
+  -- a deleted seed row leaves nothing to count, and an edited one still has seed_id is not null. So
+  -- a caller who pruned or corrected seed rows keeps those changes in the household they leave (the
+  -- origin survives intact) but sees the target's untouched seed set afterwards. Nothing is
+  -- destroyed; user intent is silently discarded. Closing that needs a per-row "customised" marker
+  -- on the five tables, which belongs with the slice that owns seed editing.
+  --
+  -- The table list below is literal. Every future household-scoped table carrying seed_id must be
+  -- added here, or redemption will silently leave its rows behind; no test catches the omission.
   select
     (select count(*) from public.products where household_id = v_origin_household and seed_id is null)
     + (select count(*) from public.recipes where household_id = v_origin_household and seed_id is null)
@@ -261,4 +312,4 @@ revoke execute on function public.redeem_household_invite(text) from public, ano
 grant execute on function public.redeem_household_invite(text) to authenticated;
 
 comment on function public.redeem_household_invite(text) is
-  'Moves the caller''s single membership row into the invite''s household and stamps provenance, atomically. Rejects with KD001 (unknown code), KD002 (expired), KD003 (already used), KD004 (own household), KD005 (target full), KD006 (caller holds non-seed rows) or KD007 (no caller/household). One-way: no application path undoes a redemption.';
+  'Moves the caller''s single membership row into the invite''s household and stamps provenance, atomically. Rejects with KD001 (unknown code), KD002 (expired), KD003 (already used), KD004 (own household), KD005 (target full), KD006 (caller holds non-seed rows), KD007 (no caller/household), KD008 (caller already linked with a partner) or KD009 (invite household has no members left). One-way: no application path undoes a redemption.';

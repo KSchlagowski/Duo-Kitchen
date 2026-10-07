@@ -16,6 +16,8 @@ export const POST: APIRoute = async (context) => {
   try {
     await createInvite(supabase);
   } catch (error) {
+    // eslint-disable-next-line no-console -- surfaced in Cloudflare Workers observability logs
+    console.error("createInvite failed", error);
     return context.redirect(`/dashboard?error=${encodeURIComponent(inviteErrorMessage(error))}`);
   }
 

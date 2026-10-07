@@ -1,7 +1,7 @@
 ---
 change_id: link-partner-household
 title: Link partner into one shared household via invite and redemption
-status: implementing
+status: impl_reviewed
 created: 2026-10-07
 updated: 2026-10-07
 archived_at: null
@@ -32,9 +32,17 @@ Roadmap detail (S-01):
     redeemer's household holds any row with `seed_id is null`. Today nothing can create such a row
     (every slice that writes user data is still `proposed`), so the guard never fires; once one
     ships, redemption fails loudly with "Your kitchen has data that would be left behind" instead of
-    silently orphaning it. The guard catches **additions, not deletions** — a household that deleted
-    seed rows passes it and loses those deletions — so the slice that enables deleting seed rows
-    (S-05) must revisit it. That caveat is recorded as a comment in the RPC body.
+    silently orphaning it. The guard catches **additions only**, and the implementation review
+    (`reviews/impl-review.md` F3) corrected the caveat as first written here: it is already incomplete
+    **today**, not merely once S-05 ships. `20261007120000_products_and_recipes.sql` revokes only
+    `truncate/references/trigger` from `authenticated` and grants full per-operation
+    `insert/update/delete` policies, so a client can already delete _and edit_ its own seed rows
+    through PostgREST — a deleted row leaves nothing to count, an edited one still has
+    `seed_id is not null`, and both pass. Such a caller keeps those changes in the household they
+    leave (the origin survives intact, so nothing is destroyed) but sees the target's untouched seed
+    set afterwards: user intent is silently discarded. Closing it needs a per-row "customised" marker
+    on the five tables, which belongs with the slice that owns seed editing. The corrected reasoning
+    is recorded as a comment in the RPC body.
 
 Assumptions stated for this non-interactive bootstrap (to be confirmed or revised during research/planning):
 
