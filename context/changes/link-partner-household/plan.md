@@ -32,7 +32,7 @@ What is missing: any invite storage, any client-callable function, any JSON or v
 
 - **The isolation test's catch-all forces the design** (`supabase/tests/household_isolation.sql:439-484`). It loops every `public` relkind `'r'` with a `household_id` attribute, exempting only `household_members` (`:457`), and raises if RLS is off, if any of SELECT/INSERT/UPDATE/DELETE lacks a policy `to authenticated`, or if **any** policy's `coalesce(qual,'') || coalesce(with_check,'')` does not contain the literal `user_household_ids`. A "redeemer reads the invite by code" policy is un-shippable by construction, which is the correct outcome.
 - **The catch-all reads `pg_policies` only, never grants.** So a table can carry four conforming policies to satisfy the test while `revoke` makes insert/update/delete unreachable — exactly the belt-and-braces pairing F-01 already uses on `households`/`household_members` (`20261006120000_household_data_scope.sql:66-69`).
-- **The redemption function cannot live in `private`.** `supabase/config.toml:13` exposes `public` and `graphql_public` only, which is *why* every definer helper sits in `private` (`20261006120000_household_data_scope.sql:7-9`). There is **no function in `public` anywhere in the repo today** — this slice introduces the first. The alternative (an Astro route with a service-role client) is unavailable: `astro.config.mjs:17-22` declares only `SUPABASE_URL` and the anon `SUPABASE_KEY`, and no admin factory exists in `src/lib/supabase.ts`.
+- **The redemption function cannot live in `private`.** The authority is the hosted project's **dashboard API settings** (Settings → API → Exposed schemas), which on a default Supabase project exposes `public` and `graphql_public` only; `supabase/config.toml:13` corroborates it but configures the *local* stack, which CLAUDE.md forbids running. That is *why* every definer helper sits in `private` (`20261006120000_household_data_scope.sql:7-9`). Because the premise is load-bearing for the whole design — and because a brand-new function must also be picked up by PostgREST's schema cache — Phase 1 proves it over the real transport rather than assuming it. There is **no function in `public` anywhere in the repo today** — this slice introduces the first. The alternative (an Astro route with a service-role client) is unavailable: `astro.config.mjs:17-22` declares only `SUPABASE_URL` and the anon `SUPABASE_KEY`, and no admin factory exists in `src/lib/supabase.ts`.
 - **Supabase's default privileges grant `execute` on new `public` functions to `anon`.** The `revoke execute … from public, anon` / `grant execute … to authenticated` pair (modelled on `:53-54`) is **mandatory, not cosmetic**.
 - **A true merge is forbidden by the schema, not merely expensive.** `unique (household_id, seed_id)` on all five data tables (`20261007120000_products_and_recipes.sql:50` and siblings) makes re-pointing the redeemer's ~170 seed rows collide on every row; and the composite FKs `(recipe_id, household_id)` / `(component_id, household_id)` (`:82,107-108,126-129`) default to `on update no action`, so changing a parent's `household_id` raises `foreign_key_violation` before any policy is consulted. F-02's plan review hit precisely this (`reviews/plan-review.md` F5).
 - **Correction to research §8.** Of the four `tables text[]` / `foreach` literals the research says "must each gain `household_invites`", only **two** should:
@@ -113,7 +113,7 @@ Four phases, each independently verifiable:
 
 1. **SQL** — table, index, RLS, policies, revokes, two RPCs, grants; push; then the isolation assertions. The whole security posture is provable here, before a line of TypeScript.
 2. **App layer** — `zod`, types, one service, two API routes, the invite cookie, `/join`, the dashboard section. Ends with a hand-driven end-to-end join in a browser.
-3. **Smoke** — a genuine refactor of `scripts/smoke.mjs` to support two accounts, then the eight new steps that prove FR-002 and FR-003 over HTTP.
+3. **Smoke** — a genuine refactor of `scripts/smoke.mjs` to support two accounts, then the ten new steps that prove FR-002 and FR-003 over HTTP.
 4. **Docs** — CLAUDE.md, README (including the cleanup-query fix), and the `.claude/settings.json` allowlist entries F-02 still owes.
 
 ## Critical Implementation Details
@@ -122,7 +122,7 @@ Four phases, each independently verifiable:
 
 **Definer discipline for the two new `public` functions**, copied from `private.user_household_ids()` (`20261006120000_household_data_scope.sql:41-54`) and F-01's "Critical Implementation Details": `security definer`, `set search_path = ''`, **every** name fully qualified (`public.household_members`, `public.households`, `auth.uid()`), then `revoke execute … from public, anon` followed by `grant execute … to authenticated`. The revoke is load-bearing: Supabase's default privileges would otherwise leave both functions callable by `anon`.
 
-**Atomicity.** `redeem_household_invite` must perform the membership `update` and the invite stamping in one function body so a crash cannot leave a redeemed-but-unmoved or moved-but-unstamped state. Lock the invite row with `select … for update` before validating, so two concurrent redemptions of the same code cannot both pass the `redeemed_at is null` check.
+**Atomicity.** `redeem_household_invite` must perform the membership `update` and the invite stamping in one function body so a crash cannot leave a redeemed-but-unmoved or moved-but-unstamped state. Lock the invite row with `select … for update` before validating, so two concurrent redemptions of the same code cannot both pass the `redeemed_at is null` check. `create_household_invite` needs the same discipline on its own delete-then-insert, serialising on the caller's `households` row (see Phase 1 change 3).
 
 **The non-seed guard catches additions, not deletions.** It refuses redemption when the redeemer's household holds a row with `seed_id is null`. A household that *deleted* seed rows passes the guard and loses those deletions silently. Nothing can delete seed rows today (S-05 is `proposed`), but the slice that enables it must revisit this guard — worth a comment in the RPC body.
 
@@ -171,7 +171,7 @@ Everything that enforces the security posture. At the end of this phase, members
 `id uuid primary key default gen_random_uuid()`;
 `household_id uuid not null references public.households on delete cascade` (the CLAUDE.md hard rule);
 `code text not null unique`;
-`created_by uuid not null references auth.users on delete cascade`;
+`created_by uuid references auth.users on delete set null` — **not** `not null` and **not** `on delete cascade`, matching `redeemed_by` below. A cascade here would take the whole invite row away when the inviter's account is deleted, and with it the `redeemed_from_household_id` that Phase 4's amended cleanup query relies on to spare the redeemer's preserved household — turning one account deletion into silent collateral loss on the next maintenance run (and making Phase 4 manual 4.4 never exercise the sparing branch, since `delete from auth.users where email like 'smoke-%@example.com'` would remove the invite rows first). Anything reading `created_by` must therefore handle null;
 `created_at timestamptz not null default now()`;
 `expires_at timestamptz not null`;
 `redeemed_at timestamptz`;
@@ -215,7 +215,7 @@ The counterintuitive pairing is the one thing worth spelling out in the file:
 
 **Intent**: Let a member of a one-person household mint a fresh code for their own household, replacing any previous unredeemed one. Creation goes through an RPC rather than a plain insert under the insert policy so that code entropy, the expiry window and the one-live-invite rule stay server-controlled — and so the revokes in change 2 can stand.
 
-**Contract**: `create function public.create_household_invite() returns text`, `language plpgsql`, `security definer`, `set search_path = ''`. Body: resolve the caller's household via `private.user_household_ids()` (raise `KD007` if none); raise `KD005` if that household already has 2 members; `delete from public.household_invites where household_id = <caller's> and redeemed_at is null`; insert with `expires_at = now() + interval '7 days'`, `created_by = (select auth.uid())` and the generated code; return the code.
+**Contract**: `create function public.create_household_invite() returns text`, `language plpgsql`, `security definer`, `set search_path = ''`. Body: resolve the caller's household via `private.user_household_ids()` (raise `KD007` if none); raise `KD005` if that household already has 2 members; serialise on the household row with `perform 1 from public.households where id = v_household for update;` — matching the locking discipline mandated for redemption, and necessary because two concurrent calls (a double-clicked "Generate new code") would otherwise both find nothing to delete or both re-insert, and the loser would hit `household_invites_one_unredeemed_idx` with `unique_violation` (23505), which is not in the `KD0xx` table and so can only surface as `inviteErrorMessage`'s neutral fallback. With the lock, the second caller simply mints the next code and no new SQLSTATE is needed. Then `delete from public.household_invites where household_id = <caller's> and redeemed_at is null`; insert with `expires_at = now() + interval '7 days'`, `created_by = (select auth.uid())` and the generated code; return the code.
 
 Code generation — the choice is deliberate, so pin it:
 
@@ -234,7 +234,9 @@ Then `revoke execute on function public.create_household_invite() from public, a
 
 **Intent**: The S-01 join function F-01 reserved. Validate a bearer code and move the caller's single membership row into the invite's household, atomically, stamping provenance.
 
-**Contract**: `create function public.redeem_household_invite(p_code text) returns uuid`, `language plpgsql`, `security definer`, `set search_path = ''`. Returns the target `household_id`. Validations, each raising its own SQLSTATE, in this order:
+**Contract**: `create function public.redeem_household_invite(p_code text) returns uuid`, `language plpgsql`, `security definer`, `set search_path = ''`. Returns the target `household_id`. The caller's household id is resolved **once** into a local `v_origin_household` before any write, and that local — never a re-call of `private.user_household_ids()` — is what the `KD004` / `KD006` checks and the provenance stamp use. (`private.user_household_ids()` is `stable` and each plpgsql statement runs with a fresh snapshot, so re-calling it after the membership `update` would return the *target* household and silently stamp the wrong provenance.)
+
+Validations, each raising its own SQLSTATE, in this order:
 
 | SQLSTATE | Condition | Message intent |
 |---|---|---|
@@ -246,7 +248,11 @@ Then `revoke execute on function public.create_household_invite() from public, a
 | `KD005` | the invite's household has 2 or more members | "That household already has two members." |
 | `KD006` | the caller's household holds any row with `seed_id is null` in `products`, `recipes`, `recipe_components`, `recipe_ingredients` or `recipe_steps` | "Your kitchen has data that would be left behind. Contact support before joining." |
 
-Then, in the same body: `update public.household_members set household_id = <target>, joined_at = now() where user_id = (select auth.uid())`, and `update public.household_invites set redeemed_at = now(), redeemed_by = (select auth.uid()), redeemed_from_household_id = <caller's old household> where id = <invite id>`.
+Then, in the same body and in this order:
+
+1. `delete from public.household_invites where household_id = v_origin_household and redeemed_at is null` — the redeemer's own household is about to become memberless, so any live bearer code pointing at it must die with the move. Without this, a code the redeemer minted before joining stays redeemable: no validation rejects it afterwards (`KD005` counts the *invite's* household, which now has 0 members, not ≥ 2; `KD004` only rejects your own household), so the inviter — or any third party ever sent that link — could be moved into the orphan, splitting the couple and handing them the redeemer's pre-redemption kitchen. Redemption is irreversible by any application path, so recovery would need `postgres`. This is the same statement `create_household_invite` already performs, applied to the origin side.
+2. `update public.household_members set household_id = <target>, joined_at = now() where user_id = (select auth.uid())`.
+3. `update public.household_invites set redeemed_at = now(), redeemed_by = (select auth.uid()), redeemed_from_household_id = v_origin_household where id = <invite id>`.
 
 Two things the implementer must not miss. The invite row is selected `for update` **before** validation, so two concurrent redemptions cannot both see `redeemed_at is null`. And the `KD006` guard needs a comment recording its blind spot:
 
@@ -281,11 +287,11 @@ Grants as in change 3. Also add a comment noting that this function never calls 
 1. As C: `public.create_household_invite()` returns a 16-character code; stash it in a GUC.
 2. As D (pre-join): `select count(*) from public.household_invites` is **0** — the redeemer cannot see the invite they are about to redeem. This is the assertion that proves the §2 design question was answered correctly.
 3. As D: `public.redeem_household_invite(<code>)` returns C's household id.
-4. As postgres: D's single membership row now has `household_id` = C's household; D's old household still **exists** and has **0** members; the invite row carries `redeemed_at`, `redeemed_by` = D, `redeemed_from_household_id` = D's old household.
+4. As postgres: D's single membership row now has `household_id` = C's household; D's old household still **exists** and has **0** members, and holds **0** `public.household_invites` rows (the origin-side delete from change 4); the invite row carries `redeemed_at`, `redeemed_by` = D, and `redeemed_from_household_id` equal to D's recorded old household **and `<>` C's household id** — the inequality is what catches a `redeemed_from_household_id` resolved after the membership update, which would otherwise stamp the live shared household and invert Phase 4's cleanup protection.
 5. As postgres: C's household's `seed_id is not null` counts per data table are **unchanged** (equal to `private.seed_*` counts, not doubled) — proving no re-seed and no merge.
 6. As C, then as D: each sees **2** rows in `public.household_members`, and **identical** row counts across all five data tables.
 
-*Negative-case block*: one rejection per fresh household, because the partial unique index permits only one unredeemed invite per household — so each case needs its own. Cover `KD003` (second redemption of the same code), `KD002` (expired invite, inserted directly as postgres), `KD005` (redeeming into an already-2-member household, and `create_household_invite()` called from one), `KD004` (redeeming an invite to your own household), and `KD006` (redeemer's household holds a `seed_id is null` row).
+*Negative-case block*: one rejection per fresh household, because the partial unique index permits only one unredeemed invite per household — so each case needs its own. Cover `KD003` (second redemption of the same code), `KD002` (expired invite, inserted directly as postgres), `KD005` (redeeming into an already-2-member household, and `create_household_invite()` called from one), `KD004` (redeeming an invite to your own household), `KD006` (redeemer's household holds a `seed_id is null` row), and `KD001` for the **stale origin code**: a fresh pair where the redeemer mints a code for their own household *before* redeeming someone else's, then that minted code is rejected with `KD001` once the redeemer has moved — proving the origin-side delete in change 4 landed.
 
 The catch idiom is new to this file and must be used consistently, so that a *wrong* rejection reason propagates and fails the test rather than being swallowed:
 
@@ -318,6 +324,13 @@ Finally, extend the closing `raise notice` summary (`:491`) and the success `sel
 - `npm run test:rls` passes, including the catch-all now exercising `household_invites`
 - `npm run test:seed` still passes
 - Re-running `npx supabase db push` reports nothing to apply (no accidental non-idempotent repeat)
+- The RPC resolves over HTTPS with the anon key and is **not** 404 — proving both that `public` is API-exposed on the hosted project and that the anon revoke holds over the real transport, neither of which any SQL assertion covers:
+  ```bash
+  curl -s -o /dev/null -w '%{http_code}' -X POST \
+    "$SUPABASE_URL/rest/v1/rpc/create_household_invite" \
+    -H "apikey: $SUPABASE_KEY" -H "Content-Type: application/json" -d '{}'
+  ```
+  Expect 401/403 from the `revoke execute … from anon`. A 404 means the schema is not exposed or the schema cache is stale — stop and fix that before Phase 2.
 
 #### Manual Verification:
 
@@ -442,7 +455,8 @@ Also render `?error=` and `?joined=1` from `Astro.url.searchParams` into the exi
 - Signed in as a fresh account, `/dashboard` offers "Generate invite code"; submitting shows a 16-hex code and a `/join?code=…` link
 - "Generate new code" yields a different code and the old code is rejected on redemption
 - In a second browser profile, opening the link while signed out shows the invite message with sign-in/sign-up links and **no** confirm form
-- Signing up in that profile, confirming the email, then signing in lands on `/join` — not `/` — and the confirm form appears with the right code
+- In the default (confirmation-**off**) configuration: signing up in that profile → `/auth/confirm-email`, then signing in lands on `/join` — not `/` — and the confirm form appears with the right code. This is the version to run normally; it verifies the redirect without touching project settings.
+- The full email round-trip (sign up → click the link in the inbox → sign in → `/join`) requires **Authentication → Email → Confirm email temporarily enabled** on the hosted project `tvmfkhnxxsnmvogplknz`. There is exactly one hosted project, shared by local work, `npm run smoke` and both CI jobs, and README states smoke "needs the hosted Supabase project with email confirmation disabled" — so **turn the toggle back off immediately after this check**, before Phase 3 or any `npm run smoke` run. Leaving it on breaks every smoke run and both CI jobs until someone notices.
 - Confirming moves the account: both dashboards show the same 8-char household prefix, `2 members` and the same library counts, and the invite section reads "Linked with your partner"
 - A tampered code (wrong length, non-hex) and an unknown 16-hex code each produce a readable message on `/join`, not a stack trace
 - `/api/household/invite` and `/api/household/redeem` called without a session redirect rather than erroring
@@ -470,7 +484,7 @@ Also render `?error=` and `?joined=1` from `Astro.url.searchParams` into the exi
 - Replace the module-level `const jar = new Map()` (`:7`) and the `request()` that closes over it with a `makeClient()` factory returning `{ request }` over its own jar. Create two: one for A, one for B. Keep `cookieHeader` / `storeCookies` semantics identical, including the `max-age=0` deletion handling.
 - Add a second email alongside `smoke-${Date.now()}@example.com`. It must still match the README's `smoke-%@example.com` cleanup glob — e.g. `smoke-b-${Date.now()}`.
 - Generalise `libraryLine(body)` (`:42-45`) to `testIdText(body, id)`, since the invite code and the household line now need extracting too. Keep the failure printout working.
-- Add an optional `check: (actual) => boolean` to the expected object in the step tuple, evaluated along`status`/`location`/`body`. This is the minimum change that unblocks assertions on values captured earlier: `expected.body` is a RegExp built eagerly, so it cannot embed A's household prefix.
+- Allow the step tuple's third element (the expected object) to optionally be a **thunk**, resolved inside the loop — `const expected = typeof raw === "function" ? raw() : raw;`. This is what unblocks assertions on values captured earlier (`expected.body` is a RegExp built eagerly, so it cannot embed A's household prefix) while reusing the existing `status` / `location` / `body` channels. Do **not** add a fourth `check: (actual) => boolean` channel: the failure printout at `smoke.mjs:84-87` prints extracted text only when `expected.body !== undefined`, so `check`-only steps — which would be steps 9 and 10, the FR-003 cross-account equality assertions and the whole point of the phase — would print status and location alone, making the suite's two most informative failures its least diagnosable, directly against manual 3.5. With thunks, steps 9 and 10 express their assertions as `body` RegExps built from A's captured text and the existing `testIdText` printout fires automatically.
 
 The eager-evaluation trap is the thing to get right, and it bites twice:
 
@@ -498,13 +512,15 @@ let inviteCode = "";
 1. A's dashboard → capture A's household line and library line from `data-testid="household"` / `"library"`
 2. A POST `/api/household/invite` → 302 `/dashboard`
 3. A GET `/dashboard` → capture the 16-hex code from `data-testid="invite"`
-4. B sign-up → 302 `/auth/confirm-email`
-5. B sign-in → 302 `/` (no cookie yet — this is also the regression guard on the change 7 redirect)
-6. B GET `/dashboard` → 200, household prefix **differs** from A's
-7. B GET `/join?code=<captured>` → 200, confirm form present
-8. B POST `/api/household/redeem` → 302 `/dashboard?joined=1`
+4. B GET `/join?code=<captured>` → 200, invite message, **no** confirm form, and `Set-Cookie: dk_invite` present
+5. B sign-up → 302 `/auth/confirm-email`
+6. B sign-in → **302 `/join`** — the change 7 cookie branch, the slice's one novel auth mechanism
+7. B GET `/join` with **no** query string → 200, confirm form rendered from the cookie alone (this is also the only coverage of the cookie fallback read)
+8. B POST `/api/household/redeem` → 302 `/dashboard?joined=1`, and `dk_invite` cleared
 9. B GET `/dashboard` → household line **equals** A's captured line with `2 members`, library line equals A's captured library line
 10. A GET `/dashboard` → `2 members`, library line **unchanged** from step 1
+
+The ordering is deliberate: B visits `/join` *before* signing in, so the cookie exists when step 6 runs and the new redirect branch is actually exercised. The no-cookie `302 /` guard is preserved for free by A's pre-existing "signin accepts correct password → /" step — A never visits `/join`, so A's jar never holds `dk_invite`. (The cost: B's sign-in is no longer a second copy of that guard, so a regression redirecting *everyone* to `/join` is caught by A's step alone.)
 
 Steps 9 and 10 together are the FR-003 proof; step 10's unchanged library count is also the no-re-seed, no-duplicate-seed-set proof over HTTP.
 
@@ -601,7 +617,7 @@ Add a short warning naming S-01 as the reason, closing the blind spot F-02's imp
 
 ### SQL (`supabase/tests/household_isolation.sql`, rolled back)
 
-Membership mechanics are provable only here — isolation-test users are inserted into `auth.users` with four columns and no password, so they exist to fire the trigger and can never sign in. Coverage: the four conforming policies and the catch-all; read isolation on fixture invites; direct-write denial proving the revokes; RPC grants (anon denied, `authenticated` allowed); a full redemption with before/after membership, provenance and unchanged seed counts; and five distinct rejection paths asserted by SQLSTATE so a wrong rejection reason fails the test.
+Membership mechanics are provable only here — isolation-test users are inserted into `auth.users` with four columns and no password, so they exist to fire the trigger and can never sign in. Coverage: the four conforming policies and the catch-all; read isolation on fixture invites; direct-write denial proving the revokes; RPC grants (anon denied, `authenticated` allowed); a full redemption with before/after membership, provenance and unchanged seed counts; and six distinct rejection paths asserted by SQLSTATE (including the stale origin code) so a wrong rejection reason fails the test.
 
 ### HTTP (`scripts/smoke.mjs`)
 
@@ -615,7 +631,7 @@ There is **no bridge** between the two halves, by construction. Both are needed;
 2. Click "Generate new code". Confirm the code changes.
 3. Copy the **old** link into a second browser profile and attempt redemption. Confirm a readable "not valid" message.
 4. Copy the current link into the second profile while signed out. Confirm the invite message, the sign-in/sign-up links, no inviter identity and no confirm form.
-5. Sign up in that profile, confirm the email from the inbox, then sign in. Confirm you land on `/join` with the confirm form, not on `/`.
+5. Sign up in that profile, then sign in. Confirm you land on `/join` with the confirm form, not on `/`. To exercise the real inbox round-trip, first enable **Authentication → Email → Confirm email** on the hosted project, click the link from the inbox between sign-up and sign-in — and **turn the toggle back off** before Phase 3 or any `npm run smoke` run, which require it off.
 6. Confirm the join. Check both dashboards: same 8-char household prefix, `2 members`, identical library counts, "Linked with your partner".
 7. In the first profile, confirm no invite form is offered any more (the 2-member cap).
 8. Re-POST the same code (browser back, or re-submit). Confirm "already been used".
@@ -677,12 +693,13 @@ Nothing meaningful. Both RPCs touch single rows by unique key; the `KD006` guard
 - [ ] 1.3 `npm run test:rls` passes, including the catch-all now exercising `household_invites`
 - [ ] 1.4 `npm run test:seed` still passes
 - [ ] 1.5 Re-running `npx supabase db push` reports nothing to apply
+- [ ] 1.6 `POST $SUPABASE_URL/rest/v1/rpc/create_household_invite` with the anon key returns 401/403, not 404
 
 #### Manual
 
-- [ ] 1.6 Deployed grants: `authenticated` holds `select` only on `household_invites`; `anon` can execute neither new function
-- [ ] 1.7 Both new functions report `security definer` with an empty `search_path` in `pg_proc`
-- [ ] 1.8 Redemption block sits after every block reading the `rls_test.a_household` / `b_household` GUCs
+- [ ] 1.7 Deployed grants: `authenticated` holds `select` only on `household_invites`; `anon` can execute neither new function
+- [ ] 1.8 Both new functions report `security definer` with an empty `search_path` in `pg_proc`
+- [ ] 1.9 Redemption block sits after every block reading the `rls_test.a_household` / `b_household` GUCs
 
 ### Phase 2: App layer — service, API routes, cookie and pages
 
@@ -698,10 +715,11 @@ Nothing meaningful. Both RPCs touch single rows by unique key; the `KD006` guard
 - [ ] 2.5 Fresh account can generate an invite; dashboard shows a 16-hex code and a `/join?code=…` link
 - [ ] 2.6 "Generate new code" yields a different code and the old code is rejected
 - [ ] 2.7 Signed-out `/join` shows the invite message with auth links and no confirm form
-- [ ] 2.8 Sign-up → email confirm → sign-in lands on `/join` with the right code
-- [ ] 2.9 Confirming the join gives both dashboards the same household prefix, `2 members` and identical library counts
-- [ ] 2.10 Tampered and unknown codes produce readable messages, not stack traces
-- [ ] 2.11 Both new API routes redirect rather than erroring when called without a session
+- [ ] 2.8 Default config (confirmation off): sign-up → `/auth/confirm-email` → sign-in lands on `/join` with the right code
+- [ ] 2.9 Full inbox round-trip with **Confirm email** temporarily enabled on the hosted project, **and the toggle turned back off** before Phase 3 / any `npm run smoke` run
+- [ ] 2.10 Confirming the join gives both dashboards the same household prefix, `2 members` and identical library counts
+- [ ] 2.11 Tampered and unknown codes produce readable messages, not stack traces
+- [ ] 2.12 Both new API routes redirect rather than erroring when called without a session
 
 ### Phase 3: Smoke test — two accounts, end to end
 
