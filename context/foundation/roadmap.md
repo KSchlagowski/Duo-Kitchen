@@ -30,7 +30,7 @@ A couple who cook together in bulk, but have different daily macro targets, impr
 | ID   | Change ID                     | Outcome (user can …)                                                              | Prerequisites       | PRD refs                                   | Status   |
 | ---- | ----------------------------- | --------------------------------------------------------------------------------- | ------------------- | ------------------------------------------ | -------- |
 | F-01 | household-data-scope          | (foundation) every account belongs to a household; data access is household-scoped | —                   | Access Control, NFR (household privacy)    | done     |
-| F-02 | seed-products-and-recipes     | (foundation) product database and 5–10 seed recipes with solver-relevant attributes exist | F-01          | FR-010, FR-012                             | proposed |
+| F-02 | seed-products-and-recipes     | (foundation) product database and 5–10 seed recipes with solver-relevant attributes exist | F-01          | FR-010, FR-012                             | done     |
 | F-03 | deploy-and-install-skeleton   | (foundation) merges to main auto-deploy; the app installs on desktop, Android, iOS | —                   | NFR (installable), FR-024 (public endpoint) | ready    |
 | S-01 | link-partner-household        | invite their partner and share one household                                      | F-01                | US-01, FR-001, FR-002, FR-003              | proposed |
 | S-02 | set-daily-macro-targets       | enter their own daily calorie/protein/fat/carb targets                            | F-01                | US-01, FR-004                              | proposed |
@@ -98,7 +98,7 @@ Foundations below assume these are present and do NOT re-scaffold them.
 - **Unknowns:**
   - Is the product database a repo-maintained seed shared by all households, a per-household table, or both (seed + household extensions)? Shape-notes say "kept in the repository", while FR-011 lets a person or the agent extend it. — Owner: user. Block: no.
 - **Risk:** The solver is only as good as these attributes; capturing rounding and piece rules here (rather than in S-04) keeps the solver slice focused on the split itself. Scope stays to seed data and the minimum shape — no recipe UI.
-- **Status:** proposed
+- **Status:** done
 
 ### F-03: Deploy and install skeleton
 
@@ -338,3 +338,4 @@ Foundations below assume these are present and do NOT re-scaffold them.
 ## Done
 
 - **F-01: (foundation) every signed-up person belongs to a household (initially of one), and a household-scoped access policy pattern is in place for all household data.** — Archived 2026-10-07 → `context/archive/2026-10-06-household-data-scope/`. Lesson: —.
+- **F-02: (foundation) a product database with nutrition values and store aisles, plus 5–10 generated seed recipes carrying the attributes the solver needs (rounding step, minimum sensible amount, whole/half-piece rule, raw vs. cooked weight, per-component vs. whole-dish division, make-ahead vs. fresh steps).** — Archived 2026-10-07 → `context/archive/2026-10-07-seed-products-and-recipes/`. Lesson: —.

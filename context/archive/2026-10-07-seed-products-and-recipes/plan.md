@@ -515,9 +515,9 @@ Shared types and a thin read service that later slices (S-03, S-05, S-07) build 
 
 #### Automated
 
-- [ ] 1.1 Migration applies cleanly to the hosted project: `npx supabase db push`
+- [x] 1.1 Migration applies cleanly to the hosted project: `npx supabase db push`
 - [ ] 1.2 Supabase advisors report no new issues for the new tables/functions
-- [ ] 1.3 Extended isolation test passes, including the catch-all over the five new tables: `npm run test:rls`
+- [x] 1.3 Extended isolation test passes, including the catch-all over the five new tables: `npm run test:rls`
 - [x] 1.4 Isolation test fails when isolation is deliberately broken (scratch copy), then scratch removed — 7edd598
 - [ ] 1.5 Smoke test still passes: `npm run smoke`
 - [x] 1.6 Lint passes: `npm run lint` — 7edd598
@@ -531,11 +531,11 @@ Shared types and a thin read service that later slices (S-03, S-05, S-07) build 
 
 #### Automated
 
-- [ ] 2.1 Content migration applies cleanly: `npx supabase db push`
-- [ ] 2.2 Seed integrity test passes: `npm run test:seed`
+- [x] 2.1 Content migration applies cleanly: `npx supabase db push`
+- [x] 2.2 Seed integrity test passes: `npm run test:seed`
 - [x] 2.3 Integrity test fails when content is deliberately broken (scratch copy), then scratch removed — 374ec05
-- [ ] 2.4 Isolation test still passes with non-zero seed counts: `npm run test:rls`
-- [ ] 2.5 Backfill reached every existing household (query returns 0)
+- [x] 2.4 Isolation test still passes with non-zero seed counts: `npm run test:rls`
+- [x] 2.5 Backfill reached every existing household (query returns 0)
 - [ ] 2.6 Smoke test passes: `npm run smoke`
 - [x] 2.7 Lint passes: `npm run lint` — 374ec05
 
@@ -583,3 +583,13 @@ Shared types and a thin read service that later slices (S-03, S-05, S-07) build 
   - `getRecipeLibrarySummary` runs the two head-only counts in parallel.
 - **Status left at `implementing`.** Hosted verification (1.1–1.3, 1.5, 2.1, 2.2, 2.4–2.6, 3.4) and all manual rows are still pending. Flip `change.md` to `implemented` once they pass.
 - **Not done: `.claude/settings.json` allowlist entry for `npm run test:seed`.** The session was not granted permission to edit that file. Add `"Bash(npm run test:seed)"` and `"Bash(npx supabase db query --linked -f supabase/tests/seed_integrity.sql)"` by hand.
+
+### Hosted Verification (2026-10-07, at archive)
+
+- Both migrations were applied to the hosted Supabase project (`npx supabase db push`) → 1.1, 2.1.
+- Against the hosted project:
+  - `npm run test:rls` passed → 1.3, 2.4;
+  - `npm run test:seed` passed → 2.2;
+  - the backfill query returned 0 households without seeded recipes → 2.5.
+- These rows have no SHA suffix: they verify already-committed code and produced no diff.
+- Still open at archive time: 1.2 (advisors), the smoke runs (1.5, 2.6, 3.4; CI runs smoke on the next push), and all manual rows.
