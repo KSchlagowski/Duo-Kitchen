@@ -3,7 +3,7 @@ project: "Duo Kitchen"
 version: 1
 status: draft
 created: 2026-10-06
-updated: 2026-10-07
+updated: 2026-10-08
 prd_version: 1
 main_goal: market-feedback
 top_blocker: time
@@ -338,3 +338,4 @@ Foundations below assume these are present and do NOT re-scaffold them.
 
 - **F-01: (foundation) every signed-up person belongs to a household (initially of one), and a household-scoped access policy pattern is in place for all household data.** — Archived 2026-10-07 → `context/archive/2026-10-06-household-data-scope/`. Lesson: —.
 - **F-02: (foundation) a product database with nutrition values and store aisles, plus 5–10 generated seed recipes carrying the attributes the solver needs (rounding step, minimum sensible amount, whole/half-piece rule, raw vs. cooked weight, per-component vs. whole-dish division, make-ahead vs. fresh steps).** — Archived 2026-10-07 → `context/archive/2026-10-07-seed-products-and-recipes/`. Lesson: —.
+- **S-01: user can generate an invite code/link that their partner redeems, after which both see the same recipes, plans and shopping lists.** — Archived 2026-10-08 → `context/archive/2026-10-07-link-partner-household/`. Lesson: —.

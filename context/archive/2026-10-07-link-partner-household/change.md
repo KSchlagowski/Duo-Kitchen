@@ -1,10 +1,10 @@
 ---
 change_id: link-partner-household
 title: Link partner into one shared household via invite and redemption
-status: impl_reviewed
+status: archived
 created: 2026-10-07
-updated: 2026-10-07
-archived_at: null
+updated: 2026-10-08
+archived_at: 2026-10-08T09:07:00Z
 ---
 
 ## Notes
