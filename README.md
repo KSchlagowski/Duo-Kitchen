@@ -134,6 +134,8 @@ Users can then sign in immediately after sign-up without clicking a confirmation
 | `/dashboard`          | Example protected page (redirects to `/auth/signin` if unauthenticated) |
 | `/targets`            | Your own daily macro targets (editable) and your partner's (read-only)  |
 | `/plan`               | Household 3-day meal plan (shared with your partner)                    |
+| `/recipes`            | The shared recipe library as a grid of cards                            |
+| `/recipes/[id]`       | One recipe's full detail; 404 for a malformed or unknown id             |
 
 Route protection is handled in `src/middleware.ts`. Add paths to the `PROTECTED_ROUTES` array there to require authentication.
 
@@ -176,6 +178,8 @@ changing them, the second saves its own targets **before** redeeming, and after 
 account's `/targets` page shows the other's values as the partner's.
 
 For S-03 it also covers the meal plan. `/plan` and `/api/plan` turn away anonymous visitors. The first account saves a 2-meal plan, and an unknown recipe and a meal for a not-yet-linked partner are each rejected with their own message. After the linking, the second account sees the same plan, edits it with one meal marked for the partner, and the first account sees that meal as its own.
+
+It also covers S-05: both recipe routes redirect a signed-out visitor, `/recipes` lists at least the 8 seed recipes as cards, the `Kurczak curry z ryżem` detail shows its meal types, division mode, make-ahead/fresh step split and a whole-batch macro total and cooked weights pinned from an independent SQL query (see the comment above the S-05 fixtures in `scripts/smoke.mjs`), the whole-dish and no-meal-type cases render, and a malformed or unknown recipe id returns 404.
 
 > **Note:** this script exists primarily to guard the development of the starter itself — it is a fast sanity check that dependency upgrades did not break the build, the Cloudflare adapter or the Supabase auth flow. It is **not** a substitute for a real test suite. Once you build your own product on top of this starter, add proper tests (unit, integration, end-to-end) suited to your application.
 

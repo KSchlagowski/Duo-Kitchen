@@ -2,6 +2,7 @@
 // together, that two accounts can be linked into one household (S-01, FR-002/FR-003), and that each
 // person's daily macro targets are saved, validated and visible to the partner -- including targets
 // set before the redemption, which must arrive in the shared household with their owner (S-02, FR-004).
+// S-05: the recipe library renders as cards and a recipe's detail shows macros pinned from SQL.
 // Zero dependencies on purpose. Run against a live server: BASE_URL=http://localhost:4321 node scripts/smoke.mjs
 
 // Trailing slash stripped deliberately: BASE_URL is sent verbatim as the Origin header, and Astro's
@@ -80,6 +81,32 @@ const targetsB = { kcal: "1800", protein_g: "120", fat_g: "60", carbs_g: "180" }
 const targetsLabelA = "2200 kcal · P 160 g · F 70 g · C 230 g";
 const targetsLabelB = "1800 kcal · P 120 g · F 60 g · C 180 g";
 
+// S-05 fixtures. Seed recipe ids from supabase/migrations/20261007120100_seed_products_and_recipes.sql.
+// The macro and cooked strings mirror formatMacroTotals() / formatCookedLine() in
+// src/lib/services/recipe-macros.ts, but were NOT copied from the page: they are the output of this
+// independent SQL oracle (npx supabase db query --linked), which a test of the page must agree with:
+//   select round(sum(i.base_amount_g * p.kcal_per_100g    / 100)) as kcal,
+//          round(sum(i.base_amount_g * p.protein_per_100g / 100)) as protein_g,
+//          round(sum(i.base_amount_g * p.fat_per_100g     / 100)) as fat_g,
+//          round(sum(i.base_amount_g * p.carbs_per_100g   / 100)) as carbs_g
+//   from public.recipe_ingredients i
+//   join public.recipe_components c on c.id = i.component_id
+//   join public.products p on p.id = i.product_id
+//   where c.recipe_id = '5eed0002-0000-4000-8000-000000000004';
+//   select c.position, c.name, sum(i.base_amount_g) as raw_g,
+//          round(sum(i.base_amount_g) * c.cooked_yield_ratio) as cooked_g, c.cooked_yield_ratio
+//   from public.recipe_components c
+//   join public.recipe_ingredients i on i.component_id = c.id
+//   where c.recipe_id = '5eed0002-0000-4000-8000-000000000004' and c.cooked_yield_ratio is not null
+//   group by c.id order by c.position;
+const curryId = "5eed0002-0000-4000-8000-000000000004";
+const leczoId = "5eed0002-0000-4000-8000-000000000006";
+const zapiekankaId = "5eed0002-0000-4000-8000-000000000008";
+const curryTotal = "1532 kcal · P 107 g · F 54 g · C 151 g";
+// 161 g × 2.50 = 402.5: the exact .5 case, rounded half up on both sides.
+const curryRiceCooked = "Raw 161 g → cooked ≈ 403 g (×2.50)";
+const curryChickenCooked = "Raw 416 g → cooked ≈ 312 g (×0.75)";
+
 function testIdBody(id, text) {
   return new RegExp(`data-testid="${id}"[^>]*>\\s*${escapeRe(text)}\\s*</p>`);
 }
@@ -128,6 +155,14 @@ const steps = [
     () => b.request("/api/targets", { method: "POST", form: targetsB }),
     { status: 302, location: /^\/auth\/signin$/ },
   ],
+  // --- S-05: the recipe library is for signed-in users only --------------------------------
+  ["recipes page redirects anonymous user", () => b.request("/recipes"), { status: 302, location: /^\/auth\/signin$/ }],
+  [
+    "recipe detail redirects anonymous user",
+    () => b.request(`/recipes/${curryId}`),
+    { status: 302, location: /^\/auth\/signin$/ },
+  ],
+
   [
     "signup creates account",
     () => a.request("/api/auth/signup", { method: "POST", form: { email: emailA, password } }),
@@ -398,6 +433,71 @@ const steps = [
     { status: 302, location: `/join?error=${encodeURIComponent("That invite code is not valid.")}` },
   ],
 
+  // --- S-05: A browses the library and opens recipe details --------------------------------
+  [
+    // At least the 8 seed recipes: >= rather than an exact count, so user-added rows (S-07) still pass.
+    "A recipes page lists the library as cards",
+    () => a.request("/recipes"),
+    {
+      status: 200,
+      body: new RegExp(`^(?=(?:[\\s\\S]*?data-testid="recipe-card"){8})[\\s\\S]*href="/recipes/${curryId}"`),
+    },
+  ],
+  [
+    "A curry detail shows divisible components and its meal types",
+    () => a.request(`/recipes/${curryId}`),
+    {
+      status: 200,
+      body: new RegExp(
+        `${testIdBody("recipe-name", "Kurczak curry z ryżem").source}[\\s\\S]*` +
+          `${testIdBody("recipe-meal-types", "Lunch · Dinner").source}[\\s\\S]*` +
+          testIdBody("recipe-division", "Divisible components").source,
+      ),
+    },
+  ],
+  [
+    "A curry detail shows the whole-batch total and cooked weights from the SQL oracle",
+    () => a.request(`/recipes/${curryId}`),
+    {
+      status: 200,
+      body: new RegExp(
+        `${testIdBody("recipe-total", curryTotal).source}[\\s\\S]*` +
+          `${testIdBody("component-cooked", curryRiceCooked).source}[\\s\\S]*` +
+          testIdBody("component-cooked", curryChickenCooked).source,
+      ),
+    },
+  ],
+  [
+    // The split itself: a make-ahead step under its heading, and the fresh step only after the
+    // fresh heading (the tempered prefix forbids it anywhere before).
+    "A curry detail splits make-ahead and fresh steps",
+    () => a.request(`/recipes/${curryId}`),
+    {
+      status: 200,
+      body: /^(?:(?!Odważ porcje)[\s\S])*data-testid="steps-make-ahead"(?:(?!Odważ porcje)[\s\S])*Ugotuj ryż w osolonej wodzie(?:(?!Odważ porcje)[\s\S])*data-testid="steps-fresh"[\s\S]*Odważ porcje każdego składnika, odgrzej i podaj\./,
+    },
+  ],
+  [
+    "A leczo detail is a whole dish",
+    () => a.request(`/recipes/${leczoId}`),
+    { status: 200, body: testIdBody("recipe-division", "Whole dish only") },
+  ],
+  [
+    "A zapiekanka detail has no suggested meal type",
+    () => a.request(`/recipes/${zapiekankaId}`),
+    { status: 200, body: testIdBody("recipe-meal-types", "No suggested meal type") },
+  ],
+  [
+    "a malformed recipe id is 404, not a database error",
+    () => a.request("/recipes/not-a-uuid"),
+    { status: 404, body: testIdBody("recipe-not-found", "Recipe not found") },
+  ],
+  [
+    "an absent recipe id is 404",
+    () => a.request("/recipes/00000000-0000-4000-8000-000000000000"),
+    { status: 404, body: testIdBody("recipe-not-found", "Recipe not found") },
+  ],
+
   [
     "signout clears session",
     () => a.request("/api/auth/signout", { method: "POST" }),
@@ -429,7 +529,23 @@ for (const [name, run, rawExpected] of steps) {
     console.log(`      expected ${expected.status} ${expected.location ?? ""}`);
     if (expected.body !== undefined) {
       console.log(`      expected body ${expected.body}`);
-      for (const id of ["household", "library", "invite", "join", "targets", "targets-mine", "targets-partner"]) {
+      for (const id of [
+        "household",
+        "library",
+        "invite",
+        "join",
+        "targets",
+        "targets-mine",
+        "targets-partner",
+        // S-05
+        "recipe-count",
+        "recipe-name",
+        "recipe-division",
+        "recipe-meal-types",
+        "recipe-total",
+        "component-cooked",
+        "recipe-not-found",
+      ]) {
         if (actual.body.includes(`data-testid="${id}"`)) {
           console.log(`      got ${id}: ${testIdText(actual.body, id)}`);
         }

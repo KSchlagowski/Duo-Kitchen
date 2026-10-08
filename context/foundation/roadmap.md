@@ -37,7 +37,7 @@ A couple who cook together in bulk, but have different daily macro targets, impr
 | S-02 | set-daily-macro-targets       | enter their own daily calorie/protein/fat/carb targets                                    | F-01             | US-01, FR-004                                 | done     |
 | S-03 | plan-three-day-grid           | fill a 3-day × 5-meal plan, marking each meal for A, B or both, and save it unsolved      | F-01, F-04       | US-01, FR-013, FR-014, FR-015, FR-016, FR-020 | done     |
 | S-04 | solve-daily-macros            | solve a day and see per-ingredient quantities and the A/B split within tolerance          | S-01, S-02, S-03 | US-01, FR-018, FR-019, FR-020                 | proposed |
-| S-05 | browse-recipe-library         | browse recipe cards and open full recipe details                                          | F-04             | FR-005, FR-009, FR-010, FR-012                | proposed |
+| S-05 | browse-recipe-library         | browse recipe cards and open full recipe details                                          | F-04             | FR-005, FR-009, FR-010, FR-012                | done     |
 | S-06 | rate-and-filter-recipes       | rate recipes, see the partner's rating, and filter/sort the library                       | S-05, S-01, F-04 | FR-006, FR-007, FR-008                        | proposed |
 | S-07 | add-missing-product           | add a product with nutrition values and store aisle                                       | F-04             | FR-010, FR-011                                | proposed |
 | S-08 | shared-dish-across-days       | make one cooked dish cover meals on several days and still solve                          | S-04             | US-01, FR-017                                 | proposed |
@@ -189,7 +189,7 @@ Foundations below assume these are present and do NOT re-scaffold them.
 - **Blockers:** —
 - **Unknowns:** —
 - **Risk:** Not on the path to the first solved day (S-03 uses a minimal picker), so it can run in a parallel agent session; it is where agent-imported recipes (S-12) become visible.
-- **Status:** proposed
+- **Status:** done
 
 ### S-06: Rate and filter recipes
 

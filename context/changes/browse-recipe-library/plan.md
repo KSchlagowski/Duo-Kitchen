@@ -510,18 +510,18 @@ After the rebase and the re-verification, publish the rewritten branch with `git
 
 #### Automated
 
-- [x] 2.1 Lint passes: `npm run lint`
-- [x] 2.2 Type check passes: `npx astro check`
-- [x] 2.3 Build passes: `npm run build`
+- [x] 2.1 Lint passes: `npm run lint` — b844d0f
+- [x] 2.2 Type check passes: `npx astro check` — b844d0f
+- [x] 2.3 Build passes: `npm run build` — b844d0f
 
 #### Manual
 
-- [x] 2.4 Signed-out `/recipes` and `/recipes/<id>` redirect to sign-in
-- [x] 2.5 `/recipes` shows 8 sorted cards with placeholder photos and no rating UI
-- [x] 2.6 Kurczak curry detail shows components, cooked lines, both step sections and meal types
-- [x] 2.7 Leczo shows "Whole dish only"; Zapiekanka shows "No suggested meal type"
-- [x] 2.8 Piece, min-amount, rounding-step and null-component/duration cases render correctly
-- [x] 2.9 Malformed and absent ids return 404 "Recipe not found"
+- [x] 2.4 Signed-out `/recipes` and `/recipes/<id>` redirect to sign-in — b844d0f
+- [x] 2.5 `/recipes` shows 8 sorted cards with placeholder photos and no rating UI — b844d0f
+- [x] 2.6 Kurczak curry detail shows components, cooked lines, both step sections and meal types — b844d0f
+- [x] 2.7 Leczo shows "Whole dish only"; Zapiekanka shows "No suggested meal type" — b844d0f
+- [x] 2.8 Piece, min-amount, rounding-step and null-component/duration cases render correctly — b844d0f
+- [x] 2.9 Malformed and absent ids return 404 "Recipe not found" — b844d0f
 - [ ] 2.10 Layout works at phone width
 
 > Implementation notes (Phase 2): 2.4–2.9 were checked over HTTP against the dev server with a throw-away `smoke-s05-…@example.com` account (all 8 detail pages read as text). 2.10 is left for a human: no browser was available in the session; the markup is mobile-first (`grid-cols-1` below `sm`, stacked ingredient rows) but was not looked at. Choices: the card and detail use `class:list={cn(…)}` (the repo's eslint rule `astro/prefer-class-list-directive`, as in `targets.astro`); `recipe-name` is a `<p role="heading" aria-level="1">` so the smoke `</p>` matcher works; per-component subtotals carry `data-testid="component-total"` and are shown only for divisible recipes; a read failure renders `data-testid="recipe-unavailable"`. Seed data has no half-piece amounts, so the `½` branch of `formatIngredientAmount()` is not exercised by any seed recipe.
@@ -530,17 +530,19 @@ After the rebase and the re-verification, publish the rewritten branch with `git
 
 #### Automated
 
-- [ ] 3.1 Lint passes: `npm run lint`
-- [ ] 3.2 Build passes: `npm run build`
-- [ ] 3.3 Worktree is linked: `npx supabase link --project-ref tvmfkhnxxsnmvogplknz`
-- [ ] 3.4 Isolation test passes unchanged: `npm run test:rls`
-- [ ] 3.5 Seed test passes unchanged: `npm run test:seed`
-- [ ] 3.6 Smoke passes against the production preview: `npm run smoke`
+- [x] 3.1 Lint passes: `npm run lint`
+- [x] 3.2 Build passes: `npm run build`
+- [x] 3.3 Worktree is linked: `npx supabase link --project-ref tvmfkhnxxsnmvogplknz`
+- [x] 3.4 Isolation test passes unchanged: `npm run test:rls`
+- [x] 3.5 Seed test passes unchanged: `npm run test:seed`
+- [x] 3.6 Smoke passes against the production preview: `npm run smoke`
 
 #### Manual
 
-- [ ] 3.7 Pinned total and cooked line match independently run oracle SQL
-- [ ] 3.8 Deliberate break makes the smoke step fail with a readable dump
+- [x] 3.7 Pinned total and cooked line match independently run oracle SQL
+- [x] 3.8 Deliberate break makes the smoke step fail with a readable dump
+
+> Implementation notes (Phase 3): 3.7 — the two oracle queries were run with `npx supabase db query --linked` before pinning: `1532 kcal · P 107 g · F 54 g · C 151 g`, Ryż raw 161 → cooked 403 (×2.50), Kurczak raw 416 → cooked 312 (×0.75); both cooked lines are pinned. 3.8 — `cookedWeight()` returning `rawG` without the ratio made exactly the oracle step fail, with the dump showing `component-cooked: Raw 161 g → cooked ≈ 161 g (×2.50)`; reverted (no diff). The roadmap had no separate backlog entry for S-05, so only the table row and the section status changed. `change.md` stays `implementing`: Phase 4 (rebase onto S-03) is still pending and gated on S-03 reaching `main`.
 
 ### Phase 4: Rebase onto S-03 and Re-verify (gated)
 
