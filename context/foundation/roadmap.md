@@ -27,37 +27,37 @@ A couple who cook together in bulk, but have different daily macro targets, impr
 
 ## At a glance
 
-| ID   | Change ID                     | Outcome (user can …)                                                              | Prerequisites       | PRD refs                                   | Status   |
-| ---- | ----------------------------- | --------------------------------------------------------------------------------- | ------------------- | ------------------------------------------ | -------- |
-| F-01 | household-data-scope          | (foundation) every account belongs to a household; data access is household-scoped | —                   | Access Control, NFR (household privacy)    | done     |
-| F-02 | seed-products-and-recipes     | (foundation) product database and 5–10 seed recipes with solver-relevant attributes exist | F-01          | FR-010, FR-012                             | done     |
-| F-03 | deploy-and-install-skeleton   | (foundation) merges to main auto-deploy; the app installs on desktop, Android, iOS | —                   | NFR (installable), FR-024 (public endpoint) | ready    |
-| S-01 | link-partner-household        | invite their partner and share one household                                      | F-01                | US-01, FR-001, FR-002, FR-003              | proposed |
-| S-02 | set-daily-macro-targets       | enter their own daily calorie/protein/fat/carb targets                            | F-01                | US-01, FR-004                              | proposed |
-| S-03 | plan-three-day-grid           | fill a 3-day × 5-meal plan, marking each meal for A, B or both, and save it unsolved | F-01, F-02       | US-01, FR-013, FR-014, FR-015, FR-016, FR-020 | proposed |
-| S-04 | solve-daily-macros            | solve a day and see per-ingredient quantities and the A/B split within tolerance  | S-01, S-02, S-03    | US-01, FR-018, FR-019, FR-020              | proposed |
-| S-05 | browse-recipe-library         | browse recipe cards and open full recipe details                                  | F-02                | FR-005, FR-009, FR-010, FR-012             | proposed |
-| S-06 | rate-and-filter-recipes       | rate recipes, see the partner's rating, and filter/sort the library               | S-05, S-01          | FR-006, FR-007, FR-008                     | proposed |
-| S-07 | add-missing-product           | add a product with nutrition values and store aisle                               | F-02                | FR-010, FR-011                             | proposed |
-| S-08 | shared-dish-across-days       | make one cooked dish cover meals on several days and still solve                  | S-04                | US-01, FR-017                              | proposed |
-| S-09 | shopping-list-from-plan       | open a combined, aisle-grouped shopping list and check items off                  | S-03                | US-02, FR-021                              | proposed |
-| S-10 | cooking-session-schedule      | see the plan arranged into evening/morning cooking sessions with merged steps     | S-03                | US-03, FR-022                              | proposed |
-| S-11 | step-by-step-cook-mode        | follow a session step by step with A and B portions                               | S-10, S-04          | US-03, FR-023                              | proposed |
-| S-12 | agent-recipe-import           | import a recipe by talking to the AI agent (photo + description → accepted recipe) | S-05, F-03         | US-04, FR-024, FR-011                      | proposed |
-| S-13 | agent-edits-recipes-and-plans | ask the AI agent to edit a recipe or build a plan                                 | S-12, S-03          | US-04, FR-025                              | proposed |
-| S-14 | language-and-theme-switch     | switch the UI between Polish and English and between light and dark mode          | —                   | FR-026, FR-027                             | ready    |
+| ID   | Change ID                     | Outcome (user can …)                                                                      | Prerequisites    | PRD refs                                      | Status   |
+| ---- | ----------------------------- | ----------------------------------------------------------------------------------------- | ---------------- | --------------------------------------------- | -------- |
+| F-01 | household-data-scope          | (foundation) every account belongs to a household; data access is household-scoped        | —                | Access Control, NFR (household privacy)       | done     |
+| F-02 | seed-products-and-recipes     | (foundation) product database and 5–10 seed recipes with solver-relevant attributes exist | F-01             | FR-010, FR-012                                | done     |
+| F-03 | deploy-and-install-skeleton   | (foundation) merges to main auto-deploy; the app installs on desktop, Android, iOS        | —                | NFR (installable), FR-024 (public endpoint)   | ready    |
+| S-01 | link-partner-household        | invite their partner and share one household                                              | F-01             | US-01, FR-001, FR-002, FR-003                 | done     |
+| S-02 | set-daily-macro-targets       | enter their own daily calorie/protein/fat/carb targets                                    | F-01             | US-01, FR-004                                 | ready    |
+| S-03 | plan-three-day-grid           | fill a 3-day × 5-meal plan, marking each meal for A, B or both, and save it unsolved      | F-01, F-02       | US-01, FR-013, FR-014, FR-015, FR-016, FR-020 | ready    |
+| S-04 | solve-daily-macros            | solve a day and see per-ingredient quantities and the A/B split within tolerance          | S-01, S-02, S-03 | US-01, FR-018, FR-019, FR-020                 | proposed |
+| S-05 | browse-recipe-library         | browse recipe cards and open full recipe details                                          | F-02             | FR-005, FR-009, FR-010, FR-012                | ready    |
+| S-06 | rate-and-filter-recipes       | rate recipes, see the partner's rating, and filter/sort the library                       | S-05, S-01       | FR-006, FR-007, FR-008                        | proposed |
+| S-07 | add-missing-product           | add a product with nutrition values and store aisle                                       | F-02             | FR-010, FR-011                                | ready    |
+| S-08 | shared-dish-across-days       | make one cooked dish cover meals on several days and still solve                          | S-04             | US-01, FR-017                                 | proposed |
+| S-09 | shopping-list-from-plan       | open a combined, aisle-grouped shopping list and check items off                          | S-03             | US-02, FR-021                                 | proposed |
+| S-10 | cooking-session-schedule      | see the plan arranged into evening/morning cooking sessions with merged steps             | S-03             | US-03, FR-022                                 | proposed |
+| S-11 | step-by-step-cook-mode        | follow a session step by step with A and B portions                                       | S-10, S-04       | US-03, FR-023                                 | proposed |
+| S-12 | agent-recipe-import           | import a recipe by talking to the AI agent (photo + description → accepted recipe)        | S-05, F-03       | US-04, FR-024, FR-011                         | proposed |
+| S-13 | agent-edits-recipes-and-plans | ask the AI agent to edit a recipe or build a plan                                         | S-12, S-03       | US-04, FR-025                                 | proposed |
+| S-14 | language-and-theme-switch     | switch the UI between Polish and English and between light and dark mode                  | —                | FR-026, FR-027                                | ready    |
 
 ## Streams
 
 Navigation aid — groups items that share a Prerequisites chain. Canonical ordering still lives in the dependency graph below; this table is the proposed reading order across parallel tracks.
 
-| Stream | Theme                 | Chain                                          | Note                                                                                   |
-| ------ | --------------------- | ---------------------------------------------- | -------------------------------------------------------------------------------------- |
-| A      | Household & people    | `F-01` → `S-01` / `S-02`                       | Supplies the two people and their targets; joins Stream B at `S-04`.                   |
-| B      | Plan & solve          | `F-02` → `S-03` → `S-04` → `S-08`              | The market-feedback path: shortest route to a real solved day.                          |
-| C      | Recipe library & agent | `S-05` → `S-06` / `S-07` → `S-12` → `S-13`    | Hangs off `F-02`; runs in parallel with Stream B; `S-12` also needs `F-03`.             |
-| D      | Shop & cook           | `S-09` / `S-10` → `S-11`                       | Branches off `S-03`; `S-11` joins Stream B at `S-04` for A/B portions.                  |
-| E      | Ship & polish         | `F-03`, `S-14`                                 | Independent from day one; gets the solved day onto the couple's phones.                 |
+| Stream | Theme                  | Chain                                      | Note                                                                        |
+| ------ | ---------------------- | ------------------------------------------ | --------------------------------------------------------------------------- |
+| A      | Household & people     | `F-01` → `S-01` / `S-02`                   | Supplies the two people and their targets; joins Stream B at `S-04`.        |
+| B      | Plan & solve           | `F-02` → `S-03` → `S-04` → `S-08`          | The market-feedback path: shortest route to a real solved day.              |
+| C      | Recipe library & agent | `S-05` → `S-06` / `S-07` → `S-12` → `S-13` | Hangs off `F-02`; runs in parallel with Stream B; `S-12` also needs `F-03`. |
+| D      | Shop & cook            | `S-09` / `S-10` → `S-11`                   | Branches off `S-03`; `S-11` joins Stream B at `S-04` for A/B portions.      |
+| E      | Ship & polish          | `F-03`, `S-14`                             | Independent from day one; gets the solved day onto the couple's phones.     |
 
 ## Baseline
 
@@ -95,8 +95,7 @@ Foundations below assume these are present and do NOT re-scaffold them.
 - **Prerequisites:** F-01
 - **Parallel with:** F-03, S-14
 - **Blockers:** —
-- **Unknowns:**
-  - Is the product database a repo-maintained seed shared by all households, a per-household table, or both (seed + household extensions)? Shape-notes say "kept in the repository", while FR-011 lets a person or the agent extend it. — Owner: user. Block: no.
+- **Unknowns:** — (resolved 2026-10-07: products and recipes are per-household copies of templates kept in `private`, copied into each new household by `private.seed_household()`; every copy keeps a `seed_id` back to its template.)
 - **Risk:** The solver is only as good as these attributes; capturing rounding and piece rules here (rather than in S-04) keeps the solver slice focused on the split itself. Scope stays to seed data and the minimum shape — no recipe UI.
 - **Status:** done
 
@@ -110,7 +109,7 @@ Foundations below assume these are present and do NOT re-scaffold them.
 - **Parallel with:** F-01, F-02, S-01–S-11, S-14
 - **Blockers:** —
 - **Unknowns:** —
-- **Risk:** Cheap to do early and essential to market-feedback — a solver only tested on localhost doesn't validate anything in the kitchen. Scope is fixing CI's branch, adding auto-deploy and installability; no offline support (parked).
+- **Risk:** Cheap to do early and essential to market-feedback — a solver only tested on localhost doesn't validate anything in the kitchen. Scope is adding auto-deploy from `main` and installability (PWA manifest); CI already triggers on `main` and the worker is already named `duo-kitchen`. No offline support (parked).
 - **Status:** ready
 
 ## Slices
@@ -124,9 +123,9 @@ Foundations below assume these are present and do NOT re-scaffold them.
 - **Parallel with:** S-02, S-03, S-05, S-07, S-14, F-03
 - **Blockers:** —
 - **Unknowns:**
-  - What happens to data a person created in their single-person household before redeeming an invite (merge vs. discard)? — Owner: user. Block: no.
-- **Risk:** Needed before S-04 because the solver needs two people; sign-up/sign-in (FR-001) already exist, so this slice only adds invite and redemption.
-- **Status:** proposed
+  - What happens to data a person created in their single-person household before redeeming an invite (merge vs. discard)? Since F-02, every new household already holds its own seed copies of ~170 products and the recipes, so the joiner's household always has data; `seed_id` lets duplicate seed rows be identified and dropped. Suggested: discard the joiner's household when it holds only unmodified seed data, otherwise block or warn. — Owner: user. Block: no (decide before `/10x-plan`).
+- **Risk:** Needed before S-04 because the solver needs two people; sign-up/sign-in (FR-001) already exist, so this slice only adds invite and redemption. Recommended next: the merge/discard rule is cheapest to settle while only seed tables hold household data — every later household-owned table (plans, targets, ratings) widens it.
+- **Status:** done
 
 ### S-02: Set daily macro targets
 
@@ -138,7 +137,7 @@ Foundations below assume these are present and do NOT re-scaffold them.
 - **Blockers:** —
 - **Unknowns:** —
 - **Risk:** Small but on the critical path to S-04; deliberately no calculator (PRD §Non-Goals).
-- **Status:** proposed
+- **Status:** ready
 
 ### S-03: Plan a 3-day grid
 
@@ -150,7 +149,7 @@ Foundations below assume these are present and do NOT re-scaffold them.
 - **Blockers:** —
 - **Unknowns:** —
 - **Risk:** Uses a minimal recipe picker over seed recipes so it doesn't wait on the full library (S-05); the plan shape must already allow later cross-day dishes (S-08) without rework.
-- **Status:** proposed
+- **Status:** ready
 
 ### S-04: Solve a day's macros for A and B
 
@@ -176,7 +175,7 @@ Foundations below assume these are present and do NOT re-scaffold them.
 - **Blockers:** —
 - **Unknowns:** —
 - **Risk:** Not on the path to the first solved day (S-03 uses a minimal picker), so it can run in a parallel agent session; it is where agent-imported recipes (S-12) become visible.
-- **Status:** proposed
+- **Status:** ready
 
 ### S-06: Rate and filter recipes
 
@@ -201,7 +200,7 @@ Foundations below assume these are present and do NOT re-scaffold them.
 - **Blockers:** —
 - **Unknowns:** —
 - **Risk:** Same write path the agent will use in S-12; doing it first for the person keeps the agent slice focused on the conversation.
-- **Status:** proposed
+- **Status:** ready
 
 ### S-08: One dish across several days
 
@@ -293,30 +292,30 @@ Foundations below assume these are present and do NOT re-scaffold them.
 
 ## Backlog Handoff
 
-| Roadmap ID | Change ID                     | Suggested issue title                                   | Ready for `/10x-plan` | Notes                                      |
-| ---------- | ----------------------------- | ------------------------------------------------------- | --------------------- | ------------------------------------------ |
-| F-01       | household-data-scope          | Household-scoped data access for all accounts           | yes                   | Run `/10x-plan household-data-scope`       |
-| F-02       | seed-products-and-recipes     | Seed product database and 5–10 test recipes             | no                    | Waits on F-01                              |
-| F-03       | deploy-and-install-skeleton   | Auto-deploy from main and make the app installable      | yes                   | Run `/10x-plan deploy-and-install-skeleton` |
-| S-01       | link-partner-household        | Invite partner and link accounts into one household     | no                    | Waits on F-01                              |
-| S-02       | set-daily-macro-targets       | Enter daily macro targets per person                    | no                    | Waits on F-01                              |
-| S-03       | plan-three-day-grid           | Build and save a 3-day meal plan for A/B                | no                    | Waits on F-01, F-02                        |
-| S-04       | solve-daily-macros            | Solve a day's macros and split quantities for A and B   | no                    | North star; waits on S-01, S-02, S-03      |
-| S-05       | browse-recipe-library         | Browse recipe cards and view recipe details             | no                    | Waits on F-02                              |
-| S-06       | rate-and-filter-recipes       | Rate, filter and sort recipes                           | no                    | Waits on S-05, S-01                        |
-| S-07       | add-missing-product           | Add a product with nutrition and store aisle            | no                    | Waits on F-02                              |
-| S-08       | shared-dish-across-days       | Cover meals on several days with one cooked dish        | no                    | Waits on S-04                              |
-| S-09       | shopping-list-from-plan       | Aisle-grouped shopping list with check-off              | no                    | Waits on S-03                              |
-| S-10       | cooking-session-schedule      | Arrange plan into evening/morning cooking sessions      | no                    | Waits on S-03                              |
-| S-11       | step-by-step-cook-mode        | Step-by-step cook mode with A/B portions                | no                    | Waits on S-10, S-04                        |
-| S-12       | agent-recipe-import           | Import recipes through the AI agent conversation        | no                    | Waits on S-05, F-03                        |
-| S-13       | agent-edits-recipes-and-plans | Let the AI agent edit recipes and build plans           | no                    | Waits on S-12, S-03                        |
-| S-14       | language-and-theme-switch     | PL/EN language switch and light/dark mode               | yes                   | Run `/10x-plan language-and-theme-switch`  |
+| Roadmap ID | Change ID                     | Suggested issue title                                 | Ready for `/10x-plan` | Notes                                                                                    |
+| ---------- | ----------------------------- | ----------------------------------------------------- | --------------------- | ---------------------------------------------------------------------------------------- |
+| F-01       | household-data-scope          | Household-scoped data access for all accounts         | done                  | Archived 2026-10-07                                                                      |
+| F-02       | seed-products-and-recipes     | Seed product database and 5–10 test recipes           | done                  | Archived 2026-10-07                                                                      |
+| F-03       | deploy-and-install-skeleton   | Auto-deploy from main and make the app installable    | yes                   | Run `/10x-plan deploy-and-install-skeleton`                                              |
+| S-01       | link-partner-household        | Invite partner and link accounts into one household   | done                  | Archived 2026-10-08 (old household preserved memberless, not merged or discarded) |
+| S-02       | set-daily-macro-targets       | Enter daily macro targets per person                  | yes                   | Run `/10x-plan set-daily-macro-targets`                                                  |
+| S-03       | plan-three-day-grid           | Build and save a 3-day meal plan for A/B              | yes                   | Run `/10x-plan plan-three-day-grid`                                                      |
+| S-04       | solve-daily-macros            | Solve a day's macros and split quantities for A and B | no                    | North star; waits on S-02, S-03                                                          |
+| S-05       | browse-recipe-library         | Browse recipe cards and view recipe details           | yes                   | Run `/10x-plan browse-recipe-library`                                                    |
+| S-06       | rate-and-filter-recipes       | Rate, filter and sort recipes                         | no                    | Waits on S-05                                                                            |
+| S-07       | add-missing-product           | Add a product with nutrition and store aisle          | yes                   | Run `/10x-plan add-missing-product`                                                      |
+| S-08       | shared-dish-across-days       | Cover meals on several days with one cooked dish      | no                    | Waits on S-04                                                                            |
+| S-09       | shopping-list-from-plan       | Aisle-grouped shopping list with check-off            | no                    | Waits on S-03                                                                            |
+| S-10       | cooking-session-schedule      | Arrange plan into evening/morning cooking sessions    | no                    | Waits on S-03                                                                            |
+| S-11       | step-by-step-cook-mode        | Step-by-step cook mode with A/B portions              | no                    | Waits on S-10, S-04                                                                      |
+| S-12       | agent-recipe-import           | Import recipes through the AI agent conversation      | no                    | Waits on S-05, F-03                                                                      |
+| S-13       | agent-edits-recipes-and-plans | Let the AI agent edit recipes and build plans         | no                    | Waits on S-12, S-03                                                                      |
+| S-14       | language-and-theme-switch     | PL/EN language switch and light/dark mode             | yes                   | Run `/10x-plan language-and-theme-switch`                                                |
 
 ## Open Roadmap Questions
 
 1. **If the 1-week budget runs short, which must-haves may slip past the first real cycle?** Candidates by distance from the Success Criteria: S-06 (rating/filters), S-13 (agent edits and plans), S-14 (language/theme). — Owner: user. Block: roadmap-wide (sequencing only; no slice is blocked).
-2. **Is the product database a shared repo-maintained seed, per-household data, or a seed plus household extensions?** — Owner: user. Block: F-02, S-07, S-12 (planning detail; not blocking).
+2. ~~**Is the product database a shared repo-maintained seed, per-household data, or a seed plus household extensions?**~~ — Resolved 2026-10-07 in F-02: per-household copies of a `private` template set (see `context/archive/2026-10-07-seed-products-and-recipes/plan.md`).
 
 (PRD `## Open Questions`: none open — all resolved on 2026-10-06.)
 
