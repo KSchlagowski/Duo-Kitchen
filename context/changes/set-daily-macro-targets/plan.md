@@ -510,7 +510,7 @@ The migration is additive, with no backfill. Existing accounts simply have no ro
 
 #### Automated
 
-- [x] 4.1 Prettier formatting holds: `npx prettier --check CLAUDE.md README.md`
+- [x] 4.1 Prettier formatting holds: `npx prettier --check CLAUDE.md README.md` — ec5ce1c
 
 #### Manual
 
