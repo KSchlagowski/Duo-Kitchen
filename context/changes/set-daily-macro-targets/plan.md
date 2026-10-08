@@ -496,13 +496,13 @@ The migration is additive, with no backfill. Existing accounts simply have no ro
 
 #### Automated
 
-- [x] 3.1 Smoke passes against the dev server: `npm run smoke`
-- [x] 3.2 Smoke passes against the production preview
-- [x] 3.3 Lint passes: `npm run lint`
+- [x] 3.1 Smoke passes against the dev server: `npm run smoke` — 0272d0e
+- [x] 3.2 Smoke passes against the production preview — 0272d0e
+- [x] 3.3 Lint passes: `npm run lint` — 0272d0e
 
 #### Manual
 
-- [x] 3.4 Empty-string smoke step proven non-vacuous
+- [x] 3.4 Empty-string smoke step proven non-vacuous — 0272d0e
 
 > Implementation note (3.4, performed by the agent, 2026-10-08): the API regex was loosened to `/^\d{0,4}$/` against the dev server. The smoke step "a blank fat field is rejected" then failed (`302 /targets?saved=1`), along with four downstream targets checks. The change was reverted with `git checkout`, and the smoke passed again against the production preview.
 
@@ -510,8 +510,10 @@ The migration is additive, with no backfill. Existing accounts simply have no ro
 
 #### Automated
 
-- [ ] 4.1 Prettier formatting holds: `npx prettier --check CLAUDE.md README.md`
+- [x] 4.1 Prettier formatting holds: `npx prettier --check CLAUDE.md README.md`
 
 #### Manual
 
 - [ ] 4.2 CLAUDE.md per-person convention is sufficient for S-06 on its own
+
+> Implementation note (Phase 4, 2026-10-08): 4.2 is a reader judgment, so it is left **pending** for a human. Phase 4 §3 (`change.md` → `planned`) had already happened at plan time; `/10x-implement` advances the status from there. Beyond the plan's wording, the CLAUDE.md bullet also says that the isolation catch-all does not check the owner predicate, so every per-person table needs its own strict `insufficient_privilege` insert probes (this is plan-review finding F1).

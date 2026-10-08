@@ -132,6 +132,7 @@ Users can then sign in immediately after sign-up without clicking a confirmation
 | `/auth/confirm-email` | Post-signup "check your inbox" page                                     |
 | `/join`               | Invite redemption — intentionally **unprotected** (see below)           |
 | `/dashboard`          | Example protected page (redirects to `/auth/signin` if unauthenticated) |
+| `/targets`            | Your own daily macro targets (editable) and your partner's (read-only)  |
 
 Route protection is handled in `src/middleware.ts`. Add paths to the `PROTECTED_ROUTES` array there to require authentication.
 
@@ -168,7 +169,10 @@ It needs the hosted Supabase project with email confirmation disabled. It drives
 sessions (one cookie jar each) so it can prove the S-01 flow end to end: the first account generates
 an invite code, the second opens the link while signed out, signs up, signs in (landing on `/join`
 rather than `/`, from the `dk_invite` cookie), redeems, and both dashboards then show the same
-household with `2 members` and the same library counts.
+household with `2 members` and the same library counts. Along the way it covers S-02: the first
+account saves its macro targets and has a blank field and a zero-calorie value rejected without
+changing them, the second saves its own targets **before** redeeming, and after the redemption each
+account's `/targets` page shows the other's values as the partner's.
 
 > **Note:** this script exists primarily to guard the development of the starter itself — it is a fast sanity check that dependency upgrades did not break the build, the Cloudflare adapter or the Supabase auth flow. It is **not** a substitute for a real test suite. Once you build your own product on top of this starter, add proper tests (unit, integration, end-to-end) suited to your application.
 
@@ -191,7 +195,7 @@ Delete the accounts first:
 delete from auth.users where email like 'smoke-%@example.com';
 ```
 
-That removes the accounts and their memberships but leaves the households orphaned. Then remove the memberless households, **sparing any that are still referenced as a redemption origin**:
+That removes the accounts and their memberships (and their `macro_targets` rows, which cascade from both the account and the membership) but leaves the households orphaned. Then remove the memberless households, **sparing any that are still referenced as a redemption origin**:
 
 ```sql
 delete from public.households h
