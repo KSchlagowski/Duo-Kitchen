@@ -413,11 +413,11 @@ The library becomes 1/34th of its current row count, and `select … using (true
 
 #### Automated
 
-- [x] 3.1 Prettier check passes on edited markdown
-- [x] 3.2 No stale `seed_household` / `private.seed_` / `KD006` references outside history and retirement notes
+- [x] 3.1 Prettier check passes on edited markdown — b060d38
+- [x] 3.2 No stale `seed_household` / `private.seed_` / `KD006` references outside history and retirement notes — b060d38
 
 #### Manual
 
-- [x] 3.3 CLAUDE.md library and households bullets read consistently with the isolation test
+- [x] 3.3 CLAUDE.md library and households bullets read consistently with the isolation test — b060d38
 
 > Implementation notes (Phase 3): `roadmap.md` already failed `prettier --check` at HEAD (misaligned table padding), so `prettier --write` reformatted its tables alongside the F-04 edits. The 3.2 `rg` returns, besides the migration's retirement notes and the `invites.ts` comment, two further hits that the plan's own contracts require and that are not stale: the CLAUDE.md Households bullet's "KD006 … retired" note, and the isolation test's "seed mechanism gone" assertion naming `private.seed_household(uuid)`. 3.3 was a read-through by the implementer (not a human): the Public library tables hard rule, the Households and Products-and-recipes bullets agree with the isolation test's classification catch-all, grants and SELECT-only assertions. README's memberless-household warning now names household data (plans, shopping lists) instead of products and recipes as what a careless cleanup would cascade away; the queries are unchanged.
