@@ -113,18 +113,30 @@ const selectClass =
         <p class="mb-4 rounded-lg border border-red-400/30 bg-red-500/10 p-3 text-sm text-red-200">{message}</p>
       ))}
 
+      {/* Switching dates is a GET: the save form's date is fixed to the grid it shows, so saving can
+          never copy this grid over another date's stored plan. */}
+      <form method="GET" action="/plan" class="mb-6 flex flex-wrap items-end gap-2">
+        <label class="flex flex-col gap-1 text-sm text-blue-100/80">
+          Plan starting
+          <input
+            type="date"
+            name="start"
+            required
+            value={startDate}
+            class="rounded-lg border border-white/20 bg-white/10 px-3 py-2 text-white focus:border-purple-300 focus:outline-none"
+          />
+        </label>
+        <button
+          type="submit"
+          class="rounded-lg border border-white/20 bg-white/10 px-4 py-2 text-sm transition-colors hover:bg-white/20"
+        >
+          Open
+        </button>
+      </form>
+
       {canEdit && recipes && (
         <form method="POST" action="/api/plan" class="flex flex-col gap-6">
-          <label class="flex max-w-xs flex-col gap-1 text-sm text-blue-100/80">
-            Start date
-            <input
-              type="date"
-              name="start_date"
-              required
-              value={startDate}
-              class="rounded-lg border border-white/20 bg-white/10 px-3 py-2 text-white focus:border-purple-300 focus:outline-none"
-            />
-          </label>
+          <input type="hidden" name="start_date" value={startDate} />
 
           <div class="grid gap-4 md:grid-cols-3">
             {PLAN_DAYS.map((day) => {
