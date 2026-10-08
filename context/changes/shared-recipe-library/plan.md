@@ -397,15 +397,15 @@ The library becomes 1/34th of its current row count, and `select … using (true
 
 #### Automated
 
-- [x] 2.1 Linting passes: `npm run lint`
-- [x] 2.2 Type/Astro check passes: `npx astro check`
-- [x] 2.3 Build passes: `npm run build`
-- [x] 2.4 Smoke test passes: `npm run smoke`
+- [x] 2.1 Linting passes: `npm run lint` — 1738e92
+- [x] 2.2 Type/Astro check passes: `npx astro check` — 1738e92
+- [x] 2.3 Build passes: `npm run build` — 1738e92
+- [x] 2.4 Smoke test passes: `npm run smoke` — 1738e92
 
 #### Manual
 
-- [x] 2.5 Two fresh accounts show the same library line before linking
-- [x] 2.6 After linking, both still show the same library line
+- [x] 2.5 Two fresh accounts show the same library line before linking — 1738e92
+- [x] 2.6 After linking, both still show the same library line — 1738e92
 
 > Implementation notes (Phase 2): smoke run against `npm run preview` (Cloudflare runtime, hosted Supabase), all 35 steps passed. 2.5/2.6 were verified over HTTP rather than in a browser: two fresh accounts per smoke run, the rendered dashboard HTML compared step by step (new step "B dashboard shows the same public library before linking", then both linked dashboards). A second, scratch-instrumented run printed the captured line: `Library: 8 recipes · 46 products`. No browser was opened, and the PostgREST PATCH from a browser console (Manual Testing Steps §3) was not performed — the isolation test's write-denial and grants blocks cover the same denial at the database.
 
@@ -413,9 +413,11 @@ The library becomes 1/34th of its current row count, and `select … using (true
 
 #### Automated
 
-- [ ] 3.1 Prettier check passes on edited markdown
-- [ ] 3.2 No stale `seed_household` / `private.seed_` / `KD006` references outside history and retirement notes
+- [x] 3.1 Prettier check passes on edited markdown
+- [x] 3.2 No stale `seed_household` / `private.seed_` / `KD006` references outside history and retirement notes
 
 #### Manual
 
-- [ ] 3.3 CLAUDE.md library and households bullets read consistently with the isolation test
+- [x] 3.3 CLAUDE.md library and households bullets read consistently with the isolation test
+
+> Implementation notes (Phase 3): `roadmap.md` already failed `prettier --check` at HEAD (misaligned table padding), so `prettier --write` reformatted its tables alongside the F-04 edits. The 3.2 `rg` returns, besides the migration's retirement notes and the `invites.ts` comment, two further hits that the plan's own contracts require and that are not stale: the CLAUDE.md Households bullet's "KD006 … retired" note, and the isolation test's "seed mechanism gone" assertion naming `private.seed_household(uuid)`. 3.3 was a read-through by the implementer (not a human): the Public library tables hard rule, the Households and Products-and-recipes bullets agree with the isolation test's classification catch-all, grants and SELECT-only assertions. README's memberless-household warning now names household data (plans, shopping lists) instead of products and recipes as what a careless cleanup would cascade away; the queries are unchanged.

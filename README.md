@@ -59,7 +59,7 @@ npm run dev
 - `npm run format` - Run Prettier
 - `npm run smoke` - Smoke test the auth flow against a running server (`BASE_URL`, defaults to `http://localhost:4321`)
 - `npm run test:rls` - Run the household isolation (RLS) test against the linked Supabase project (`supabase/tests/household_isolation.sql`); it runs in a rolled-back transaction, so it leaves no data behind
-- `npm run test:seed` - Run the seed integrity test against the linked Supabase project (`supabase/tests/seed_integrity.sql`): checks that the seeded products and recipes cover every solver rule and copy correctly into a household; also rolled back
+- `npm run test:seed` - Run the seed integrity test against the linked Supabase project (`supabase/tests/seed_integrity.sql`): checks that the seed rows of the shared recipe/product library cover every solver rule and are internally consistent; also rolled back
 
 ## Project Structure
 
@@ -169,7 +169,7 @@ It needs the hosted Supabase project with email confirmation disabled. It drives
 sessions (one cookie jar each) so it can prove the S-01 flow end to end: the first account generates
 an invite code, the second opens the link while signed out, signs up, signs in (landing on `/join`
 rather than `/`, from the `dk_invite` cookie), redeems, and both dashboards then show the same
-household with `2 members` and the same library counts. Along the way it covers S-02: the first
+household with `2 members` and the same library counts. Before linking, the second account's dashboard already shows the same library line as the first: the recipe and product library is one public library shared by every signed-in user (F-04), not a per-household copy. Along the way it covers S-02: the first
 account saves its macro targets and has a blank field and a zero-calorie value rejected without
 changing them, the second saves its own targets **before** redeeming, and after the redemption each
 account's `/targets` page shows the other's values as the partner's.
@@ -181,13 +181,13 @@ account's `/targets` page shows the other's values as the partner's.
 GitHub Actions runs two jobs on every push and PR to `main`:
 
 - **ci** — lint, `astro check` and build. Configure `SUPABASE_URL` and `SUPABASE_KEY` as repository secrets for the build step.
-- **smoke** — links the Supabase CLI to the hosted project, runs the household isolation test and the seed integrity test, builds, serves the production preview on the Cloudflare runtime and runs `npm run smoke` against it (including a check that the new account's dashboard shows the seeded recipe library, and that two accounts can be linked into one household). Requires the `SUPABASE_URL` and `SUPABASE_KEY` secrets plus `SUPABASE_ACCESS_TOKEN` (a Supabase personal access token) and `SUPABASE_PROJECT_REF`.
+- **smoke** — links the Supabase CLI to the hosted project, runs the household isolation test and the seed integrity test, builds, serves the production preview on the Cloudflare runtime and runs `npm run smoke` against it (including a check that the new account's dashboard shows the shared recipe library, that an unlinked second account sees the same library, and that two accounts can be linked into one household). Requires the `SUPABASE_URL` and `SUPABASE_KEY` secrets plus `SUPABASE_ACCESS_TOKEN` (a Supabase personal access token) and `SUPABASE_PROJECT_REF`.
 
 ### Cleaning up after smoke runs
 
-Each run signs up **two** accounts, `smoke-<timestamp>@example.com` and `smoke-b-<timestamp>@example.com`, and leaves **two** households behind: the shared one both accounts end up in, and the second account's pre-redemption household, which S-01 preserves memberless with its ~170 seeded rows intact. So each run adds roughly 340 rows, not 170.
+Each run signs up **two** accounts, `smoke-<timestamp>@example.com` and `smoke-b-<timestamp>@example.com`, and leaves **two** households behind: the shared one both accounts end up in, and the second account's pre-redemption household, which S-01 preserves memberless. Since F-04, households carry no library rows (recipes and products are one shared library), so a preserved pre-redemption household holds nothing but its history; the smoke run adds no library rows at all.
 
-> **⚠️ Do not use the obvious memberless-household cleanup query.** Since S-01, a memberless household is no longer necessarily garbage: `redeem_household_invite()` deliberately leaves the redeemer's old household intact so their pre-redemption data is never silently destroyed, and `household_invites.redeemed_from_household_id` is the only record of which household that was. A bare `delete … where not exists (… household_members …)` deletes exactly those preserved households, cascading away a real partner's products and recipes.
+> **⚠️ Do not use the obvious memberless-household cleanup query.** Since S-01, a memberless household is no longer necessarily garbage: `redeem_household_invite()` deliberately leaves the redeemer's old household intact so their pre-redemption data is never silently destroyed, and `household_invites.redeemed_from_household_id` is the only record of which household that was. A bare `delete … where not exists (… household_members …)` deletes exactly those preserved households, cascading away a real partner's pre-redemption household data (plans and shopping lists, once those slices land).
 
 Delete the accounts first:
 
