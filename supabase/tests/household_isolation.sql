@@ -127,6 +127,13 @@ begin
       '00000000-0000-4000-a000-00000000000a', now() + interval '7 days'),
     ('00000000-0000-4000-b000-00000000b006', b_household, 'b0b0b0b0b0b0b002',
       '00000000-0000-4000-a000-00000000000b', now() + interval '7 days');
+
+  -- Macro targets (S-02): one per-person row each. No id column, so these are keyed by user_id and
+  -- stay out of the id-indexed loops below.
+  insert into public.macro_targets (user_id, household_id, kcal, protein_g, fat_g, carbs_g)
+  values
+    ('00000000-0000-4000-a000-00000000000a', a_household, 2200, 160, 70, 230),
+    ('00000000-0000-4000-a000-00000000000b', b_household, 1800, 120, 60, 180);
 end;
 $$;
 
@@ -341,6 +348,68 @@ begin
 end;
 $$;
 
+-- As user A: macro targets (S-02) are per person. Reads are household-scoped; writes also require
+-- user_id = auth.uid(). The catch-all below checks the helper predicate but NOT the owner
+-- predicate, so the insert probes here must require exactly insufficient_privilege: with A's own
+-- household the owner predicate is the only thing that can raise it.
+do $$
+declare
+  a_household uuid := current_setting('rls_test.a_household')::uuid;
+  b_household uuid := current_setting('rls_test.b_household')::uuid;
+  n int;
+begin
+  select count(*) into n from public.macro_targets;
+  if n <> 1 then
+    raise exception 'targets: user A sees % macro_targets rows, expected exactly its own 1', n;
+  end if;
+
+  select count(*) into n from public.macro_targets where user_id = '00000000-0000-4000-a000-00000000000a';
+  if n <> 1 then
+    raise exception 'targets: user A cannot see its own macro_targets row';
+  end if;
+
+  select count(*) into n from public.macro_targets where user_id = '00000000-0000-4000-a000-00000000000b';
+  if n <> 0 then
+    raise exception 'targets: user A can see user B''s macro_targets row';
+  end if;
+
+  update public.macro_targets set kcal = 1 where user_id = '00000000-0000-4000-a000-00000000000b';
+  get diagnostics n = row_count;
+  if n <> 0 then
+    raise exception 'targets: user A updated % of user B''s macro_targets rows', n;
+  end if;
+
+  delete from public.macro_targets where user_id = '00000000-0000-4000-a000-00000000000b';
+  get diagnostics n = row_count;
+  if n <> 0 then
+    raise exception 'targets: user A deleted % of user B''s macro_targets rows', n;
+  end if;
+
+  -- No other handler on purpose: a unique_violation or foreign_key_violation here would mean the
+  -- owner predicate is gone and only fixture ordering stopped the write.
+  begin
+    insert into public.macro_targets (user_id, household_id, kcal, protein_g, fat_g, carbs_g)
+    values ('00000000-0000-4000-a000-00000000000b', a_household, 2000, 100, 50, 200);
+    raise exception 'targets: user A could insert a macro_targets row for user B in A''s household';
+  exception when insufficient_privilege then null;
+  end;
+
+  begin
+    insert into public.macro_targets (user_id, household_id, kcal, protein_g, fat_g, carbs_g)
+    values ('00000000-0000-4000-a000-00000000000b', b_household, 2000, 100, 50, 200);
+    raise exception 'targets: user A could insert a macro_targets row for user B in B''s household';
+  exception when insufficient_privilege then null;
+  end;
+
+  update public.macro_targets set kcal = 2100, updated_at = now()
+  where user_id = '00000000-0000-4000-a000-00000000000a';
+  get diagnostics n = row_count;
+  if n <> 1 then
+    raise exception 'targets: user A updated % own macro_targets rows, expected 1', n;
+  end if;
+end;
+$$;
+
 -- As user A: the seed templates and the seed function are unreachable.
 do $$
 declare
@@ -392,6 +461,16 @@ begin
   select count(*) into n from public.household_members where household_id = a_household;
   if n <> 0 then
     raise exception 'read: user B sees % membership rows of user A''s household', n;
+  end if;
+
+  select count(*) into n from public.macro_targets where user_id = '00000000-0000-4000-a000-00000000000b';
+  if n <> 1 then
+    raise exception 'targets: user B cannot see its own macro_targets row';
+  end if;
+
+  select count(*) into n from public.macro_targets where user_id <> '00000000-0000-4000-a000-00000000000b';
+  if n <> 0 then
+    raise exception 'targets: user B sees % macro_targets rows of other users', n;
   end if;
 end;
 $$;
@@ -462,7 +541,7 @@ declare
   n int;
 begin
   foreach t in array array['products', 'recipes', 'recipe_components', 'recipe_ingredients', 'recipe_steps',
-    'household_invites'] loop
+    'household_invites', 'macro_targets'] loop
     begin
       execute format('select count(*) from public.%I', t) into n;
       if n <> 0 then
@@ -611,6 +690,25 @@ begin
 end;
 $$;
 
+-- Macro targets (S-02), as postgres, BEFORE D redeems: D's row sits in D's own household, so the
+-- post-redemption block can prove it followed D. C deliberately has no row (the partner-insert
+-- probe below needs that). The composite FK rejects a row naming a household its user is not in.
+do $$
+declare
+  d_household uuid := current_setting('rls_test.d_household')::uuid;
+begin
+  insert into public.macro_targets (user_id, household_id, kcal, protein_g, fat_g, carbs_g)
+  values ('00000000-0000-4000-a000-00000000000d', d_household, 1800, 120, 60, 180);
+
+  begin
+    insert into public.macro_targets (user_id, household_id, kcal, protein_g, fat_g, carbs_g)
+    values ('00000000-0000-4000-a000-00000000000c', d_household, 2000, 100, 50, 200);
+    raise exception 'targets: a macro_targets row was accepted for user C in D''s household, which C is not a member of';
+  exception when foreign_key_violation then null;
+  end;
+end;
+$$;
+
 -- As user C: mint an invite for C's own household.
 set local role authenticated;
 select set_config(
@@ -672,6 +770,7 @@ declare
   c_household uuid := current_setting('rls_test.c_household')::uuid;
   d_household uuid := current_setting('rls_test.d_household')::uuid;
   inv public.household_invites;
+  hh uuid;
   n int;
   t text;
   copied int;
@@ -697,6 +796,20 @@ begin
   select count(*) into n from public.household_members where household_id = d_household;
   if n <> 0 then
     raise exception 'redeem: user D''s former household has % members, expected 0', n;
+  end if;
+
+  -- S-02: the composite (household_id, user_id) FK's `on update cascade` carried D's targets along
+  -- with the membership update. This is the only proof of that on the hosted project; if it fails,
+  -- do not add a move step to redeem_household_invite() -- revisit the design.
+  select household_id into hh from public.macro_targets where user_id = '00000000-0000-4000-a000-00000000000d';
+  if hh is distinct from c_household then
+    raise exception 'redeem: targets did not follow the redeemer: D''s row is in household %, expected %',
+      hh, c_household;
+  end if;
+
+  select count(*) into n from public.macro_targets where household_id = d_household;
+  if n <> 0 then
+    raise exception 'redeem: user D''s former household still holds % macro_targets rows, expected 0', n;
   end if;
 
   -- The origin-side delete: a code the redeemer minted before joining must not stay redeemable,
@@ -777,6 +890,30 @@ begin
 end;
 $$;
 
+-- As user C: the partner reads D's targets (they arrived with D) but cannot write them.
+do $$
+declare
+  n int;
+begin
+  select count(*) into n from public.macro_targets where user_id = '00000000-0000-4000-a000-00000000000d';
+  if n <> 1 then
+    raise exception 'targets: user C sees % of partner D''s macro_targets rows after the join, expected 1', n;
+  end if;
+
+  update public.macro_targets set kcal = 1 where user_id = '00000000-0000-4000-a000-00000000000d';
+  get diagnostics n = row_count;
+  if n <> 0 then
+    raise exception 'targets: user C updated % of partner D''s macro_targets rows', n;
+  end if;
+
+  delete from public.macro_targets where user_id = '00000000-0000-4000-a000-00000000000d';
+  get diagnostics n = row_count;
+  if n <> 0 then
+    raise exception 'targets: user C deleted % of partner D''s macro_targets rows', n;
+  end if;
+end;
+$$;
+
 reset role;
 set local role authenticated;
 select set_config(
@@ -804,6 +941,31 @@ begin
     raise exception 'redeem: user D sees % but user C sees % -- linked accounts must read identical rows',
       counts, current_setting('rls_test.c_counts');
   end if;
+end;
+$$;
+
+-- As user D: still owns (and can write) its targets in the shared household, and cannot create a
+-- row for partner C. C has no row, and (c_household, C) is a valid membership pair, so the
+-- composite FK allows it: the owner predicate is the only defence, and nothing but
+-- insufficient_privilege may stop this insert.
+do $$
+declare
+  c_household uuid := current_setting('rls_test.c_household')::uuid;
+  n int;
+begin
+  update public.macro_targets set kcal = 1900, updated_at = now()
+  where user_id = '00000000-0000-4000-a000-00000000000d';
+  get diagnostics n = row_count;
+  if n <> 1 then
+    raise exception 'targets: user D updated % own macro_targets rows after the join, expected 1', n;
+  end if;
+
+  begin
+    insert into public.macro_targets (user_id, household_id, kcal, protein_g, fat_g, carbs_g)
+    values ('00000000-0000-4000-a000-00000000000c', c_household, 2000, 100, 50, 200);
+    raise exception 'targets: partner could insert targets for the other member';
+  exception when insufficient_privilege then null;
+  end;
 end;
 $$;
 
@@ -1031,10 +1193,10 @@ reset role;
 -- ---------------------------------------------------------------------------
 do $$
 begin
-  raise notice 'household_isolation: all assertions passed (trigger, seed copy, read isolation, write denial, products/recipes isolation and cross-household FKs, template/seed-function denial, anon denial, helper grants, household_id catch-all, invite read isolation, invite write denial, RPC grants, redemption with provenance and unchanged seed counts, eight rejection SQLSTATEs)';
+  raise notice 'household_isolation: all assertions passed (trigger, seed copy, read isolation, write denial, products/recipes isolation and cross-household FKs, template/seed-function denial, anon denial, helper grants, household_id catch-all, invite read isolation, invite write denial, RPC grants, redemption with provenance and unchanged seed counts, macro targets isolation with owner-only writes and the redemption cascade, eight rejection SQLSTATEs)';
 end;
 $$;
 
-select 'household_isolation: all assertions passed (incl. invite isolation, RPC grants, redemption and eight rejection SQLSTATEs)' as result;
+select 'household_isolation: all assertions passed (incl. invite isolation, RPC grants, redemption, macro targets and eight rejection SQLSTATEs)' as result;
 
 rollback;
