@@ -1,0 +1,127 @@
+---
+import Layout from "@/layouts/Layout.astro";
+import { createClient } from "@/lib/supabase";
+import { getCurrentHousehold } from "@/lib/services/household";
+import { formatMacroTargets, getHouseholdMacroTargets, macroKcalMismatch } from "@/lib/services/macro-targets";
+import { cn } from "@/lib/utils";
+import type { Household, MacroTargets } from "@/types";
+
+const { user } = Astro.locals;
+
+// Two independent reads. Each failure leaves its own value null, and the labels below never let a
+// failed household read pass for "Not linked yet" (no defaulting the member count to 0).
+let targets: MacroTargets[] | null = null;
+let household: Household | null = null;
+const supabase = createClient(Astro.request.headers, Astro.cookies);
+if (supabase) {
+  try {
+    targets = await getHouseholdMacroTargets(supabase);
+  } catch (error) {
+    // eslint-disable-next-line no-console -- surfaced in Cloudflare Workers observability logs
+    console.error("getHouseholdMacroTargets failed", error);
+  }
+  try {
+    household = await getCurrentHousehold(supabase);
+  } catch (error) {
+    // eslint-disable-next-line no-console -- surfaced in Cloudflare Workers observability logs
+    console.error("getCurrentHousehold failed on /targets", error);
+  }
+}
+
+const TARGETS_UNAVAILABLE = "Targets are unavailable right now.";
+const mine = targets?.find((t) => t.userId === user?.id) ?? null;
+const partner = targets?.find((t) => t.userId !== user?.id) ?? null;
+
+const mineLabel = targets === null ? TARGETS_UNAVAILABLE : mine ? formatMacroTargets(mine) : "Not set yet";
+const partnerLabel =
+  targets === null
+    ? TARGETS_UNAVAILABLE
+    : partner
+      ? formatMacroTargets(partner)
+      : household === null
+        ? "Partner information is unavailable right now."
+        : household.members.length >= 2
+          ? "Not set yet"
+          : "Not linked yet";
+
+const mismatch = mine ? macroKcalMismatch(mine) : null;
+
+const saved = Astro.url.searchParams.get("saved") === "1";
+const notice = Astro.url.searchParams.get("error");
+
+const fields = [
+  { name: "kcal", label: "Calories (kcal)", min: 1, max: 9999, value: mine?.kcal },
+  { name: "protein_g", label: "Protein (g)", min: 0, max: 999, value: mine?.proteinG },
+  { name: "fat_g", label: "Fat (g)", min: 0, max: 999, value: mine?.fatG },
+  { name: "carbs_g", label: "Carbs (g)", min: 0, max: 999, value: mine?.carbsG },
+];
+---
+
+<Layout title="Daily targets">
+  <div class="bg-cosmic flex min-h-screen items-center justify-center p-4">
+    <div class="w-full max-w-md rounded-2xl border border-white/10 bg-white/10 p-8 text-white backdrop-blur-xl">
+      <h1 class="mb-6 bg-gradient-to-r from-blue-200 to-purple-200 bg-clip-text text-center text-3xl font-bold text-transparent">
+        Daily targets
+      </h1>
+
+      {saved && (
+        <p class="mb-4 rounded-lg border border-emerald-400/30 bg-emerald-500/10 p-3 text-sm text-emerald-200">
+          Your targets were saved.
+        </p>
+      )}
+      {notice && (
+        <p class="mb-4 rounded-lg border border-red-400/30 bg-red-500/10 p-3 text-sm text-red-200">{notice}</p>
+      )}
+
+      <h2 class="text-lg font-semibold">Your targets</h2>
+      <p class:list={cn("mt-1 text-sm", mine ? "text-white" : "text-blue-100/60")} data-testid="targets-mine">
+        {mineLabel}
+      </p>
+
+      <form method="POST" action="/api/targets" class="mt-4 grid grid-cols-2 gap-3">
+        {fields.map((field) => (
+          <label class="flex flex-col gap-1 text-sm text-blue-100/80">
+            {field.label}
+            <input
+              type="number"
+              name={field.name}
+              required
+              min={field.min}
+              max={field.max}
+              step="1"
+              value={field.value}
+              class="rounded-lg border border-white/20 bg-white/10 px-3 py-2 text-white focus:border-purple-300 focus:outline-none"
+            />
+          </label>
+        ))}
+        <button
+          type="submit"
+          class="col-span-2 mt-2 rounded-lg border border-white/20 bg-white/10 px-4 py-2 text-sm transition-colors hover:bg-white/20"
+        >
+          Save targets
+        </button>
+      </form>
+
+      {mismatch !== null && (
+        <p
+          class="mt-4 rounded-lg border border-amber-400/30 bg-amber-500/10 p-3 text-sm text-amber-200"
+          data-testid="targets-hint"
+        >
+          Your macros add up to {mismatch} kcal, which differs from your calorie target by more than 10%. The solver may
+          not be able to hit all four.
+        </p>
+      )}
+
+      <h2 class="mt-8 text-lg font-semibold">Your partner</h2>
+      <p class:list={cn("mt-1 text-sm", partner ? "text-white" : "text-blue-100/60")} data-testid="targets-partner">
+        {partnerLabel}
+      </p>
+
+      <p class="mt-8 text-center text-sm">
+        <a href="/dashboard" class="text-purple-300 hover:underline">
+          Back to dashboard
+        </a>
+      </p>
+    </div>
+  </div>
+</Layout>

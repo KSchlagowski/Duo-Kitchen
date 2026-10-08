@@ -28,3 +28,16 @@ export interface RecipeLibrarySummary {
   recipeCount: number;
   productCount: number;
 }
+
+// One person's daily targets (S-02). Keyed on the person, not the household: the row follows its
+// owner through a redemption and stays readable by the partner.
+export interface MacroTargets {
+  userId: string;
+  kcal: number;
+  proteinG: number;
+  fatG: number;
+  carbsG: number;
+  updatedAt: string;
+}
+
+export type MacroTargetsInput = Omit<MacroTargets, "userId" | "updatedAt">;

@@ -452,13 +452,13 @@ The migration is additive, with no backfill. Existing accounts simply have no ro
 
 #### Automated
 
-- [x] 1.1 Migration applies to the hosted project: `npx supabase db push`
-- [x] 1.2 Isolation test passes against the pushed schema, including the catch-all and the redemption-cascade block: `npm run test:rls`
-- [x] 1.3 Seed integrity is unaffected: `npm run test:seed`
+- [x] 1.1 Migration applies to the hosted project: `npx supabase db push` — ab569b6
+- [x] 1.2 Isolation test passes against the pushed schema, including the catch-all and the redemption-cascade block: `npm run test:rls` — ab569b6
+- [x] 1.3 Seed integrity is unaffected: `npm run test:seed` — ab569b6
 
 #### Manual
 
-- [x] 1.4 Cascade assertion proven non-vacuous (fails when `macro_targets_membership_fkey` is dropped in-transaction, passes after revert)
+- [x] 1.4 Cascade assertion proven non-vacuous (fails when `macro_targets_membership_fkey` is dropped in-transaction, passes after revert) — ab569b6
 
 > Implementation note (1.4, performed by the agent, 2026-10-08): run on a scratch copy of `household_isolation.sql` rather than editing the tracked file, with the `drop constraint` line inserted after `begin;`. The first failure was the extra composite-FK probe added in the S-01 setup block (C's row in D's household, `foreign_key_violation` expected), so that probe is non-vacuous too. With that probe neutralised in the scratch copy, the run failed with `redeem: targets did not follow the redeemer: D's row is in household …, expected …`. The tracked file passes unchanged, and `macro_targets_membership_fkey` is still present on the hosted project (the transaction rolled back).
 >
@@ -468,10 +468,10 @@ The migration is additive, with no backfill. Existing accounts simply have no ro
 
 #### Automated
 
-- [ ] 2.1 Lint passes: `npm run lint`
-- [ ] 2.2 Type check passes: `npx astro check`
-- [ ] 2.3 Build succeeds: `npm run build`
-- [ ] 2.4 Existing smoke still passes against the dev server: `npm run smoke`
+- [x] 2.1 Lint passes: `npm run lint`
+- [x] 2.2 Type check passes: `npx astro check`
+- [x] 2.3 Build succeeds: `npm run build`
+- [x] 2.4 Existing smoke still passes against the dev server: `npm run smoke`
 
 #### Manual
 
@@ -480,6 +480,17 @@ The migration is additive, with no backfill. Existing accounts simply have no ro
 - [ ] 2.7 Blank field with browser validation bypassed shows the error and keeps saved values
 - [ ] 2.8 Linked partners see each other's values read-only
 - [ ] 2.9 `/targets` signed out redirects to `/auth/signin`
+
+> Implementation note (Phase 2, 2026-10-08): 2.5–2.9 are left **pending** for a human browser pass. The agent checked them over HTTP only, against the dev server, with a throwaway account:
+>
+> - 2.6: saving 2000/50/10/50 redirects to `?saved=1` and renders the hint "Your macros add up to 490 kcal …".
+> - 2.7: a blank `fat_g` redirects to `?error=Enter whole numbers …`, and the stored values are unchanged.
+> - 2.5: the partner line reads "Not linked yet".
+> - 2.9: signed-out `/targets` returns 302.
+>
+> Phase 3's smoke covers 2.5, 2.7, 2.8 and 2.9 in CI. What still needs a person is the visual layout and the browser-validation bypass done through devtools.
+>
+> Assumption (Phase 2): the conditional classes on `targets-mine` and `targets-partner` use `class:list={cn(…)}` rather than `class={cn(…)}`. This satisfies both the CLAUDE.md `cn()` rule and the `astro/prefer-class-list-directive` lint rule. The hint `<p>` also carries `data-testid="targets-hint"`, which the plan did not ask for, so tests can target it.
 
 ### Phase 3: Smoke test — targets end to end, across a redemption
 
