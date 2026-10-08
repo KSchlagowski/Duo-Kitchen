@@ -398,15 +398,17 @@ The migration is additive (new tables, a new function) and needs no backfill. Ro
 
 #### Automated
 
-- [ ] 1.1 Migration timestamp is later than every cloud-applied migration
-- [ ] 1.2 Migration applies to the hosted project
-- [ ] 1.3 Household isolation test passes, including all new S-03 blocks
-- [ ] 1.4 Seed integrity test still passes unchanged
+- [x] 1.1 Migration timestamp is later than every cloud-applied migration
+- [x] 1.2 Migration applies to the hosted project
+- [x] 1.3 Household isolation test passes, including all new S-03 blocks
+- [x] 1.4 Seed integrity test still passes unchanged
 
 #### Manual
 
-- [ ] 1.5 Deliberate-break check: an added grant makes the rolled-back isolation test fail descriptively
-- [ ] 1.6 Migration header states the no-membership-FK warning and the S-08 hand-off
+- [x] 1.5 Deliberate-break check: an added grant makes the rolled-back isolation test fail descriptively
+- [x] 1.6 Migration header states the no-membership-FK warning and the S-08 hand-off
+
+> Phase 1 notes (non-interactive run): 1.5 was run by the implementer. The `grant maintain` copy failed with "grants: authenticated holds MAINTAIN on public.plan_meals…" and the anon `grant execute` copy failed with "anon: public.save_meal_plan() is executable by anon (reached the body and raised KD007)…". 1.6 was checked by the implementer, so a human reviewer should still read the migration header. Before pushing, the migration and the test were dry-run together in one rolled-back transaction. Choices made: (a) every constraint is named explicitly (`meal_plans_household_start_key`, `plan_dishes_plan_fkey`, `plan_meals_plan_fkey`, `plan_meals_dish_fkey`, `plan_meals_slot_key`, `plan_meals_dish_id_key`); (b) no separate `plan_meals (plan_id, household_id)` index, because the leading `plan_id` of `plan_meals_slot_key` covers it; (c) the header tells S-08 to add a `plan_meals (dish_id, plan_id)` index when it drops `plan_meals_dish_id_key`, which covers that FK today; (d) the account-deletion check deletes user D at the very end of the test, because C's KD005/KD008 probes need D as a member.
 
 ### Phase 2: App layer — types, services, `/plan` page, API, middleware, dashboard
 

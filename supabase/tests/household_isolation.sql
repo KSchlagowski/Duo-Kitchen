@@ -147,6 +147,72 @@ begin
   values
     ('00000000-0000-4000-a000-00000000000a', a_household, 2200, 160, 70, 230),
     ('00000000-0000-4000-a000-00000000000b', b_household, 1800, 120, 60, 180);
+
+  -- Meal plans (S-03), fixture ids …a007 (plan) / …a017, …a027 (dishes) / …a037, …a047 (meals) for
+  -- A, and …b007 / …b017 / …b037 for B. plan_meals_dish_id_key allows one meal per dish, so A's two
+  -- meals need two dishes. Inserted as postgres: authenticated has no write grant on these tables.
+  insert into public.meal_plans (id, household_id, start_date)
+  values
+    ('00000000-0000-4000-b000-00000000a007', a_household, '2030-01-01'),
+    ('00000000-0000-4000-b000-00000000b007', b_household, '2030-01-01');
+
+  insert into public.plan_dishes (id, household_id, plan_id, recipe_id)
+  values
+    ('00000000-0000-4000-b000-00000000a017', a_household, '00000000-0000-4000-b000-00000000a007',
+      '5eed0002-0000-4000-8000-000000000001'),
+    ('00000000-0000-4000-b000-00000000a027', a_household, '00000000-0000-4000-b000-00000000a007',
+      '00000000-0000-4000-b000-00000000c002'),
+    ('00000000-0000-4000-b000-00000000b017', b_household, '00000000-0000-4000-b000-00000000b007',
+      '5eed0002-0000-4000-8000-000000000001');
+
+  insert into public.plan_meals (id, household_id, plan_id, day_index, meal_type, dish_id, eater_user_id)
+  values
+    ('00000000-0000-4000-b000-00000000a037', a_household, '00000000-0000-4000-b000-00000000a007',
+      0, 'breakfast', '00000000-0000-4000-b000-00000000a017', null),
+    ('00000000-0000-4000-b000-00000000a047', a_household, '00000000-0000-4000-b000-00000000a007',
+      1, 'dinner', '00000000-0000-4000-b000-00000000a027', '00000000-0000-4000-a000-00000000000a'),
+    ('00000000-0000-4000-b000-00000000b037', b_household, '00000000-0000-4000-b000-00000000b007',
+      0, 'lunch', '00000000-0000-4000-b000-00000000b017', null);
+end;
+$$;
+
+-- Meal plans (S-03), as postgres: the composite FKs keep every child row inside its plan's
+-- household and a meal inside its dish's plan. Each probe uses a free slot and an unused dish, so
+-- the only thing that can stop it is the FK under test.
+do $$
+declare
+  a_household uuid := current_setting('rls_test.a_household')::uuid;
+  b_household uuid := current_setting('rls_test.b_household')::uuid;
+begin
+  begin
+    insert into public.plan_dishes (household_id, plan_id, recipe_id)
+    values (a_household, '00000000-0000-4000-b000-00000000b007', '5eed0002-0000-4000-8000-000000000001');
+    raise exception 'plans: a plan_dishes row with A''s household_id could name B''s plan';
+  exception when foreign_key_violation then null;
+  end;
+
+  -- An unused dish in B's plan, for the two meal probes below.
+  insert into public.plan_dishes (id, household_id, plan_id, recipe_id)
+  values ('00000000-0000-4000-b000-00000000b027', b_household, '00000000-0000-4000-b000-00000000b007',
+    '5eed0002-0000-4000-8000-000000000001');
+
+  begin
+    insert into public.plan_meals (household_id, plan_id, day_index, meal_type, dish_id)
+    values (a_household, '00000000-0000-4000-b000-00000000b007', 2, 'dinner',
+      '00000000-0000-4000-b000-00000000b027');
+    raise exception 'plans: a plan_meals row with A''s household_id could name B''s plan';
+  exception when foreign_key_violation then null;
+  end;
+
+  begin
+    insert into public.plan_meals (household_id, plan_id, day_index, meal_type, dish_id)
+    values (a_household, '00000000-0000-4000-b000-00000000a007', 2, 'dinner',
+      '00000000-0000-4000-b000-00000000b027');
+    raise exception 'plans: a plan_meals row could eat from a dish of another plan';
+  exception when foreign_key_violation then null;
+  end;
+
+  delete from public.plan_dishes where id = '00000000-0000-4000-b000-00000000b027';
 end;
 $$;
 
@@ -467,6 +533,258 @@ begin
 end;
 $$;
 
+-- As user A: meal plans (S-03) are household-scoped -- exactly A's fixture rows, none of B's.
+do $$
+declare
+  a_household uuid := current_setting('rls_test.a_household')::uuid;
+  n int;
+begin
+  select count(*) into n from public.meal_plans;
+  if n <> 1 then
+    raise exception 'plans: user A sees % meal_plans rows, expected exactly its own 1', n;
+  end if;
+  select count(*) into n from public.meal_plans where id = '00000000-0000-4000-b000-00000000a007';
+  if n <> 1 then
+    raise exception 'plans: user A cannot see its own fixture plan';
+  end if;
+
+  select count(*) into n from public.plan_dishes;
+  if n <> 2 then
+    raise exception 'plans: user A sees % plan_dishes rows, expected exactly its own 2', n;
+  end if;
+  select count(*) into n from public.plan_dishes where household_id <> a_household;
+  if n <> 0 then
+    raise exception 'plans: user A sees % plan_dishes rows of other households', n;
+  end if;
+
+  select count(*) into n from public.plan_meals;
+  if n <> 2 then
+    raise exception 'plans: user A sees % plan_meals rows, expected exactly its own 2', n;
+  end if;
+  select count(*) into n from public.plan_meals
+  where id in ('00000000-0000-4000-b000-00000000b037')
+     or plan_id = '00000000-0000-4000-b000-00000000b007';
+  if n <> 0 then
+    raise exception 'plans: user A can see B''s fixture meal';
+  end if;
+end;
+$$;
+
+-- As user A: meal plans are write-revoked (writes only via public.save_meal_plan). The insert probes
+-- use valid values in A's own household, so the policies alone would ALLOW them: only the revoke can
+-- raise insufficient_privilege, and no other handler is accepted on purpose. update/delete may raise
+-- or affect 0 rows; truncate must raise.
+do $$
+declare
+  a_household uuid := current_setting('rls_test.a_household')::uuid;
+  t text;
+  n int;
+begin
+  begin
+    insert into public.meal_plans (household_id, start_date) values (a_household, '2030-03-01');
+    raise exception 'plans: user A could insert into public.meal_plans directly';
+  exception when insufficient_privilege then null;
+  end;
+
+  begin
+    insert into public.plan_dishes (household_id, plan_id, recipe_id)
+    values (a_household, '00000000-0000-4000-b000-00000000a007', '5eed0002-0000-4000-8000-000000000002');
+    raise exception 'plans: user A could insert into public.plan_dishes directly';
+  exception when insufficient_privilege then null;
+  end;
+
+  begin
+    -- Privileges are checked before constraints, so the dish (already eaten from by …a037) cannot
+    -- mask the revoke: if the revoke is gone this fails on plan_meals_dish_id_key, unhandled.
+    insert into public.plan_meals (household_id, plan_id, day_index, meal_type, dish_id)
+    values (a_household, '00000000-0000-4000-b000-00000000a007', 2, 'dinner',
+      '00000000-0000-4000-b000-00000000a017');
+    raise exception 'plans: user A could insert into public.plan_meals directly';
+  exception when insufficient_privilege then null;
+  end;
+
+  foreach t in array array['meal_plans', 'plan_dishes', 'plan_meals'] loop
+    begin
+      execute format('update public.%I set created_at = now() where household_id = %L', t, a_household);
+      get diagnostics n = row_count;
+      if n <> 0 then
+        raise exception 'plans: user A updated % own public.% rows directly', n, t;
+      end if;
+    exception when insufficient_privilege then null;
+    end;
+
+    begin
+      execute format('delete from public.%I where household_id = %L', t, a_household);
+      get diagnostics n = row_count;
+      if n <> 0 then
+        raise exception 'plans: user A deleted % own public.% rows directly', n, t;
+      end if;
+    exception when insufficient_privilege then null;
+    end;
+
+    begin
+      execute format('truncate public.%I cascade', t);
+      raise exception 'plans: user A could truncate public.%', t;
+    exception when insufficient_privilege then null;
+    end;
+  end loop;
+end;
+$$;
+
+-- As user A: save_meal_plan behaviour. Every save uses a start_date distinct from the 2030-01-01
+-- fixtures, so the exact-count read assertions above do not depend on block order.
+do $$
+declare
+  a_household uuid := current_setting('rls_test.a_household')::uuid;
+  plan uuid;
+  plan2 uuid;
+  keep_meal uuid;
+  lunch_meal uuid;
+  old_dish uuid;
+  n int;
+  eater uuid;
+begin
+  plan := public.save_meal_plan('2030-02-01', jsonb_build_array(
+    jsonb_build_object('day_index', 0, 'meal_type', 'breakfast',
+      'recipe_id', '5eed0002-0000-4000-8000-000000000001', 'eater_user_id', null),
+    jsonb_build_object('day_index', 1, 'meal_type', 'lunch',
+      'recipe_id', '5eed0002-0000-4000-8000-000000000002', 'eater_user_id', '00000000-0000-4000-a000-00000000000a')));
+
+  select count(*) into n from public.meal_plans
+  where id = plan and household_id = a_household and start_date = '2030-02-01';
+  if n <> 1 then
+    raise exception 'plans[rpc]: save_meal_plan returned %, which is not A''s 2030-02-01 plan', plan;
+  end if;
+  select count(*) into n from public.plan_meals where plan_id = plan and household_id = a_household;
+  if n <> 2 then
+    raise exception 'plans[rpc]: first save wrote % meals, expected 2', n;
+  end if;
+  select count(*) into n from public.plan_dishes where plan_id = plan and household_id = a_household;
+  if n <> 2 then
+    raise exception 'plans[rpc]: first save wrote % dishes, expected 2', n;
+  end if;
+
+  select id into keep_meal from public.plan_meals where plan_id = plan and day_index = 0 and meal_type = 'breakfast';
+  select m.id, m.dish_id into lunch_meal, old_dish from public.plan_meals m
+  where m.plan_id = plan and m.day_index = 1 and m.meal_type = 'lunch';
+
+  -- Re-save changing only the lunch recipe: breakfast keeps its id, lunch gets a new meal and dish,
+  -- and the orphaned dish is gone.
+  plan2 := public.save_meal_plan('2030-02-01', jsonb_build_array(
+    jsonb_build_object('day_index', 0, 'meal_type', 'breakfast',
+      'recipe_id', '5eed0002-0000-4000-8000-000000000001', 'eater_user_id', null),
+    jsonb_build_object('day_index', 1, 'meal_type', 'lunch',
+      'recipe_id', '5eed0002-0000-4000-8000-000000000003', 'eater_user_id', '00000000-0000-4000-a000-00000000000a')));
+  if plan2 <> plan then
+    raise exception 'plans[rpc]: re-saving the same start date returned plan %, expected %', plan2, plan;
+  end if;
+  select count(*) into n from public.plan_meals where id = keep_meal;
+  if n <> 1 then
+    raise exception 'plans[rpc]: an unchanged slot lost its plan_meals id on re-save';
+  end if;
+  select count(*) into n from public.plan_meals where id = lunch_meal;
+  if n <> 0 then
+    raise exception 'plans[rpc]: a slot whose recipe changed kept its old meal row';
+  end if;
+  select count(*) into n from public.plan_dishes where id = old_dish;
+  if n <> 0 then
+    raise exception 'plans[rpc]: the dish of a replaced recipe was left behind with no meal';
+  end if;
+  select count(*) into n from public.plan_dishes where plan_id = plan;
+  if n <> 2 then
+    raise exception 'plans[rpc]: after the recipe change the plan has % dishes, expected 2', n;
+  end if;
+  select count(*) into n from public.plan_meals m join public.plan_dishes d on d.id = m.dish_id
+  where m.plan_id = plan and m.day_index = 1 and m.meal_type = 'lunch'
+    and d.recipe_id = '5eed0002-0000-4000-8000-000000000003';
+  if n <> 1 then
+    raise exception 'plans[rpc]: the changed lunch slot does not eat from the new recipe';
+  end if;
+
+  -- Eater-only change: the meal keeps its id.
+  perform public.save_meal_plan('2030-02-01', jsonb_build_array(
+    jsonb_build_object('day_index', 0, 'meal_type', 'breakfast',
+      'recipe_id', '5eed0002-0000-4000-8000-000000000001', 'eater_user_id', '00000000-0000-4000-a000-00000000000a'),
+    jsonb_build_object('day_index', 1, 'meal_type', 'lunch',
+      'recipe_id', '5eed0002-0000-4000-8000-000000000003', 'eater_user_id', '00000000-0000-4000-a000-00000000000a')));
+  select eater_user_id into eater from public.plan_meals where id = keep_meal;
+  if not found then
+    raise exception 'plans[rpc]: an eater-only change replaced the meal row instead of updating it';
+  end if;
+  if eater is distinct from '00000000-0000-4000-a000-00000000000a' then
+    raise exception 'plans[rpc]: eater-only change left eater_user_id = %, expected user A', eater;
+  end if;
+
+  -- Empty save: the plan stays, with no meals and no dishes.
+  perform public.save_meal_plan('2030-02-01', '[]'::jsonb);
+  select count(*) into n from public.meal_plans where id = plan;
+  if n <> 1 then
+    raise exception 'plans[rpc]: an empty save removed the plan row';
+  end if;
+  select count(*) into n from public.plan_meals where plan_id = plan;
+  if n <> 0 then
+    raise exception 'plans[rpc]: an empty save left % meals', n;
+  end if;
+  select count(*) into n from public.plan_dishes where plan_id = plan;
+  if n <> 0 then
+    raise exception 'plans[rpc]: an empty save left % dishes', n;
+  end if;
+end;
+$$;
+
+-- As user A: save_meal_plan rejections, one SQLSTATE each (when others + P0001 re-raise idiom, see
+-- the redemption rejections below). B is not in A's household, so it is the KD012 probe.
+do $$
+declare
+  ok constant text := '{"day_index":0,"meal_type":"lunch","recipe_id":"5eed0002-0000-4000-8000-000000000001","eater_user_id":null}';
+  cases text[][] := array[
+    -- start date, payload, expected SQLSTATE, what the case proves
+    array['2030-02-02', '[{"day_index":3,"meal_type":"lunch","recipe_id":"5eed0002-0000-4000-8000-000000000001","eater_user_id":null}]',
+      'KD010', 'day_index 3 was accepted'],
+    array['2030-02-02', '[' || ok || ',' || ok || ']', 'KD010', 'a duplicate slot was accepted'],
+    array['2030-02-02', '[{"day_index":0,"meal_type":"brunch","recipe_id":"5eed0002-0000-4000-8000-000000000001","eater_user_id":null}]',
+      'KD010', 'an unknown meal_type was accepted'],
+    array['2030-02-02', '[{"day_index":0,"meal_type":"lunch","recipe_id":"not-a-uuid","eater_user_id":null}]',
+      'KD010', 'a non-uuid recipe_id was accepted'],
+    array['2030-02-02', '[{"day_index":0,"meal_type":"lunch","recipe_id":"5eed0002-0000-4000-8000-000000000001"}]',
+      'KD010', 'an entry without eater_user_id was accepted'],
+    array['2030-02-02', '{"day_index":0}', 'KD010', 'a non-array payload was accepted'],
+    array['2030-02-02', null, 'KD010', 'a null payload was accepted'],
+    array[null, '[]', 'KD010', 'a null start date was accepted'],
+    array['2030-02-02', (select jsonb_agg(jsonb_build_object('day_index', g % 3, 'meal_type', 'lunch',
+        'recipe_id', '5eed0002-0000-4000-8000-000000000001', 'eater_user_id', null))::text
+      from generate_series(1, 16) g), 'KD010', 'more than 15 entries were accepted'],
+    array['2030-02-02', '[{"day_index":0,"meal_type":"lunch","recipe_id":"00000000-0000-4000-8000-0000000000ff","eater_user_id":null}]',
+      'KD011', 'an unknown recipe was accepted'],
+    array['2030-02-02', '[{"day_index":0,"meal_type":"lunch","recipe_id":"5eed0002-0000-4000-8000-000000000001","eater_user_id":"00000000-0000-4000-a000-00000000000b"}]',
+      'KD012', 'a meal for a user outside the household was accepted']
+  ];
+  i int;
+  n int;
+  v_state text;
+  v_msg text;
+begin
+  for i in 1 .. array_length(cases, 1) loop
+    begin
+      perform public.save_meal_plan(cases[i][1]::date, cases[i][2]::jsonb);
+      raise exception 'plans[%]: %', cases[i][3], cases[i][4];
+    exception
+      when others then
+        get stacked diagnostics v_state = returned_sqlstate, v_msg = message_text;
+        if v_state = 'P0001' then raise; end if;
+        if v_state <> cases[i][3] then
+          raise exception 'plans[%]: % -- rejected with % ("%") instead', cases[i][3], cases[i][4], v_state, v_msg;
+        end if;
+    end;
+  end loop;
+
+  select count(*) into n from public.meal_plans where start_date = '2030-02-02';
+  if n <> 0 then
+    raise exception 'plans: a rejected save left a 2030-02-02 plan behind';
+  end if;
+end;
+$$;
+
 -- ---------------------------------------------------------------------------
 -- As user B: symmetric read check.
 -- ---------------------------------------------------------------------------
@@ -507,6 +825,31 @@ begin
   select count(*) into n from public.macro_targets where user_id <> '00000000-0000-4000-a000-00000000000b';
   if n <> 0 then
     raise exception 'targets: user B sees % macro_targets rows of other users', n;
+  end if;
+end;
+$$;
+
+-- As user B: meal plans (S-03) -- only B's own fixture plan, none of A's (incl. A's RPC-saved plan).
+do $$
+declare
+  b_household uuid := current_setting('rls_test.b_household')::uuid;
+  n int;
+begin
+  select count(*) into n from public.meal_plans where household_id <> b_household;
+  if n <> 0 then
+    raise exception 'plans: user B sees % meal_plans rows of other households', n;
+  end if;
+  select count(*) into n from public.meal_plans where id = '00000000-0000-4000-b000-00000000b007';
+  if n <> 1 then
+    raise exception 'plans: user B cannot see its own fixture plan';
+  end if;
+  select count(*) into n from public.plan_dishes where household_id <> b_household;
+  if n <> 0 then
+    raise exception 'plans: user B sees % plan_dishes rows of other households', n;
+  end if;
+  select count(*) into n from public.plan_meals where household_id <> b_household;
+  if n <> 0 then
+    raise exception 'plans: user B sees % plan_meals rows of other households', n;
   end if;
 end;
 $$;
@@ -598,13 +941,27 @@ begin
 end;
 $$;
 
+-- As anon: the S-03 RPC, same reasoning and KD007 branch as the S-01 RPCs above.
+do $$
+begin
+  begin
+    perform public.save_meal_plan('2030-01-01', '[]'::jsonb);
+    raise exception 'anon: could execute public.save_meal_plan()';
+  exception
+    when insufficient_privilege then null;
+    when sqlstate 'KD007' then
+      raise exception 'anon: public.save_meal_plan() is executable by anon (reached the body and raised KD007); the revoke execute … from public, anon is missing';
+  end;
+end;
+$$;
+
 do $$
 declare
   t text;
   n int;
 begin
   foreach t in array array['products', 'recipes', 'recipe_components', 'recipe_ingredients', 'recipe_steps',
-    'household_invites', 'macro_targets'] loop
+    'household_invites', 'macro_targets', 'meal_plans', 'plan_dishes', 'plan_meals'] loop
     begin
       execute format('select count(*) from public.%I', t) into n;
       if n <> 0 then
@@ -790,6 +1147,48 @@ begin
 end;
 $$;
 
+-- Grants (as postgres), meal plans (S-03): write-revoked household tables -- SELECT only for
+-- authenticated (incl. MAINTAIN revoked), nothing for anon. Policies exist for every operation (the
+-- household_id catch-all checked them), so these revokes are what actually deny writes. The RPC's
+-- execute grants are asserted here too: the catch-alls inspect tables only.
+do $$
+declare
+  t text;
+  p text;
+begin
+  foreach t in array array['meal_plans', 'plan_dishes', 'plan_meals'] loop
+    foreach p in array array['INSERT', 'UPDATE', 'DELETE', 'TRUNCATE', 'REFERENCES', 'TRIGGER', 'MAINTAIN'] loop
+      if has_table_privilege('authenticated', 'public.' || t, p) then
+        raise exception 'grants: authenticated holds % on public.%; writes must go through public.save_meal_plan', p, t;
+      end if;
+    end loop;
+
+    foreach p in array array['INSERT', 'UPDATE', 'REFERENCES'] loop
+      if has_any_column_privilege('authenticated', 'public.' || t, p) then
+        raise exception 'grants: authenticated holds column-level % on public.%', p, t;
+      end if;
+    end loop;
+
+    if not has_table_privilege('authenticated', 'public.' || t, 'SELECT') then
+      raise exception 'grants: authenticated lacks SELECT on public.%', t;
+    end if;
+
+    foreach p in array array['SELECT', 'INSERT', 'UPDATE', 'DELETE', 'TRUNCATE', 'REFERENCES', 'TRIGGER', 'MAINTAIN'] loop
+      if has_table_privilege('anon', 'public.' || t, p) then
+        raise exception 'grants: anon holds % on public.%; the revoke all is missing', p, t;
+      end if;
+    end loop;
+  end loop;
+
+  if has_function_privilege('anon', 'public.save_meal_plan(date, jsonb)', 'execute') then
+    raise exception 'grants: anon can execute public.save_meal_plan(date, jsonb); the revoke execute … from public, anon is missing';
+  end if;
+  if not has_function_privilege('authenticated', 'public.save_meal_plan(date, jsonb)', 'execute') then
+    raise exception 'grants: authenticated cannot execute public.save_meal_plan(date, jsonb)';
+  end if;
+end;
+$$;
+
 -- Seed mechanism gone (as postgres, F-04): no per-household seed function and no templates. The
 -- public tables are the single source of truth for seed content.
 do $$
@@ -914,6 +1313,34 @@ begin
     raise exception 'targets: a macro_targets row was accepted for user C in D''s household, which C is not a member of';
   exception when foreign_key_violation then null;
   end;
+end;
+$$;
+
+-- Meal plans (S-03), as postgres, BEFORE D redeems: D holds a plan with a "D only" meal, C holds one
+-- fixture plan. Fixture ids …cc07/…cc17/…cc37 (C) and …dd07/…dd17/…dd37 (D). If plan_meals ever
+-- gains the per-person membership FK, D's redemption below fails with 23503 instead of leaving this
+-- plan behind.
+do $$
+declare
+  c_household uuid := current_setting('rls_test.c_household')::uuid;
+  d_household uuid := current_setting('rls_test.d_household')::uuid;
+begin
+  insert into public.meal_plans (id, household_id, start_date)
+  values
+    ('00000000-0000-4000-b000-00000000cc07', c_household, '2030-01-01'),
+    ('00000000-0000-4000-b000-00000000dd07', d_household, '2030-01-01');
+  insert into public.plan_dishes (id, household_id, plan_id, recipe_id)
+  values
+    ('00000000-0000-4000-b000-00000000cc17', c_household, '00000000-0000-4000-b000-00000000cc07',
+      '5eed0002-0000-4000-8000-000000000001'),
+    ('00000000-0000-4000-b000-00000000dd17', d_household, '00000000-0000-4000-b000-00000000dd07',
+      '5eed0002-0000-4000-8000-000000000002');
+  insert into public.plan_meals (id, household_id, plan_id, day_index, meal_type, dish_id, eater_user_id)
+  values
+    ('00000000-0000-4000-b000-00000000cc37', c_household, '00000000-0000-4000-b000-00000000cc07',
+      0, 'dinner', '00000000-0000-4000-b000-00000000cc17', null),
+    ('00000000-0000-4000-b000-00000000dd37', d_household, '00000000-0000-4000-b000-00000000dd07',
+      0, 'dinner', '00000000-0000-4000-b000-00000000dd17', '00000000-0000-4000-a000-00000000000d');
 end;
 $$;
 
@@ -1045,6 +1472,28 @@ begin
 end;
 $$;
 
+-- As postgres (S-03): the redemption above SUCCEEDED with a "D only" meal in D's household (no
+-- membership cascade into plan rows), and D's plan stayed behind in D's former household.
+do $$
+declare
+  d_household uuid := current_setting('rls_test.d_household')::uuid;
+  n int;
+begin
+  select count(*) into n from public.meal_plans
+  where id = '00000000-0000-4000-b000-00000000dd07' and household_id = d_household;
+  if n <> 1 then
+    raise exception 'redeem: D''s plan did not stay behind in D''s former household; plans are household-owned and must not travel';
+  end if;
+
+  select count(*) into n from public.plan_meals
+  where id = '00000000-0000-4000-b000-00000000dd37' and household_id = d_household
+    and eater_user_id = '00000000-0000-4000-a000-00000000000d';
+  if n <> 1 then
+    raise exception 'redeem: D''s "D only" meal did not stay behind unchanged in D''s former household';
+  end if;
+end;
+$$;
+
 -- As user C, then user D: both now see the same household (FR-003), and each still sees exactly the
 -- whole public library -- redemption neither adds nor removes library rows.
 set local role authenticated;
@@ -1100,6 +1549,43 @@ begin
 end;
 $$;
 
+-- As user C (S-03): D is now a member, so a meal for D is accepted; a user outside the household
+-- (A) is still KD012. The 2030-04-01 plan is reused by the account-deletion block at the end.
+do $$
+declare
+  c_household uuid := current_setting('rls_test.c_household')::uuid;
+  plan uuid;
+  n int;
+  v_state text;
+  v_msg text;
+begin
+  plan := public.save_meal_plan('2030-04-01', jsonb_build_array(
+    jsonb_build_object('day_index', 0, 'meal_type', 'lunch',
+      'recipe_id', '5eed0002-0000-4000-8000-000000000001', 'eater_user_id', '00000000-0000-4000-a000-00000000000d'),
+    jsonb_build_object('day_index', 1, 'meal_type', 'lunch',
+      'recipe_id', '5eed0002-0000-4000-8000-000000000002', 'eater_user_id', null)));
+  select count(*) into n from public.plan_meals
+  where plan_id = plan and household_id = c_household and eater_user_id = '00000000-0000-4000-a000-00000000000d';
+  if n <> 1 then
+    raise exception 'plans: user C could not save a meal for partner D after the join';
+  end if;
+  perform set_config('rls_test.cd_plan', plan::text, true);
+
+  begin
+    perform public.save_meal_plan('2030-04-02', jsonb_build_array(
+      jsonb_build_object('day_index', 0, 'meal_type', 'lunch',
+        'recipe_id', '5eed0002-0000-4000-8000-000000000001', 'eater_user_id', '00000000-0000-4000-a000-00000000000a')));
+    raise exception 'plans[KD012]: user C saved a meal for user A, who is not in C''s household';
+  exception
+    when sqlstate 'KD012' then null;
+    when others then
+      get stacked diagnostics v_state = returned_sqlstate, v_msg = message_text;
+      if v_state = 'P0001' then raise; end if;
+      raise exception 'plans[KD012]: rejected with % ("%") instead of KD012', v_state, v_msg;
+  end;
+end;
+$$;
+
 reset role;
 set local role authenticated;
 select set_config(
@@ -1126,6 +1612,31 @@ begin
   if counts <> current_setting('rls_test.library_counts') then
     raise exception 'redeem: user D sees % but the library holds % after the join',
       counts, current_setting('rls_test.library_counts');
+  end if;
+end;
+$$;
+
+-- As user D (S-03): D now sees C's plans (the shared household's) and no longer its old one.
+do $$
+declare
+  c_household uuid := current_setting('rls_test.c_household')::uuid;
+  n int;
+begin
+  select count(*) into n from public.meal_plans where household_id <> c_household;
+  if n <> 0 then
+    raise exception 'plans: after the join user D sees % meal_plans rows outside the shared household', n;
+  end if;
+  select count(*) into n from public.meal_plans where id = '00000000-0000-4000-b000-00000000cc07';
+  if n <> 1 then
+    raise exception 'plans: after the join user D cannot see C''s fixture plan';
+  end if;
+  select count(*) into n from public.meal_plans where id = '00000000-0000-4000-b000-00000000dd07';
+  if n <> 0 then
+    raise exception 'plans: after the join user D still sees its old plan';
+  end if;
+  select count(*) into n from public.plan_meals where id = '00000000-0000-4000-b000-00000000dd37';
+  if n <> 0 then
+    raise exception 'plans: after the join user D still sees its old "D only" meal';
   end if;
 end;
 $$;
@@ -1368,15 +1879,44 @@ $$;
 
 reset role;
 
+-- As postgres (S-03), last because it removes a member: deleting D's account turns D's meals into
+-- "both" (eater_user_id on delete set null) -- no slot disappears and no dish is orphaned.
+do $$
+declare
+  plan uuid := current_setting('rls_test.cd_plan')::uuid;
+  meals_before int;
+  dishes_before int;
+  n int;
+begin
+  select count(*) into meals_before from public.plan_meals where plan_id = plan;
+  select count(*) into dishes_before from public.plan_dishes where plan_id = plan;
+
+  delete from auth.users where id = '00000000-0000-4000-a000-00000000000d';
+
+  select count(*) into n from public.plan_meals where plan_id = plan and eater_user_id is not null;
+  if n <> 0 then
+    raise exception 'plans: % meals still name deleted user D, expected eater_user_id set to null', n;
+  end if;
+  select count(*) into n from public.plan_meals where plan_id = plan;
+  if n <> meals_before then
+    raise exception 'plans: deleting user D changed the plan''s meal count from % to %', meals_before, n;
+  end if;
+  select count(*) into n from public.plan_dishes where plan_id = plan;
+  if n <> dishes_before then
+    raise exception 'plans: deleting user D changed the plan''s dish count from % to %', dishes_before, n;
+  end if;
+end;
+$$;
+
 -- ---------------------------------------------------------------------------
 -- Done.
 -- ---------------------------------------------------------------------------
 do $$
 begin
-  raise notice 'household_isolation: all assertions passed (trigger, sign-up creates no library rows, read isolation, write denial, public library visibility, library write denial and grants, seed mechanism removed, classification catch-all, anon denial, helper grants, household_id catch-all, invite read isolation, invite write denial, RPC grants, redemption with provenance and an unchanged library, macro targets isolation with owner-only writes and the redemption cascade, seven rejection SQLSTATEs)';
+  raise notice 'household_isolation: all assertions passed (trigger, sign-up creates no library rows, read isolation, write denial, public library visibility, library write denial and grants, seed mechanism removed, classification catch-all, anon denial, helper grants, household_id catch-all, invite read isolation, invite write denial, RPC grants, redemption with provenance and an unchanged library, macro targets isolation with owner-only writes and the redemption cascade, seven rejection SQLSTATEs, meal plans isolation, write denial, grants, RPC grants, slot diff, KD010-KD012 and plans left behind on redemption)';
 end;
 $$;
 
-select 'household_isolation: all assertions passed (incl. public library, classification catch-all, invite isolation, RPC grants, redemption, macro targets and seven rejection SQLSTATEs)' as result;
+select 'household_isolation: all assertions passed (incl. public library, classification catch-all, invite isolation, RPC grants, redemption, macro targets, seven rejection SQLSTATEs and meal plans)' as result;
 
 rollback;
