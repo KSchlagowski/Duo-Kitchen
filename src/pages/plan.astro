@@ -1,0 +1,217 @@
+---
+import Layout from "@/layouts/Layout.astro";
+import { createClient } from "@/lib/supabase";
+import { getCurrentHousehold } from "@/lib/services/household";
+import {
+  MEAL_TYPES,
+  MEAL_TYPE_LABELS,
+  PLAN_DAYS,
+  PLAN_UNAVAILABLE,
+  addDays,
+  defaultPlanStart,
+  formatPlanSummary,
+  getMealPlan,
+  isIsoDate,
+  weekdayLabel,
+} from "@/lib/services/meal-plans";
+import { listRecipes } from "@/lib/services/recipes";
+import { cn } from "@/lib/utils";
+import type { Household, MealPlan, PlanEater, PlanMeal, RecipeListItem } from "@/types";
+
+const { user } = Astro.locals;
+
+const startParam = Astro.url.searchParams.get("start");
+const requestedStart = startParam && isIsoDate(startParam) ? startParam : undefined;
+
+// Three independent reads. The form is rendered only when ALL of them succeed: a save from a blank
+// grid would overwrite the stored plan, and a missing household would remap partner meals to Both.
+let recipes: RecipeListItem[] | null = null;
+let household: Household | null = null;
+let plan: MealPlan | null = null;
+let planFailed = false;
+const supabase = createClient(Astro.request.headers, Astro.cookies);
+if (supabase) {
+  try {
+    recipes = await listRecipes(supabase);
+  } catch (error) {
+    // eslint-disable-next-line no-console -- surfaced in Cloudflare Workers observability logs
+    console.error("listRecipes failed on /plan", error);
+  }
+  try {
+    household = await getCurrentHousehold(supabase);
+  } catch (error) {
+    // eslint-disable-next-line no-console -- surfaced in Cloudflare Workers observability logs
+    console.error("getCurrentHousehold failed on /plan", error);
+  }
+  try {
+    plan = await getMealPlan(supabase, requestedStart);
+  } catch (error) {
+    planFailed = true;
+    // eslint-disable-next-line no-console -- surfaced in Cloudflare Workers observability logs
+    console.error("getMealPlan failed on /plan", error);
+  }
+} else {
+  planFailed = true;
+}
+
+const unavailable: string[] = [];
+if (recipes === null) unavailable.push("Recipes are unavailable right now.");
+if (household === null) unavailable.push("Household information is unavailable right now.");
+if (planFailed) unavailable.push(PLAN_UNAVAILABLE);
+const canEdit = unavailable.length === 0;
+
+const isLinked = (household?.members.length ?? 0) >= 2;
+const startDate = requestedStart ?? plan?.startDate ?? defaultPlanStart();
+const summary = planFailed ? PLAN_UNAVAILABLE : formatPlanSummary(plan);
+
+const mealsBySlot = new Map<string, PlanMeal>();
+for (const meal of plan?.meals ?? []) {
+  mealsBySlot.set(`${meal.dayIndex}_${meal.mealType}`, meal);
+}
+
+function eaterOf(meal: PlanMeal | undefined): PlanEater {
+  const eaterUserId = meal?.eaterUserId ?? null;
+  if (eaterUserId === null) return "both";
+  return eaterUserId === user?.id ? "me" : "partner";
+}
+
+const eaterOptions: { value: PlanEater; label: string }[] = [
+  { value: "both", label: "Both" },
+  { value: "me", label: "Me" },
+  ...(isLinked ? [{ value: "partner" as const, label: "Partner" }] : []),
+];
+
+const saved = Astro.url.searchParams.get("saved") === "1";
+const notice = Astro.url.searchParams.get("error");
+
+const selectClass =
+  "w-full rounded-lg border border-white/20 bg-slate-900/60 px-2 py-1.5 text-sm text-white focus:border-purple-300 focus:outline-none";
+---
+
+<Layout title="Meal plan">
+  <div class="bg-cosmic flex min-h-screen items-center justify-center p-4">
+    <div class="w-full max-w-5xl rounded-2xl border border-white/10 bg-white/10 p-6 text-white backdrop-blur-xl sm:p-8">
+      <h1 class="mb-2 bg-gradient-to-r from-blue-200 to-purple-200 bg-clip-text text-center text-3xl font-bold text-transparent">
+        Meal plan
+      </h1>
+      <p
+        class:list={cn("mb-6 text-center text-sm", plan ? "text-white" : "text-blue-100/60")}
+        data-testid="plan-summary"
+      >
+        {summary}
+      </p>
+
+      {saved && (
+        <p class="mb-4 rounded-lg border border-emerald-400/30 bg-emerald-500/10 p-3 text-sm text-emerald-200">
+          Saved.
+        </p>
+      )}
+      {notice && (
+        <p class="mb-4 rounded-lg border border-red-400/30 bg-red-500/10 p-3 text-sm text-red-200">{notice}</p>
+      )}
+      {unavailable.map((message) => (
+        <p class="mb-4 rounded-lg border border-red-400/30 bg-red-500/10 p-3 text-sm text-red-200">{message}</p>
+      ))}
+
+      {canEdit && recipes && (
+        <form method="POST" action="/api/plan" class="flex flex-col gap-6">
+          <label class="flex max-w-xs flex-col gap-1 text-sm text-blue-100/80">
+            Start date
+            <input
+              type="date"
+              name="start_date"
+              required
+              value={startDate}
+              class="rounded-lg border border-white/20 bg-white/10 px-3 py-2 text-white focus:border-purple-300 focus:outline-none"
+            />
+          </label>
+
+          <div class="grid gap-4 md:grid-cols-3">
+            {PLAN_DAYS.map((day) => {
+              const date = addDays(startDate, day);
+              return (
+                <section class="flex flex-col gap-3 rounded-xl border border-white/10 bg-white/5 p-4">
+                  <h2 class="font-semibold">
+                    {weekdayLabel(date)} <span class="text-sm font-normal text-blue-100/60">{date}</span>
+                  </h2>
+                  <label class="flex flex-col gap-1 text-xs text-blue-100/70">
+                    Whole day for
+                    <select name={`day${day}_eater`} class:list={selectClass}>
+                      <option value="">— each meal as set —</option>
+                      {eaterOptions.map((option) => (
+                        <option value={option.value}>{option.label}</option>
+                      ))}
+                    </select>
+                  </label>
+
+                  {MEAL_TYPES.map((mealType) => {
+                    const meal = mealsBySlot.get(`${day}_${mealType}`);
+                    const suggested = recipes.filter((recipe) => recipe.mealTypes.includes(mealType));
+                    const other = recipes.filter((recipe) => !recipe.mealTypes.includes(mealType));
+                    const eater = eaterOf(meal);
+                    return (
+                      <fieldset class="flex flex-col gap-1 border-t border-white/10 pt-3">
+                        <legend class="text-sm font-medium text-blue-100/90">{MEAL_TYPE_LABELS[mealType]}</legend>
+                        <label class="sr-only" for={`d${day}_${mealType}_recipe`}>
+                          {MEAL_TYPE_LABELS[mealType]} recipe
+                        </label>
+                        <select
+                          id={`d${day}_${mealType}_recipe`}
+                          name={`d${day}_${mealType}_recipe`}
+                          class:list={selectClass}
+                        >
+                          <option value="">— empty —</option>
+                          {suggested.length > 0 && (
+                            <optgroup label="Suggested">
+                              {suggested.map((recipe) => (
+                                <option value={recipe.id} selected={meal?.recipeId === recipe.id}>
+                                  {recipe.name}
+                                </option>
+                              ))}
+                            </optgroup>
+                          )}
+                          {other.length > 0 && (
+                            <optgroup label="Other recipes">
+                              {other.map((recipe) => (
+                                <option value={recipe.id} selected={meal?.recipeId === recipe.id}>
+                                  {recipe.name}
+                                </option>
+                              ))}
+                            </optgroup>
+                          )}
+                        </select>
+                        <label class="flex items-center gap-2 text-xs text-blue-100/70">
+                          For
+                          <select name={`d${day}_${mealType}_eater`} class:list={selectClass}>
+                            {eaterOptions.map((option) => (
+                              <option value={option.value} selected={option.value === eater}>
+                                {option.label}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                      </fieldset>
+                    );
+                  })}
+                </section>
+              );
+            })}
+          </div>
+
+          <button
+            type="submit"
+            class="self-center rounded-lg border border-white/20 bg-white/10 px-6 py-2 text-sm transition-colors hover:bg-white/20"
+          >
+            Save plan
+          </button>
+        </form>
+      )}
+
+      <p class="mt-8 text-center text-sm">
+        <a href="/dashboard" class="text-purple-300 hover:underline">
+          Back to dashboard
+        </a>
+      </p>
+    </div>
+  </div>
+</Layout>

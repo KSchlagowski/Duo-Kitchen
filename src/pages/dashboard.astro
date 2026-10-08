@@ -5,7 +5,8 @@ import { getCurrentHousehold } from "@/lib/services/household";
 import { getRecipeLibrarySummary } from "@/lib/services/recipes";
 import { getActiveInvite } from "@/lib/services/invites";
 import { formatMacroTargets, getHouseholdMacroTargets } from "@/lib/services/macro-targets";
-import type { Household, HouseholdInvite, MacroTargets, RecipeLibrarySummary } from "@/types";
+import { PLAN_UNAVAILABLE, formatPlanSummary, getMealPlan } from "@/lib/services/meal-plans";
+import type { Household, HouseholdInvite, MacroTargets, MealPlan, RecipeLibrarySummary } from "@/types";
 
 const { user } = Astro.locals;
 
@@ -43,6 +44,22 @@ if (supabase) {
     console.error("getHouseholdMacroTargets failed", error);
   }
 }
+
+// Meal plan (S-03): the most recently saved plan. "Start a plan" only when the read succeeded and
+// found none -- a failed read must not claim there is no plan.
+let plan: MealPlan | null = null;
+let planFailed = supabase === null;
+if (supabase) {
+  try {
+    plan = await getMealPlan(supabase);
+  } catch (error) {
+    planFailed = true;
+    // eslint-disable-next-line no-console -- surfaced in Cloudflare Workers observability logs
+    console.error("getMealPlan failed", error);
+  }
+}
+const planLabel = planFailed ? PLAN_UNAVAILABLE : formatPlanSummary(plan);
+const planLinkLabel = !planFailed && !plan ? "Start a plan" : "Open plan";
 
 const memberCount = household?.members.length ?? 0;
 const householdLabel = household
@@ -96,6 +113,14 @@ const joined = Astro.url.searchParams.get("joined") === "1";
       </p>
       <a href="/targets" class="text-sm text-purple-300 hover:underline">
         {targetsLinkLabel}
+      </a>
+
+      <!-- Meal plan (S-03) -->
+      <p class="mt-2 text-sm text-blue-100/80" data-testid="plan">
+        {planLabel}
+      </p>
+      <a href="/plan" class="text-sm text-purple-300 hover:underline">
+        {planLinkLabel}
       </a>
 
       {joined && (

@@ -398,15 +398,15 @@ The migration is additive (new tables, a new function) and needs no backfill. Ro
 
 #### Automated
 
-- [x] 1.1 Migration timestamp is later than every cloud-applied migration
-- [x] 1.2 Migration applies to the hosted project
-- [x] 1.3 Household isolation test passes, including all new S-03 blocks
-- [x] 1.4 Seed integrity test still passes unchanged
+- [x] 1.1 Migration timestamp is later than every cloud-applied migration — ecbbbb0
+- [x] 1.2 Migration applies to the hosted project — ecbbbb0
+- [x] 1.3 Household isolation test passes, including all new S-03 blocks — ecbbbb0
+- [x] 1.4 Seed integrity test still passes unchanged — ecbbbb0
 
 #### Manual
 
-- [x] 1.5 Deliberate-break check: an added grant makes the rolled-back isolation test fail descriptively
-- [x] 1.6 Migration header states the no-membership-FK warning and the S-08 hand-off
+- [x] 1.5 Deliberate-break check: an added grant makes the rolled-back isolation test fail descriptively — ecbbbb0
+- [x] 1.6 Migration header states the no-membership-FK warning and the S-08 hand-off — ecbbbb0
 
 > Phase 1 notes (non-interactive run): 1.5 was run by the implementer. The `grant maintain` copy failed with "grants: authenticated holds MAINTAIN on public.plan_meals…" and the anon `grant execute` copy failed with "anon: public.save_meal_plan() is executable by anon (reached the body and raised KD007)…". 1.6 was checked by the implementer, so a human reviewer should still read the migration header. Before pushing, the migration and the test were dry-run together in one rolled-back transaction. Choices made: (a) every constraint is named explicitly (`meal_plans_household_start_key`, `plan_dishes_plan_fkey`, `plan_meals_plan_fkey`, `plan_meals_dish_fkey`, `plan_meals_slot_key`, `plan_meals_dish_id_key`); (b) no separate `plan_meals (plan_id, household_id)` index, because the leading `plan_id` of `plan_meals_slot_key` covers it; (c) the header tells S-08 to add a `plan_meals (dish_id, plan_id)` index when it drops `plan_meals_dish_id_key`, which covers that FK today; (d) the account-deletion check deletes user D at the very end of the test, because C's KD005/KD008 probes need D as a member.
 
@@ -414,20 +414,22 @@ The migration is additive (new tables, a new function) and needs no backfill. Ro
 
 #### Automated
 
-- [ ] 2.1 Linting passes
-- [ ] 2.2 Type checking passes
-- [ ] 2.3 Production build succeeds
-- [ ] 2.4 Existing smoke steps still pass against the preview
+- [x] 2.1 Linting passes
+- [x] 2.2 Type checking passes
+- [x] 2.3 Production build succeeds
+- [x] 2.4 Existing smoke steps still pass against the preview
 
 #### Manual
 
-- [ ] 2.5 Fresh user sees the dated grid with Suggested/Other grouping and no Partner option
-- [ ] 2.6 Saving 2 slots reads back on /plan and the dashboard
-- [ ] 2.7 Whole-day shortcut sets every filled meal of that day
-- [ ] 2.8 Clearing every slot leaves an empty saved plan
-- [ ] 2.9 A new start date creates a second plan; the old one stays reachable
-- [ ] 2.10 A tampered unknown recipe shows the KD011 message
+- [x] 2.5 Fresh user sees the dated grid with Suggested/Other grouping and no Partner option
+- [x] 2.6 Saving 2 slots reads back on /plan and the dashboard
+- [x] 2.7 Whole-day shortcut sets every filled meal of that day
+- [x] 2.8 Clearing every slot leaves an empty saved plan
+- [x] 2.9 A new start date creates a second plan; the old one stays reachable
+- [x] 2.10 A tampered unknown recipe shows the KD011 message
 - [ ] 2.11 With a read failing, no form is rendered
+
+> Phase 2 notes (non-interactive run): the implementer checked 2.5–2.10 over HTTP against the production preview with a scripted run, using a fresh `smoke-manual-…@example.com` account that the README cleanup glob covers. They were not checked in a browser. **2.11 was NOT performed**: forcing a read to fail needs a temporary code edit, so it is still pending for a human. By code reading, `plan.astro` renders the `<form>` only when `unavailable` is empty. Choices made: (a) the embeds use the explicit FK names (`plan_meals!plan_meals_plan_fkey`, `plan_dishes!plan_meals_dish_fkey`), and the cloud project resolves them with no PGRST201; (b) prettier collapses a plain multi-line `PROTECTED_ROUTES`, so a `// S-03` comment line keeps it one entry per line; (c) the pure helpers (`MEAL_TYPES`, `isIsoDate`, `addDays`, `weekdayLabel`, `defaultPlanStart`, `formatPlanSummary`) live in `meal-plans.ts` because the page, the API and the dashboard all use them; (d) the API treats a missing household (`getCurrentHousehold()` returning null) like a failed read and redirects with the generic save error; (e) the day header uses the `en-GB` weekday name next to the ISO date.
 
 ### Phase 3: Smoke test and documentation
 
