@@ -530,17 +530,17 @@ After the rebase and the re-verification, publish the rewritten branch with `git
 
 #### Automated
 
-- [x] 3.1 Lint passes: `npm run lint`
-- [x] 3.2 Build passes: `npm run build`
-- [x] 3.3 Worktree is linked: `npx supabase link --project-ref tvmfkhnxxsnmvogplknz`
-- [x] 3.4 Isolation test passes unchanged: `npm run test:rls`
-- [x] 3.5 Seed test passes unchanged: `npm run test:seed`
-- [x] 3.6 Smoke passes against the production preview: `npm run smoke`
+- [x] 3.1 Lint passes: `npm run lint` — 02f1530
+- [x] 3.2 Build passes: `npm run build` — 02f1530
+- [x] 3.3 Worktree is linked: `npx supabase link --project-ref tvmfkhnxxsnmvogplknz` — 02f1530
+- [x] 3.4 Isolation test passes unchanged: `npm run test:rls` — 02f1530
+- [x] 3.5 Seed test passes unchanged: `npm run test:seed` — 02f1530
+- [x] 3.6 Smoke passes against the production preview: `npm run smoke` — 02f1530
 
 #### Manual
 
-- [x] 3.7 Pinned total and cooked line match independently run oracle SQL
-- [x] 3.8 Deliberate break makes the smoke step fail with a readable dump
+- [x] 3.7 Pinned total and cooked line match independently run oracle SQL — 02f1530
+- [x] 3.8 Deliberate break makes the smoke step fail with a readable dump — 02f1530
 
 > Implementation notes (Phase 3): 3.7 — the two oracle queries were run with `npx supabase db query --linked` before pinning: `1532 kcal · P 107 g · F 54 g · C 151 g`, Ryż raw 161 → cooked 403 (×2.50), Kurczak raw 416 → cooked 312 (×0.75); both cooked lines are pinned. 3.8 — `cookedWeight()` returning `rawG` without the ratio made exactly the oracle step fail, with the dump showing `component-cooked: Raw 161 g → cooked ≈ 161 g (×2.50)`; reverted (no diff). The roadmap had no separate backlog entry for S-05, so only the table row and the section status changed. `change.md` stays `implementing`: Phase 4 (rebase onto S-03) is still pending and gated on S-03 reaching `main`.
 
