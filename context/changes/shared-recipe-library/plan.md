@@ -54,7 +54,7 @@ Grounding research: `context/changes/shared-recipe-library/research.md`. The ses
 
 One migration **drops and recreates** the five tables in their final shape, after a guard that re-verifies at push time that only unmodified seed copies exist. It fills the new tables from `private.seed_*` while keeping ids, and only then drops the templates and the seeding function. The sign-up trigger is restored to its F-01 body, and the redemption function is re-issued without KD006. Recreate is preferred over `alter … drop column` because it reads as the final shape and avoids dropping generated constraint names. It is safe only because the guard proves there is nothing to lose.
 
-The test rewrites ship **in the same commit as the migration**. CI runs `test:rls`/`test:seed` against the *deployed* schema, so the order inside Phase 1 is: write the migration and both test files, `db push`, run both tests, then commit and push. This keeps the window in which `main`'s CI and the hosted schema disagree to minutes. Phases 2 and 3 are app/smoke and docs, and each is independently green.
+The test rewrites ship **in the same commit as the migration**. CI runs `test:rls`/`test:seed` against the _deployed_ schema, so the order inside Phase 1 is: write the migration and both test files, `db push`, run both tests, then commit and push. This keeps the window in which `main`'s CI and the hosted schema disagree to minutes. Phases 2 and 3 are app/smoke and docs, and each is independently green.
 
 ## Critical Implementation Details
 
@@ -80,7 +80,7 @@ The migration, plus the rewritten isolation and seed-integrity tests. After this
 
 **Contract** (in this order):
 
-1. **Header comment.** Covers the F-04 rationale (public library, PRD Access Control); "public" means every *authenticated* user, never `anon`; the authorship rule deferred to S-07; the rollback note ("re-running F-02 is not a rollback; forward-fix only"); and the SQLSTATE note "KD006 retired (F-04) — do not reuse".
+1. **Header comment.** Covers the F-04 rationale (public library, PRD Access Control); "public" means every _authenticated_ user, never `anon`; the authorship rule deferred to S-07; the rollback note ("re-running F-02 is not a rollback; forward-fix only"); and the SQLSTATE note "KD006 retired (F-04) — do not reuse".
 2. **Guard `do` block** that raises with a descriptive message when either condition holds:
    - (a) any of the five tables has a row with `seed_id is null`;
    - (b) any seed copy differs from its template. Compare every content column for products, recipes, ingredients and steps, as research §2 did; for components compare `position`, `name` and `cooked_yield_ratio`; for references compare by seed identity (copy → parent copy's `seed_id` = template's parent id). Use a **null-safe set difference per table**, never a `join … where c.col <> t.col` (which treats `null <> 5` as not different and skips orphan copies): `(select c.seed_id, <content cols>, <parent copy's seed_id> from public.<t> c left join <parent copies>) except (select id, <content cols>, <parent seed ids> from private.seed_<t>)`, and raise if it returns any row. `EXCEPT` compares with `IS NOT DISTINCT FROM` semantics, so it catches nullable-column edits (`grams_per_piece`, `rounding_step_g`, `min_amount_g`, `cooked_yield_ratio`, `duration_minutes`, step `component_id`) and orphan copies whose `seed_id` matches no template.
@@ -111,7 +111,7 @@ revoke insert, update, delete, truncate, references, trigger on public.<t> from 
 create policy "<t>_select_authenticated" on public.<t> for select to authenticated using (true);
 ```
 
-   Add a comment above the block. The revoke is what blocks writes today; the absence of write policies is what still blocks them if a future migration grants `insert` alone. These are independent levers, and both are kept.
+Add a comment above the block. The revoke is what blocks writes today; the absence of write policies is what still blocks them if a future migration grants `insert` alone. These are independent levers, and both are kept.
 
 #### 2. Isolation test
 
@@ -126,9 +126,9 @@ create policy "<t>_select_authenticated" on public.<t> for select to authenticat
 - **Replace the per-household fixtures `:87-119`** with **one** non-seed library chain inserted as postgres, ids `00000000-0000-4000-b000-00000000c00{1..5}` (product, recipe, component, ingredient, step), and re-snapshot `rls_test.library_counts` after it. Keep the invite fixtures (`…a006`/`…b006`) and the macro-target fixtures exactly as they are.
 - **Postgres-only FK probe**: deleting fixture product `…c001` raises `restrict_violation`/`foreign_key_violation`. This moves out of the A write block.
 - **Replace the read loop `:256-288`** with a `household_invites`-only check that uses explicit fixture ids `…a006` (visible) and `…b006` (invisible). Drop the index-built ids. Keep the loop's third check alongside them: `select count(*) from public.household_invites where household_id <> a_household` = 0.
-- **Add a library visibility check** for A (in A's section) and for B (in B's section): each sees exactly `rls_test.library_counts`, including fixture `…c001`/`…c002`. This proves two *unlinked* users see one library.
+- **Add a library visibility check** for A (in A's section) and for B (in B's section): each sees exactly `rls_test.library_counts`, including fixture `…c001`/`…c002`. This proves two _unlinked_ users see one library.
 - **Replace the write block `:290-349`** with library write denial as A, for each of the five tables:
-  - `insert` must raise exactly `insufficient_privilege`, with no other handler (macro_targets style, `:388-402`). Use valid column values so that a missing revoke would *succeed* rather than fail on a constraint.
+  - `insert` must raise exactly `insufficient_privilege`, with no other handler (macro_targets style, `:388-402`). Use valid column values so that a missing revoke would _succeed_ rather than fail on a constraint.
   - `update … where id = <seed or fixture id>` and `delete … where id = …` must raise `insufficient_privilege` or affect 0 rows.
   - `truncate` must raise `insufficient_privilege`.
 - **Replace `:413-432`** with "seed mechanism gone" (any role): `to_regprocedure('private.seed_household(uuid)') is null`, and `to_regclass('private.seed_<t>') is null` for all five.
@@ -386,10 +386,11 @@ The library becomes 1/34th of its current row count, and `select … using (true
 - [x] 1.8 Guard raises on a nulled nullable column in a rolled-back session — f9be21d
 
 > Implementation notes (Phase 1, non-interactive run, 2026-10-08):
+>
 > - 1.6 run by the implementer on scratch copies (never committed): dropping `products` from `library_tables` failed with "classification: public.products is neither household-scoped nor a declared library table"; switching the products insert probe's handler to `unique_violation` failed with `42501 permission denied for table products`; additionally, a `grant insert on public.products to authenticated` prepended to the file failed with "grants: authenticated holds INSERT on library table public.products; the revoke is missing" (and the RLS-only insert probe still passed — both levers are independent).
 > - 1.7 verified via `pg_policies` on the linked project (the source the dashboard Policies page renders): exactly `<table>:SELECT:authenticated` for each of the five tables. The dashboard UI itself was not opened.
 > - 1.8 run before `db push`: the guard passed on live data, and raised "F-04 guard: 1 distinct products copies differ from their template" with one household's egg `grams_per_piece` nulled (template value 50), rolled back.
-> - Choice: the guard also checks (c) that no household holds a *partial* copy (a deleted seed row is a modification too); households with zero copies are allowed.
+> - Choice: the guard also checks (c) that no household holds a _partial_ copy (a deleted seed row is a modification too); households with zero copies are allowed.
 > - Choice: the "seed mechanism gone" assertions run as postgres (next to the grants block) rather than as user A, so `to_regclass`/`to_regprocedure` can never be vacuously null for lack of schema privileges.
 > - Choice: the `restrict_violation` FK probe runs as postgres right after the fixture chain; the library write-denial update/delete probes target every seed id (`5eed%`) and the fixture chain, not one id.
 
@@ -423,6 +424,7 @@ The library becomes 1/34th of its current row count, and `select … using (true
 > Implementation notes (Phase 3): `roadmap.md` already failed `prettier --check` at HEAD (misaligned table padding), so `prettier --write` reformatted its tables alongside the F-04 edits. The 3.2 `rg` returns, besides the migration's retirement notes and the `invites.ts` comment, two further hits that the plan's own contracts require and that are not stale: the CLAUDE.md Households bullet's "KD006 … retired" note, and the isolation test's "seed mechanism gone" assertion naming `private.seed_household(uuid)`. 3.3 was a read-through by the implementer (not a human): the Public library tables hard rule, the Households and Products-and-recipes bullets agree with the isolation test's classification catch-all, grants and SELECT-only assertions. README's memberless-household warning now names household data (plans, shopping lists) instead of products and recipes as what a careless cleanup would cascade away; the queries are unchanged.
 
 > Implementation review addendum (2026-10-08, `reviews/impl-review.md`):
+>
 > - Benign changes outside the written contracts, accepted:
 >   - README's memberless-household warning now names household data (plans, shopping lists) instead of products and recipes.
 >   - CLAUDE.md gained an "Ownership classes" bullet.
