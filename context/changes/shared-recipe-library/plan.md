@@ -373,17 +373,17 @@ The library becomes 1/34th of its current row count, and `select … using (true
 
 #### Automated
 
-- [x] 1.1 Only the new migration is pending: `npx supabase db push --dry-run`
-- [x] 1.2 Migration applies cleanly to the hosted project: `npx supabase db push`
-- [x] 1.3 Isolation test passes: `npm run test:rls`
-- [x] 1.4 Seed integrity test passes: `npm run test:seed`
-- [x] 1.5 Live check: products = 46, recipes = 8
+- [x] 1.1 Only the new migration is pending: `npx supabase db push --dry-run` — f9be21d
+- [x] 1.2 Migration applies cleanly to the hosted project: `npx supabase db push` — f9be21d
+- [x] 1.3 Isolation test passes: `npm run test:rls` — f9be21d
+- [x] 1.4 Seed integrity test passes: `npm run test:seed` — f9be21d
+- [x] 1.5 Live check: products = 46, recipes = 8 — f9be21d
 
 #### Manual
 
-- [x] 1.6 Deliberate-break spot check of the new isolation assertions
-- [x] 1.7 Dashboard shows exactly one SELECT policy per library table
-- [x] 1.8 Guard raises on a nulled nullable column in a rolled-back session
+- [x] 1.6 Deliberate-break spot check of the new isolation assertions — f9be21d
+- [x] 1.7 Dashboard shows exactly one SELECT policy per library table — f9be21d
+- [x] 1.8 Guard raises on a nulled nullable column in a rolled-back session — f9be21d
 
 > Implementation notes (Phase 1, non-interactive run, 2026-10-08):
 > - 1.6 run by the implementer on scratch copies (never committed): dropping `products` from `library_tables` failed with "classification: public.products is neither household-scoped nor a declared library table"; switching the products insert probe's handler to `unique_violation` failed with `42501 permission denied for table products`; additionally, a `grant insert on public.products to authenticated` prepended to the file failed with "grants: authenticated holds INSERT on library table public.products; the revoke is missing" (and the RLS-only insert probe still passed — both levers are independent).
@@ -397,15 +397,17 @@ The library becomes 1/34th of its current row count, and `select … using (true
 
 #### Automated
 
-- [ ] 2.1 Linting passes: `npm run lint`
-- [ ] 2.2 Type/Astro check passes: `npx astro check`
-- [ ] 2.3 Build passes: `npm run build`
-- [ ] 2.4 Smoke test passes: `npm run smoke`
+- [x] 2.1 Linting passes: `npm run lint`
+- [x] 2.2 Type/Astro check passes: `npx astro check`
+- [x] 2.3 Build passes: `npm run build`
+- [x] 2.4 Smoke test passes: `npm run smoke`
 
 #### Manual
 
-- [ ] 2.5 Two fresh accounts show the same library line before linking
-- [ ] 2.6 After linking, both still show the same library line
+- [x] 2.5 Two fresh accounts show the same library line before linking
+- [x] 2.6 After linking, both still show the same library line
+
+> Implementation notes (Phase 2): smoke run against `npm run preview` (Cloudflare runtime, hosted Supabase), all 35 steps passed. 2.5/2.6 were verified over HTTP rather than in a browser: two fresh accounts per smoke run, the rendered dashboard HTML compared step by step (new step "B dashboard shows the same public library before linking", then both linked dashboards). A second, scratch-instrumented run printed the captured line: `Library: 8 recipes · 46 products`. No browser was opened, and the PostgREST PATCH from a browser console (Manual Testing Steps §3) was not performed — the isolation test's write-denial and grants blocks cover the same denial at the database.
 
 ### Phase 3: Documentation and roadmap
 

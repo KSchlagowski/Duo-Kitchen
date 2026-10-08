@@ -13,7 +13,7 @@ const INVITE_ERRORS: Record<string, string> = {
   KD003: "That invite code has already been used.",
   KD004: "You are already in that household.",
   KD005: "That household already has two members.",
-  KD006: "Your kitchen has data that would be left behind. Contact support before joining.",
+  // KD006 is retired (F-04: the library is public, so nothing is left behind) and deliberately absent.
   KD007: "You need an account to join a household.",
   KD008: "You're already linked with a partner. Leaving a shared household isn't supported yet.",
   KD009: "That invite is no longer available.",

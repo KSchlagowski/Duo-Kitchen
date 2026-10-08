@@ -231,6 +231,12 @@ const steps = [
     () => ({ status: 200, body: new RegExp(`name="code" value="${inviteCode}"`) }),
   ],
   [
+    // F-04: B is NOT linked with A yet and lives in its own household, yet reads the same library.
+    "B dashboard shows the same public library before linking",
+    () => b.request("/dashboard"),
+    () => ({ status: 200, body: testIdBody("library", libraryLineA) }),
+  ],
+  [
     // Saved in B's own household BEFORE redeeming: the composite membership FK must carry the row along.
     "B saves targets before redeeming",
     () => b.request("/api/targets", { method: "POST", form: targetsB }),
@@ -254,7 +260,7 @@ const steps = [
     () => ({ status: 200, body: linkedHouseholdBody() }),
   ],
   [
-    // The unchanged library line is also the no-re-seed / no-duplicate-seed-set proof over HTTP.
+    // The unchanged library line shows that redemption leaves the shared library untouched.
     "A dashboard shows 2 members and an unchanged library",
     () => a.request("/dashboard"),
     () => ({ status: 200, body: linkedHouseholdBody() }),
