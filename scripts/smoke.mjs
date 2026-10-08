@@ -1,5 +1,7 @@
 // Smoke test: proves the built app, the Cloudflare adapter and the Supabase auth flow still work
-// together, and that two accounts can be linked into one household (S-01, FR-002/FR-003).
+// together, that two accounts can be linked into one household (S-01, FR-002/FR-003), and that each
+// person's daily macro targets are saved, validated and visible to the partner -- including targets
+// set before the redemption, which must arrive in the shared household with their owner (S-02, FR-004).
 // Zero dependencies on purpose. Run against a live server: BASE_URL=http://localhost:4321 node scripts/smoke.mjs
 
 // Trailing slash stripped deliberately: BASE_URL is sent verbatim as the Origin header, and Astro's
@@ -72,6 +74,22 @@ function escapeRe(value) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
+// S-02 fixtures. The display strings mirror formatMacroTargets() in src/lib/services/macro-targets.ts.
+const targetsA = { kcal: "2200", protein_g: "160", fat_g: "70", carbs_g: "230" };
+const targetsB = { kcal: "1800", protein_g: "120", fat_g: "60", carbs_g: "180" };
+const targetsLabelA = "2200 kcal · P 160 g · F 70 g · C 230 g";
+const targetsLabelB = "1800 kcal · P 120 g · F 60 g · C 180 g";
+
+function testIdBody(id, text) {
+  return new RegExp(`data-testid="${id}"[^>]*>\\s*${escapeRe(text)}\\s*</p>`);
+}
+
+function targetsPageBody(mine, partner) {
+  return new RegExp(
+    `${testIdBody("targets-mine", mine).source}[\\s\\S]*${testIdBody("targets-partner", partner).source}`,
+  );
+}
+
 // Captured mid-run and read inside later steps' closures. The `steps` array literal is evaluated at
 // module load, so anything depending on these must be read at call time, not at literal time --
 // which is exactly what the thunk form of the third tuple element is for.
@@ -91,6 +109,12 @@ function linkedHouseholdBody() {
 const steps = [
   ["home renders", () => a.request("/"), { status: 200 }],
   ["dashboard redirects anonymous user", () => a.request("/dashboard"), { status: 302, location: "/auth/signin" }],
+  ["targets page redirects anonymous user", () => b.request("/targets"), { status: 302, location: /^\/auth\/signin$/ }],
+  [
+    "targets API redirects anonymous user",
+    () => b.request("/api/targets", { method: "POST", form: targetsB }),
+    { status: 302, location: /^\/auth\/signin$/ },
+  ],
   [
     "signup creates account",
     () => a.request("/api/auth/signup", { method: "POST", form: { email: emailA, password } }),
@@ -112,6 +136,45 @@ const steps = [
     "dashboard renders for signed-in user with seeded library",
     () => a.request("/dashboard"),
     { status: 200, body: /data-testid="library"[^>]*>\s*Library: [1-9]\d* recipes/ },
+  ],
+
+  // --- S-02: A sets targets; invalid input is rejected without touching the stored row ---------
+  [
+    "A dashboard shows targets not set",
+    () => a.request("/dashboard"),
+    { status: 200, body: testIdBody("targets", "Targets: not set") },
+  ],
+  [
+    "A saves targets",
+    () => a.request("/api/targets", { method: "POST", form: targetsA }),
+    { status: 302, location: /^\/targets\?saved=1$/ },
+  ],
+  [
+    "A targets page shows A's targets and no partner yet",
+    () => a.request("/targets"),
+    { status: 200, body: targetsPageBody(targetsLabelA, "Not linked yet") },
+  ],
+  [
+    // The empty-string pitfall: Number("") is 0, a valid fat value, so only the digits-only regex
+    // stands between a blank field and a silent save.
+    "a blank fat field is rejected",
+    () => a.request("/api/targets", { method: "POST", form: { ...targetsA, fat_g: "" } }),
+    { status: 302, location: "/targets?error=" },
+  ],
+  [
+    "zero calories are rejected",
+    () => a.request("/api/targets", { method: "POST", form: { ...targetsA, kcal: "0" } }),
+    { status: 302, location: "/targets?error=" },
+  ],
+  [
+    "rejected saves left A's targets unchanged",
+    () => a.request("/targets"),
+    { status: 200, body: testIdBody("targets-mine", targetsLabelA) },
+  ],
+  [
+    "A dashboard shows A's targets",
+    () => a.request("/dashboard"),
+    { status: 200, body: testIdBody("targets", `Targets: ${targetsLabelA}`) },
   ],
 
   // --- S-01: A invites, B redeems, both then read one household -----------------------------
@@ -168,6 +231,12 @@ const steps = [
     () => ({ status: 200, body: new RegExp(`name="code" value="${inviteCode}"`) }),
   ],
   [
+    // Saved in B's own household BEFORE redeeming: the composite membership FK must carry the row along.
+    "B saves targets before redeeming",
+    () => b.request("/api/targets", { method: "POST", form: targetsB }),
+    { status: 302, location: /^\/targets\?saved=1$/ },
+  ],
+  [
     "B redeems the invite",
     () => b.request("/api/household/redeem", { method: "POST", form: { code: inviteCode } }),
     { status: 302, location: /^\/dashboard\?joined=1$/ },
@@ -199,6 +268,16 @@ const steps = [
       // pass if the form were rendered anyway.
       body: /^(?![\s\S]*action="\/api\/household\/invite")[\s\S]*data-testid="invite"[^>]*>\s*Linked with your partner\.\s*</,
     },
+  ],
+  [
+    "A targets page shows B's pre-redemption targets as the partner's",
+    () => a.request("/targets"),
+    { status: 200, body: targetsPageBody(targetsLabelA, targetsLabelB) },
+  ],
+  [
+    "B targets page shows B's own targets and A's as the partner's",
+    () => b.request("/targets"),
+    { status: 200, body: targetsPageBody(targetsLabelB, targetsLabelA) },
   ],
   [
     "the used code cannot be redeemed again",
@@ -242,7 +321,7 @@ for (const [name, run, rawExpected] of steps) {
     console.log(`      expected ${expected.status} ${expected.location ?? ""}`);
     if (expected.body !== undefined) {
       console.log(`      expected body ${expected.body}`);
-      for (const id of ["household", "library", "invite", "join"]) {
+      for (const id of ["household", "library", "invite", "join", "targets", "targets-mine", "targets-partner"]) {
         if (actual.body.includes(`data-testid="${id}"`)) {
           console.log(`      got ${id}: ${testIdText(actual.body, id)}`);
         }

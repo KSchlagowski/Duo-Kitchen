@@ -468,10 +468,10 @@ The migration is additive, with no backfill. Existing accounts simply have no ro
 
 #### Automated
 
-- [x] 2.1 Lint passes: `npm run lint`
-- [x] 2.2 Type check passes: `npx astro check`
-- [x] 2.3 Build succeeds: `npm run build`
-- [x] 2.4 Existing smoke still passes against the dev server: `npm run smoke`
+- [x] 2.1 Lint passes: `npm run lint` — 4dadedd
+- [x] 2.2 Type check passes: `npx astro check` — 4dadedd
+- [x] 2.3 Build succeeds: `npm run build` — 4dadedd
+- [x] 2.4 Existing smoke still passes against the dev server: `npm run smoke` — 4dadedd
 
 #### Manual
 
@@ -496,13 +496,15 @@ The migration is additive, with no backfill. Existing accounts simply have no ro
 
 #### Automated
 
-- [ ] 3.1 Smoke passes against the dev server: `npm run smoke`
-- [ ] 3.2 Smoke passes against the production preview
-- [ ] 3.3 Lint passes: `npm run lint`
+- [x] 3.1 Smoke passes against the dev server: `npm run smoke`
+- [x] 3.2 Smoke passes against the production preview
+- [x] 3.3 Lint passes: `npm run lint`
 
 #### Manual
 
-- [ ] 3.4 Empty-string smoke step proven non-vacuous
+- [x] 3.4 Empty-string smoke step proven non-vacuous
+
+> Implementation note (3.4, performed by the agent, 2026-10-08): the API regex was loosened to `/^\d{0,4}$/` against the dev server. The smoke step "a blank fat field is rejected" then failed (`302 /targets?saved=1`), along with four downstream targets checks. The change was reverted with `git checkout`, and the smoke passed again against the production preview.
 
 ### Phase 4: Documentation and conventions
 
