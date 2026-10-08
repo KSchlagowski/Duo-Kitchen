@@ -544,6 +544,8 @@ After the rebase and the re-verification, publish the rewritten branch with `git
 
 > Implementation notes (Phase 3): 3.7 — the two oracle queries were run with `npx supabase db query --linked` before pinning: `1532 kcal · P 107 g · F 54 g · C 151 g`, Ryż raw 161 → cooked 403 (×2.50), Kurczak raw 416 → cooked 312 (×0.75); both cooked lines are pinned. 3.8 — `cookedWeight()` returning `rawG` without the ratio made exactly the oracle step fail, with the dump showing `component-cooked: Raw 161 g → cooked ≈ 161 g (×2.50)`; reverted (no diff). The roadmap had no separate backlog entry for S-05, so only the table row and the section status changed. `change.md` stays `implementing`: Phase 4 (rebase onto S-03) is still pending and gated on S-03 reaching `main`.
 
+> Review addendum (impl review F1, 2026-10-08): the detail page validates the id with `z.guid()` instead of the `z.uuid()` named above. `z.uuid()` also enforces the RFC version/variant nibbles, which Postgres does not, so a library row with a non-RFC id would be listed as a card but 404 on its detail page. `z.guid()` still keeps every malformed segment away from PostgREST (no `22P02`).
+
 ### Phase 4: Rebase onto S-03 and Re-verify (gated)
 
 #### Automated

@@ -545,6 +545,7 @@ for (const [name, run, rawExpected] of steps) {
         "recipe-total",
         "component-cooked",
         "recipe-not-found",
+        "recipe-unavailable",
       ]) {
         if (actual.body.includes(`data-testid="${id}"`)) {
           console.log(`      got ${id}: ${testIdText(actual.body, id)}`);

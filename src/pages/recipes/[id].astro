@@ -15,10 +15,12 @@ import type { RecipeDetail, RecipeDetailStep } from "@/types";
 
 // Three distinct outcomes: a malformed or absent id is 404, a failed read is 500 (never "not found").
 // The uuid check runs first so a malformed id never reaches PostgREST, which would answer 22P02.
+// z.guid(), not z.uuid(): Postgres accepts any 8-4-4-4-12 hex id, so the stricter RFC version/variant
+// check would 404 a library row that the card grid still lists.
 type State = { kind: "found"; recipe: RecipeDetail } | { kind: "not-found" } | { kind: "unavailable" };
 
 let state: State = { kind: "not-found" };
-const parsedId = z.uuid().safeParse(Astro.params.id);
+const parsedId = z.guid().safeParse(Astro.params.id);
 if (parsedId.success) {
   const supabase = createClient(Astro.request.headers, Astro.cookies);
   if (!supabase) {
