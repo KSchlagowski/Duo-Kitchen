@@ -133,6 +133,7 @@ Users can then sign in immediately after sign-up without clicking a confirmation
 | `/join`               | Invite redemption — intentionally **unprotected** (see below)           |
 | `/dashboard`          | Example protected page (redirects to `/auth/signin` if unauthenticated) |
 | `/targets`            | Your own daily macro targets (editable) and your partner's (read-only)  |
+| `/plan`               | Household 3-day meal plan (shared with your partner)                    |
 
 Route protection is handled in `src/middleware.ts`. Add paths to the `PROTECTED_ROUTES` array there to require authentication.
 
@@ -174,6 +175,8 @@ account saves its macro targets and has a blank field and a zero-calorie value r
 changing them, the second saves its own targets **before** redeeming, and after the redemption each
 account's `/targets` page shows the other's values as the partner's.
 
+For S-03 it also covers the meal plan. `/plan` and `/api/plan` turn away anonymous visitors. The first account saves a 2-meal plan, and an unknown recipe and a meal for a not-yet-linked partner are each rejected with their own message. After the linking, the second account sees the same plan, edits it with one meal marked for the partner, and the first account sees that meal as its own.
+
 > **Note:** this script exists primarily to guard the development of the starter itself — it is a fast sanity check that dependency upgrades did not break the build, the Cloudflare adapter or the Supabase auth flow. It is **not** a substitute for a real test suite. Once you build your own product on top of this starter, add proper tests (unit, integration, end-to-end) suited to your application.
 
 ## CI
@@ -204,6 +207,8 @@ where not exists (select 1 from public.household_members m where m.household_id 
 ```
 
 Run that **until it deletes 0 rows**. It needs more than one pass by design: deleting a shared household cascades its `household_invites` rows, and only then is the pre-redemption household it pointed at released for the next pass.
+
+Deleting a household also cascades its meal plans (S-03). Plans stay behind on redemption, so a preserved pre-redemption household may now hold the redeemer's plans: one more reason never to delete memberless households blindly. The smoke run itself saves no plan before redeeming.
 
 ## License
 

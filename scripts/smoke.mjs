@@ -84,6 +84,19 @@ function testIdBody(id, text) {
   return new RegExp(`data-testid="${id}"[^>]*>\\s*${escapeRe(text)}\\s*</p>`);
 }
 
+// S-03 fixtures: a household meal plan saved by A, then shared with and edited by B after linking.
+// A fixed far-future start date, so no time zone can shift it. Seed recipe ids are stable (5eed0002-…).
+const planStart = "2031-01-06";
+const seedRecipe1 = "5eed0002-0000-4000-8000-000000000001";
+const seedRecipe2 = "5eed0002-0000-4000-8000-000000000002";
+const seedRecipe3 = "5eed0002-0000-4000-8000-000000000003";
+const planSaved = new RegExp(`^${escapeRe(`/plan?start=${planStart}&saved=1`)}$`);
+const S03_TEST_IDS = ["plan", "plan-summary"];
+
+function planError(message) {
+  return new RegExp(`^${escapeRe(`/plan?start=${planStart}&error=${encodeURIComponent(message)}`)}$`);
+}
+
 function targetsPageBody(mine, partner) {
   return new RegExp(
     `${testIdBody("targets-mine", mine).source}[\\s\\S]*${testIdBody("targets-partner", partner).source}`,
@@ -175,6 +188,57 @@ const steps = [
     "A dashboard shows A's targets",
     () => a.request("/dashboard"),
     { status: 200, body: testIdBody("targets", `Targets: ${targetsLabelA}`) },
+  ],
+
+  // --- S-03: A plans; rejected saves map to their own messages --------------------------------
+  ["plan page redirects anonymous user", () => b.request("/plan"), { status: 302, location: /^\/auth\/signin$/ }],
+  [
+    "plan API redirects anonymous user",
+    () => b.request("/api/plan", { method: "POST", form: { start_date: planStart } }),
+    { status: 302, location: /^\/auth\/signin$/ },
+  ],
+  [
+    "A plan page lists seed recipes and no plan yet",
+    () => a.request("/plan"),
+    {
+      status: 200,
+      body: new RegExp(
+        `^(?=[\\s\\S]*value="${seedRecipe1}")[\\s\\S]*${testIdBody("plan-summary", "Plan: none yet").source}`,
+      ),
+    },
+  ],
+  [
+    "A saves a plan with 2 filled slots",
+    () =>
+      a.request("/api/plan", {
+        method: "POST",
+        form: { start_date: planStart, d0_breakfast_recipe: seedRecipe1, d1_lunch_recipe: seedRecipe2 },
+      }),
+    { status: 302, location: planSaved },
+  ],
+  [
+    // RFC-valid, so zod passes it through and the RPC's KD011 is what rejects it.
+    "an unknown recipe is rejected with its own message",
+    () =>
+      a.request("/api/plan", {
+        method: "POST",
+        form: { start_date: planStart, d0_breakfast_recipe: "00000000-0000-4000-8000-0000000000ff" },
+      }),
+    { status: 302, location: planError("One of the chosen recipes no longer exists.") },
+  ],
+  [
+    "a meal for the partner is rejected while unlinked",
+    () =>
+      a.request("/api/plan", {
+        method: "POST",
+        form: { start_date: planStart, d0_breakfast_recipe: seedRecipe1, d0_breakfast_eater: "partner" },
+      }),
+    { status: 302, location: planError("You can mark meals for your partner once you're linked.") },
+  ],
+  [
+    "A dashboard shows the plan with 2 meals",
+    () => a.request("/dashboard"),
+    { status: 200, body: testIdBody("plan", `Plan: from ${planStart} · 2 of 15 meals`) },
   ],
 
   // --- S-01: A invites, B redeems, both then read one household -----------------------------
@@ -285,6 +349,44 @@ const steps = [
     () => b.request("/targets"),
     { status: 200, body: targetsPageBody(targetsLabelB, targetsLabelA) },
   ],
+
+  // --- S-03: the plan is shared; "partner" resolves from both sides ----------------------------
+  [
+    "B dashboard shows A's plan",
+    () => b.request("/dashboard"),
+    { status: 200, body: testIdBody("plan", `Plan: from ${planStart} · 2 of 15 meals`) },
+  ],
+  [
+    "B plan page shows A's saved recipe selected",
+    () => b.request("/plan"),
+    { status: 200, body: new RegExp(`<option[^>]*value="${seedRecipe1}"[^>]*selected`) },
+  ],
+  [
+    "B saves 3 slots, one for the partner",
+    () =>
+      b.request("/api/plan", {
+        method: "POST",
+        form: {
+          start_date: planStart,
+          d0_breakfast_recipe: seedRecipe1,
+          d1_lunch_recipe: seedRecipe2,
+          d2_dinner_recipe: seedRecipe3,
+          d2_dinner_eater: "partner",
+        },
+      }),
+    { status: 302, location: planSaved },
+  ],
+  [
+    "A dashboard shows 3 meals",
+    () => a.request("/dashboard"),
+    { status: 200, body: testIdBody("plan", `Plan: from ${planStart} · 3 of 15 meals`) },
+  ],
+  [
+    // B's "partner" is A, so A sees that meal as "me".
+    "A plan page shows B's partner meal as A's own",
+    () => a.request("/plan"),
+    { status: 200, body: /name="d2_dinner_eater"[^>]*>(?:(?!<\/select>)[\s\S])*<option value="me" selected/ },
+  ],
   [
     "the used code cannot be redeemed again",
     () => b.request("/api/household/redeem", { method: "POST", form: { code: inviteCode } }),
@@ -328,6 +430,12 @@ for (const [name, run, rawExpected] of steps) {
     if (expected.body !== undefined) {
       console.log(`      expected body ${expected.body}`);
       for (const id of ["household", "library", "invite", "join", "targets", "targets-mine", "targets-partner"]) {
+        if (actual.body.includes(`data-testid="${id}"`)) {
+          console.log(`      got ${id}: ${testIdText(actual.body, id)}`);
+        }
+      }
+      // S-03: its own loop, so the shared id list above stays untouched for parallel slices.
+      for (const id of S03_TEST_IDS) {
         if (actual.body.includes(`data-testid="${id}"`)) {
           console.log(`      got ${id}: ${testIdText(actual.body, id)}`);
         }
