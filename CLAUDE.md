@@ -17,7 +17,7 @@ Scripts: @package.json. Project-specific notes:
 
 - `npm run smoke` — dependency-free auth-flow smoke test (`scripts/smoke.mjs`) against a running server, `BASE_URL` env (default `http://localhost:4321`). Run after dependency upgrades; CI runs it against the production preview backed by the hosted Supabase project.
 - `npm run test:rls` — household isolation test (`supabase/tests/household_isolation.sql`) against the hosted Supabase project (`--linked`); runs in a rolled-back transaction so it commits nothing, fails with a descriptive error on any broken assertion. CI runs it in the smoke job.
-- `npm run test:seed` — seed integrity test (`supabase/tests/seed_integrity.sql`) against the hosted project (`--linked`), rolled back: seed content covers every solver rule (rounding steps, pieces, raw/cooked, division modes, step timings, meal types, aisles, macro levers) and the seed rows of the public library (the `5eed000N-…` ids) are internally consistent and depend only on other seed rows. Run it after every seed content migration; CI runs it in the smoke job.
+- `npm run test:seed` — seed integrity test (`supabase/tests/seed_integrity.sql`) against the hosted project (`--linked`), rolled back: seed content covers every solver rule (rounding steps, pieces, raw/cooked, division modes, step timings, meal types, aisles, macro levers) and the seed rows of the public library (the `5eed000N-…` ids) are internally consistent, depend only on other seed rows and match pinned per-table counts. Run it after every seed content migration (which updates those counts); CI runs it in the smoke job.
 - Pre-commit hooks: husky + lint-staged runs `eslint --fix` on `*.{ts,tsx,astro}` and `prettier --write` on `*.{json,css,md}`.
 
 ## Architecture

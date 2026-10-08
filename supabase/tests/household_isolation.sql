@@ -151,7 +151,8 @@ end;
 $$;
 
 -- As postgres: a product still used by an ingredient cannot be deleted (on delete restrict raises
--- restrict_violation), so removing a library product can never silently break a recipe.
+-- foreign_key_violation; restrict_violation is accepted too), so removing a library product can
+-- never silently break a recipe.
 do $$
 begin
   delete from public.products where id = '00000000-0000-4000-b000-00000000c001';
@@ -633,7 +634,7 @@ begin
     from pg_class c
     join pg_namespace n on n.oid = c.relnamespace
     join pg_attribute a on a.attrelid = c.oid and a.attname = 'household_id' and not a.attisdropped
-    where n.nspname = 'public' and c.relkind = 'r' and c.relname <> 'household_members'
+    where n.nspname = 'public' and c.relkind in ('r', 'p') and c.relname <> 'household_members'
   loop
     if not t.relrowsecurity then
       raise exception 'catch-all: public.% has household_id but RLS is not enabled', t.relname;
@@ -701,7 +702,10 @@ begin
   from pg_class c
   join pg_namespace n on n.oid = c.relnamespace
   where n.nspname = 'public' and c.relkind in ('v', 'm')
-    and not ('security_invoker=true' = any (coalesce(c.reloptions, '{}')));
+    and not exists (
+      select 1 from unnest(coalesce(c.reloptions, '{}')) o
+      where o ~* '^security_invoker=(true|on|yes|1)$'
+    );
   if bad is not null then
     raise exception 'classification: public views/materialized views without security_invoker=true: %', bad;
   end if;
@@ -759,9 +763,17 @@ declare
   p text;
 begin
   foreach lib in array array['products', 'recipes', 'recipe_components', 'recipe_ingredients', 'recipe_steps'] loop
-    foreach p in array array['INSERT', 'UPDATE', 'DELETE', 'TRUNCATE', 'REFERENCES', 'TRIGGER'] loop
+    foreach p in array array['INSERT', 'UPDATE', 'DELETE', 'TRUNCATE', 'REFERENCES', 'TRIGGER', 'MAINTAIN'] loop
       if has_table_privilege('authenticated', 'public.' || lib, p) then
         raise exception 'grants: authenticated holds % on library table public.%; the revoke is missing', p, lib;
+      end if;
+    end loop;
+
+    -- has_table_privilege sees table-level grants only; a column-level grant (the shape S-07 is told
+    -- to use) would slip past it.
+    foreach p in array array['INSERT', 'UPDATE', 'REFERENCES'] loop
+      if has_any_column_privilege('authenticated', 'public.' || lib, p) then
+        raise exception 'grants: authenticated holds column-level % on library table public.%', p, lib;
       end if;
     end loop;
 
@@ -769,7 +781,7 @@ begin
       raise exception 'grants: authenticated lacks SELECT on library table public.%', lib;
     end if;
 
-    foreach p in array array['SELECT', 'INSERT', 'UPDATE', 'DELETE', 'TRUNCATE', 'REFERENCES', 'TRIGGER'] loop
+    foreach p in array array['SELECT', 'INSERT', 'UPDATE', 'DELETE', 'TRUNCATE', 'REFERENCES', 'TRIGGER', 'MAINTAIN'] loop
       if has_table_privilege('anon', 'public.' || lib, p) then
         raise exception 'grants: anon holds % on library table public.%; the revoke all is missing', p, lib;
       end if;
@@ -1156,9 +1168,8 @@ $$;
 -- The partial unique index permits only one unredeemed invite per household, so each case needs its
 -- own host household. Every remaining case raises before any write, so no state is disturbed (the
 -- non-seed-rows guard, the one probe that would have moved user A on regression, is retired with
--- F-04). The rejection
--- block still stays after every block that reads the rls_test.a_household / b_household GUCs, so a
--- regression that lets a probe succeed can never corrupt an earlier assertion.
+-- F-04). The rejection block still stays after every block that reads the rls_test.a_household /
+-- b_household GUCs, so a regression that lets a probe succeed can never corrupt an earlier assertion.
 -- ---------------------------------------------------------------------------
 
 -- KD003: the same code cannot be redeemed twice (checked before KD004, so D re-redeeming its own

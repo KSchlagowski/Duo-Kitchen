@@ -307,7 +307,7 @@ $$;
 -- ---------------------------------------------------------------------------
 do $$
 declare
-  t text;
+  pair text[];
   bad text;
   n int;
 begin
@@ -323,11 +323,15 @@ begin
     raise exception 'library shape: library tables still carry household/copy columns: %', bad;
   end if;
 
-  -- (b) every seed view is non-empty.
-  foreach t in array array['seed_products', 'seed_recipes', 'seed_recipe_components', 'seed_recipe_ingredients', 'seed_recipe_steps'] loop
-    execute format('select count(*) from pg_temp.%I', t) into n;
-    if n = 0 then
-      raise exception 'library shape: pg_temp.% is empty; the seed rows are missing from the public library', t;
+  -- (b) every seed view holds exactly the seed set: a tripwire against a seed content migration that
+  -- accidentally drops rows. A deliberate seed content migration updates these counts with it.
+  foreach pair slice 1 in array array[
+    ['seed_products', '46'], ['seed_recipes', '8'], ['seed_recipe_components', '14'],
+    ['seed_recipe_ingredients', '69'], ['seed_recipe_steps', '33']
+  ] loop
+    execute format('select count(*) from pg_temp.%I', pair[1]) into n;
+    if n <> pair[2]::int then
+      raise exception 'library shape: pg_temp.% has % rows, expected %; seed rows are missing from (or were added to) the public library', pair[1], n, pair[2];
     end if;
   end loop;
 
