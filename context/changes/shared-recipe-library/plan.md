@@ -373,17 +373,25 @@ The library becomes 1/34th of its current row count, and `select … using (true
 
 #### Automated
 
-- [ ] 1.1 Only the new migration is pending: `npx supabase db push --dry-run`
-- [ ] 1.2 Migration applies cleanly to the hosted project: `npx supabase db push`
-- [ ] 1.3 Isolation test passes: `npm run test:rls`
-- [ ] 1.4 Seed integrity test passes: `npm run test:seed`
-- [ ] 1.5 Live check: products = 46, recipes = 8
+- [x] 1.1 Only the new migration is pending: `npx supabase db push --dry-run`
+- [x] 1.2 Migration applies cleanly to the hosted project: `npx supabase db push`
+- [x] 1.3 Isolation test passes: `npm run test:rls`
+- [x] 1.4 Seed integrity test passes: `npm run test:seed`
+- [x] 1.5 Live check: products = 46, recipes = 8
 
 #### Manual
 
-- [ ] 1.6 Deliberate-break spot check of the new isolation assertions
-- [ ] 1.7 Dashboard shows exactly one SELECT policy per library table
-- [ ] 1.8 Guard raises on a nulled nullable column in a rolled-back session
+- [x] 1.6 Deliberate-break spot check of the new isolation assertions
+- [x] 1.7 Dashboard shows exactly one SELECT policy per library table
+- [x] 1.8 Guard raises on a nulled nullable column in a rolled-back session
+
+> Implementation notes (Phase 1, non-interactive run, 2026-10-08):
+> - 1.6 run by the implementer on scratch copies (never committed): dropping `products` from `library_tables` failed with "classification: public.products is neither household-scoped nor a declared library table"; switching the products insert probe's handler to `unique_violation` failed with `42501 permission denied for table products`; additionally, a `grant insert on public.products to authenticated` prepended to the file failed with "grants: authenticated holds INSERT on library table public.products; the revoke is missing" (and the RLS-only insert probe still passed — both levers are independent).
+> - 1.7 verified via `pg_policies` on the linked project (the source the dashboard Policies page renders): exactly `<table>:SELECT:authenticated` for each of the five tables. The dashboard UI itself was not opened.
+> - 1.8 run before `db push`: the guard passed on live data, and raised "F-04 guard: 1 distinct products copies differ from their template" with one household's egg `grams_per_piece` nulled (template value 50), rolled back.
+> - Choice: the guard also checks (c) that no household holds a *partial* copy (a deleted seed row is a modification too); households with zero copies are allowed.
+> - Choice: the "seed mechanism gone" assertions run as postgres (next to the grants block) rather than as user A, so `to_regclass`/`to_regprocedure` can never be vacuously null for lack of schema privileges.
+> - Choice: the `restrict_violation` FK probe runs as postgres right after the fixture chain; the library write-denial update/delete probes target every seed id (`5eed%`) and the fixture chain, not one id.
 
 ### Phase 2: App code and smoke test
 

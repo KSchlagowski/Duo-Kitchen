@@ -10,12 +10,35 @@
 -- Template for later household-scoped tables: as postgres, seed a row for each household; then,
 -- impersonating user A, assert A sees only its own rows and cannot read/write B's.
 --
+-- Three ownership classes (F-04): household-scoped tables (household_id + the helper predicate),
+-- per-person tables (household-scoped, plus the owner predicate), and the PUBLIC LIBRARY (products,
+-- recipes and their children): no household_id, one SELECT policy for authenticated, no client
+-- writes. The classification catch-all below fails on any public table that fits none of them.
+--
 -- Impersonation:
 --   set local role authenticated;
 --   select set_config('request.jwt.claims', json_build_object('sub', <uid>, 'role', 'authenticated')::text, true);
 -- Switch back to postgres with `reset role`.
 
 begin;
+
+-- ---------------------------------------------------------------------------
+-- Library snapshot (as postgres), taken BEFORE any sign-up: ordered `table=count;` string, so the
+-- block after the inserts can prove that signing up creates no library rows (F-04).
+-- ---------------------------------------------------------------------------
+do $$
+declare
+  t text;
+  n int;
+  counts text := '';
+begin
+  foreach t in array array['products', 'recipes', 'recipe_components', 'recipe_ingredients', 'recipe_steps'] loop
+    execute format('select count(*) from public.%I', t) into n;
+    counts := counts || t || '=' || n || ';';
+  end loop;
+  perform set_config('rls_test.library_counts', counts, true);
+end;
+$$;
 
 -- ---------------------------------------------------------------------------
 -- Setup (as postgres): two accounts; the sign-up trigger creates their households.
@@ -55,32 +78,25 @@ end;
 $$;
 
 -- ---------------------------------------------------------------------------
--- Products and recipes (F-02), as postgres: the trigger copied the seed set into both households,
--- and one fixture chain (product -> recipe -> component -> ingredient -> step) per household.
--- Fixture ids: 00000000-0000-4000-b000-00000000<a|b>00<1..5> (1 product, 2 recipe, 3 component,
--- 4 ingredient, 5 step).
+-- Public library (F-04), as postgres: signing up created no library rows (no per-household seed
+-- copy), then ONE non-seed fixture chain (product -> recipe -> component -> ingredient -> step) that
+-- every authenticated user must see. Fixture ids: 00000000-0000-4000-b000-00000000c00<1..5>
+-- (1 product, 2 recipe, 3 component, 4 ingredient, 5 step).
 -- ---------------------------------------------------------------------------
 do $$
 declare
-  hh uuid;
   t text;
-  copied int;
-  templates int;
+  n int;
+  counts text := '';
 begin
-  foreach hh in array array[
-    current_setting('rls_test.a_household')::uuid,
-    current_setting('rls_test.b_household')::uuid
-  ] loop
-    foreach t in array array['products', 'recipes', 'recipe_components', 'recipe_ingredients', 'recipe_steps'] loop
-      execute format('select count(*) from public.%I where household_id = $1 and seed_id is not null', t)
-        into copied using hh;
-      execute format('select count(*) from private.%I', 'seed_' || t) into templates;
-      if copied <> templates then
-        raise exception 'trigger seeding: household % has % seeded % rows, expected % (private.seed_%)',
-          hh, copied, t, templates, t;
-      end if;
-    end loop;
+  foreach t in array array['products', 'recipes', 'recipe_components', 'recipe_ingredients', 'recipe_steps'] loop
+    execute format('select count(*) from public.%I', t) into n;
+    counts := counts || t || '=' || n || ';';
   end loop;
+  if counts <> current_setting('rls_test.library_counts') then
+    raise exception 'sign-up: library counts changed from % to % -- the sign-up trigger must create no library rows',
+      current_setting('rls_test.library_counts'), counts;
+  end if;
 end;
 $$;
 
@@ -88,37 +104,35 @@ do $$
 declare
   a_household uuid := current_setting('rls_test.a_household')::uuid;
   b_household uuid := current_setting('rls_test.b_household')::uuid;
+  t text;
+  n int;
+  counts text := '';
 begin
-  insert into public.products (id, household_id, name, kcal_per_100g, protein_per_100g, fat_per_100g, carbs_per_100g, aisle)
-  values
-    ('00000000-0000-4000-b000-00000000a001', a_household, 'RLS test product A', 100, 10, 2, 10, 'other'),
-    ('00000000-0000-4000-b000-00000000b001', b_household, 'RLS test product B', 100, 10, 2, 10, 'other');
+  insert into public.products (id, name, kcal_per_100g, protein_per_100g, fat_per_100g, carbs_per_100g, aisle)
+  values ('00000000-0000-4000-b000-00000000c001', 'RLS test product', 100, 10, 2, 10, 'other');
 
-  insert into public.recipes (id, household_id, name, cuisine, prep_minutes, division_mode)
-  values
-    ('00000000-0000-4000-b000-00000000a002', a_household, 'RLS test recipe A', 'test', 10, 'whole_dish'),
-    ('00000000-0000-4000-b000-00000000b002', b_household, 'RLS test recipe B', 'test', 10, 'whole_dish');
+  insert into public.recipes (id, name, cuisine, prep_minutes, division_mode)
+  values ('00000000-0000-4000-b000-00000000c002', 'RLS test recipe', 'test', 10, 'whole_dish');
 
-  insert into public.recipe_components (id, household_id, recipe_id, position, name)
-  values
-    ('00000000-0000-4000-b000-00000000a003', a_household, '00000000-0000-4000-b000-00000000a002', 1, 'A'),
-    ('00000000-0000-4000-b000-00000000b003', b_household, '00000000-0000-4000-b000-00000000b002', 1, 'B');
+  insert into public.recipe_components (id, recipe_id, position, name)
+  values ('00000000-0000-4000-b000-00000000c003', '00000000-0000-4000-b000-00000000c002', 1, 'C');
 
-  insert into public.recipe_ingredients (id, household_id, component_id, product_id, position, base_amount_g)
-  values
-    ('00000000-0000-4000-b000-00000000a004', a_household, '00000000-0000-4000-b000-00000000a003',
-      '00000000-0000-4000-b000-00000000a001', 1, 100),
-    ('00000000-0000-4000-b000-00000000b004', b_household, '00000000-0000-4000-b000-00000000b003',
-      '00000000-0000-4000-b000-00000000b001', 1, 100);
+  insert into public.recipe_ingredients (id, component_id, product_id, position, base_amount_g)
+  values ('00000000-0000-4000-b000-00000000c004', '00000000-0000-4000-b000-00000000c003',
+    '00000000-0000-4000-b000-00000000c001', 1, 100);
 
-  insert into public.recipe_steps (id, household_id, recipe_id, position, instruction, timing, component_id)
-  values
-    ('00000000-0000-4000-b000-00000000a005', a_household, '00000000-0000-4000-b000-00000000a002', 1,
-      'Step A', 'fresh', '00000000-0000-4000-b000-00000000a003'),
-    ('00000000-0000-4000-b000-00000000b005', b_household, '00000000-0000-4000-b000-00000000b002', 1,
-      'Step B', 'fresh', '00000000-0000-4000-b000-00000000b003');
+  insert into public.recipe_steps (id, recipe_id, position, instruction, timing, component_id)
+  values ('00000000-0000-4000-b000-00000000c005', '00000000-0000-4000-b000-00000000c002', 1,
+    'Step C', 'fresh', '00000000-0000-4000-b000-00000000c003');
 
-  -- Invites (S-01), fixture id 6 in the same scheme. One live bearer code per household, so they
+  -- Re-snapshot with the fixture chain included: this is what every authenticated user must see.
+  foreach t in array array['products', 'recipes', 'recipe_components', 'recipe_ingredients', 'recipe_steps'] loop
+    execute format('select count(*) from public.%I', t) into n;
+    counts := counts || t || '=' || n || ';';
+  end loop;
+  perform set_config('rls_test.library_counts', counts, true);
+
+  -- Invites (S-01), fixture ids …a006 / …b006. One live bearer code per household, so they
   -- occupy each household's household_invites_one_unredeemed_idx slot. Inserted as postgres because
   -- authenticated has no insert grant -- which the denial block below asserts.
   insert into public.household_invites (id, household_id, code, created_by, expires_at)
@@ -128,12 +142,21 @@ begin
     ('00000000-0000-4000-b000-00000000b006', b_household, 'b0b0b0b0b0b0b002',
       '00000000-0000-4000-a000-00000000000b', now() + interval '7 days');
 
-  -- Macro targets (S-02): one per-person row each. No id column, so these are keyed by user_id and
-  -- stay out of the id-indexed loops below.
+  -- Macro targets (S-02): one per-person row each. No id column, so these are keyed by user_id.
   insert into public.macro_targets (user_id, household_id, kcal, protein_g, fat_g, carbs_g)
   values
     ('00000000-0000-4000-a000-00000000000a', a_household, 2200, 160, 70, 230),
     ('00000000-0000-4000-a000-00000000000b', b_household, 1800, 120, 60, 180);
+end;
+$$;
+
+-- As postgres: a product still used by an ingredient cannot be deleted (on delete restrict raises
+-- restrict_violation), so removing a library product can never silently break a recipe.
+do $$
+begin
+  delete from public.products where id = '00000000-0000-4000-b000-00000000c001';
+  raise exception 'library: a product still used by an ingredient could be deleted';
+exception when restrict_violation or foreign_key_violation then null;
 end;
 $$;
 
@@ -253,98 +276,131 @@ begin
 end;
 $$;
 
--- As user A: products, recipe and invite tables are scoped to A's household.
--- household_invites is element 6: fixture ids …a006 / …b006 continue the id-indexed scheme.
+-- As user A: household_invites is scoped to A's household (explicit fixture ids …a006 / …b006).
 do $$
 declare
   a_household uuid := current_setting('rls_test.a_household')::uuid;
-  t text;
-  i int;
   n int;
-  tables text[] := array['products', 'recipes', 'recipe_components', 'recipe_ingredients', 'recipe_steps',
-    'household_invites'];
 begin
-  for i in 1 .. array_length(tables, 1) loop
-    t := tables[i];
+  select count(*) into n from public.household_invites where household_id <> a_household;
+  if n <> 0 then
+    raise exception 'read: user A sees % public.household_invites rows of other households; every row must have household_id = a_household', n;
+  end if;
 
-    execute format('select count(*) from public.%I where household_id <> $1', t) into n using a_household;
-    if n <> 0 then
-      raise exception 'read: user A sees % public.% rows of other households; every row must have household_id = a_household', n, t;
-    end if;
+  select count(*) into n from public.household_invites where id = '00000000-0000-4000-b000-00000000b006';
+  if n <> 0 then
+    raise exception 'read: user A can see B''s fixture invite; B''s fixture ids must be invisible';
+  end if;
 
-    execute format('select count(*) from public.%I where id = $1', t)
-      into n using format('00000000-0000-4000-b000-00000000b00%s', i)::uuid;
-    if n <> 0 then
-      raise exception 'read: user A can see B''s fixture row in public.%; B''s fixture ids must be invisible', t;
-    end if;
-
-    execute format('select count(*) from public.%I where id = $1', t)
-      into n using format('00000000-0000-4000-b000-00000000a00%s', i)::uuid;
-    if n <> 1 then
-      raise exception 'read: user A cannot see own fixture row in public.%', t;
-    end if;
-  end loop;
+  select count(*) into n from public.household_invites where id = '00000000-0000-4000-b000-00000000a006';
+  if n <> 1 then
+    raise exception 'read: user A cannot see own fixture invite';
+  end if;
 end;
 $$;
 
--- As user A: writes only into A's own household; no cross-household references.
+-- As user A: the whole public library is visible -- every row, including the non-seed fixture chain.
 do $$
 declare
-  a_household uuid := current_setting('rls_test.a_household')::uuid;
-  b_household uuid := current_setting('rls_test.b_household')::uuid;
   t text;
-  i int;
   n int;
-  tables text[] := array['products', 'recipes', 'recipe_components', 'recipe_ingredients', 'recipe_steps'];
+  counts text := '';
 begin
-  insert into public.products (household_id, name, kcal_per_100g, protein_per_100g, fat_per_100g, carbs_per_100g, aisle)
-  values (a_household, 'RLS test product A2', 100, 10, 2, 10, 'other');
-
-  begin
-    insert into public.products (household_id, name, kcal_per_100g, protein_per_100g, fat_per_100g, carbs_per_100g, aisle)
-    values (b_household, 'RLS test product B2', 100, 10, 2, 10, 'other');
-    raise exception 'write: user A could insert a product into household B';
-  exception when insufficient_privilege then null;
-  end;
-
-  for i in 1 .. array_length(tables, 1) loop
-    t := tables[i];
-
-    execute format('update public.%I set created_at = now() where id = $1', t)
-      using format('00000000-0000-4000-b000-00000000b00%s', i)::uuid;
-    get diagnostics n = row_count;
-    if n <> 0 then
-      raise exception 'write: user A updated % of B''s public.% rows', n, t;
-    end if;
-
-    execute format('delete from public.%I where id = $1', t)
-      using format('00000000-0000-4000-b000-00000000b00%s', i)::uuid;
-    get diagnostics n = row_count;
-    if n <> 0 then
-      raise exception 'write: user A deleted % of B''s public.% rows', n, t;
-    end if;
+  foreach t in array array['products', 'recipes', 'recipe_components', 'recipe_ingredients', 'recipe_steps'] loop
+    execute format('select count(*) from public.%I', t) into n;
+    counts := counts || t || '=' || n || ';';
   end loop;
+  if counts <> current_setting('rls_test.library_counts') then
+    raise exception 'library: user A sees % but the library holds % -- every authenticated user must see the whole library',
+      counts, current_setting('rls_test.library_counts');
+  end if;
 
-  begin
-    -- Composite FK (product_id, household_id): A's ingredient cannot point at B's product.
-    insert into public.recipe_ingredients (household_id, component_id, product_id, position, base_amount_g)
-    values (a_household, '00000000-0000-4000-b000-00000000a003', '00000000-0000-4000-b000-00000000b001', 99, 100);
-    raise exception 'write: user A could reference B''s product from an ingredient';
-  exception when foreign_key_violation then null;
-  end;
+  select count(*) into n from public.products
+  where id in ('00000000-0000-4000-b000-00000000c001', '5eed0001-0000-4000-8000-000000000001');
+  if n <> 2 then
+    raise exception 'library: user A sees % of the fixture and first seed product, expected 2', n;
+  end if;
+  select count(*) into n from public.recipes where id = '00000000-0000-4000-b000-00000000c002';
+  if n <> 1 then
+    raise exception 'library: user A cannot see the fixture recipe';
+  end if;
+end;
+$$;
 
+-- As user A: no client writes to the library, on any table. The insert probes use valid values, so
+-- a missing revoke AND a missing RLS denial would make the insert SUCCEED rather than fail on a
+-- constraint; no handler other than insufficient_privilege on purpose (macro_targets style).
+-- update/delete may raise insufficient_privilege or affect 0 rows; truncate must raise.
+do $$
+declare
+  t text;
+  n int;
+begin
   begin
-    -- A product used by an ingredient cannot be deleted (on delete restrict raises restrict_violation).
-    delete from public.products where id = '00000000-0000-4000-b000-00000000a001';
-    raise exception 'write: user A could delete a product still used by an ingredient';
-  exception when restrict_violation or foreign_key_violation then null;
-  end;
-
-  begin
-    truncate public.products;
-    raise exception 'write: user A could truncate public.products';
+    insert into public.products (name, kcal_per_100g, protein_per_100g, fat_per_100g, carbs_per_100g, aisle)
+    values ('RLS probe product', 100, 10, 2, 10, 'other');
+    raise exception 'library write: user A could insert into public.products';
   exception when insufficient_privilege then null;
   end;
+
+  begin
+    insert into public.recipes (name, cuisine, prep_minutes, division_mode)
+    values ('RLS probe recipe', 'test', 10, 'whole_dish');
+    raise exception 'library write: user A could insert into public.recipes';
+  exception when insufficient_privilege then null;
+  end;
+
+  begin
+    insert into public.recipe_components (recipe_id, position, name)
+    values ('00000000-0000-4000-b000-00000000c002', 99, 'probe');
+    raise exception 'library write: user A could insert into public.recipe_components';
+  exception when insufficient_privilege then null;
+  end;
+
+  begin
+    insert into public.recipe_ingredients (component_id, product_id, position, base_amount_g)
+    values ('00000000-0000-4000-b000-00000000c003', '00000000-0000-4000-b000-00000000c001', 99, 100);
+    raise exception 'library write: user A could insert into public.recipe_ingredients';
+  exception when insufficient_privilege then null;
+  end;
+
+  begin
+    insert into public.recipe_steps (recipe_id, position, instruction, timing)
+    values ('00000000-0000-4000-b000-00000000c002', 99, 'probe', 'fresh');
+    raise exception 'library write: user A could insert into public.recipe_steps';
+  exception when insufficient_privilege then null;
+  end;
+
+  -- Seed rows (5eed…) and the fixture chain (…c00N) alike.
+  foreach t in array array['products', 'recipes', 'recipe_components', 'recipe_ingredients', 'recipe_steps'] loop
+    begin
+      execute format(
+        'update public.%I set created_at = now() where id::text like ''5eed%%'' or id::text like ''00000000-0000-4000-b000-00000000c00%%''',
+        t);
+      get diagnostics n = row_count;
+      if n <> 0 then
+        raise exception 'library write: user A updated % public.% rows', n, t;
+      end if;
+    exception when insufficient_privilege then null;
+    end;
+
+    begin
+      execute format(
+        'delete from public.%I where id::text like ''5eed%%'' or id::text like ''00000000-0000-4000-b000-00000000c00%%''',
+        t);
+      get diagnostics n = row_count;
+      if n <> 0 then
+        raise exception 'library write: user A deleted % public.% rows', n, t;
+      end if;
+    exception when insufficient_privilege then null;
+    end;
+
+    begin
+      execute format('truncate public.%I cascade', t);
+      raise exception 'library write: user A could truncate public.%', t;
+    exception when insufficient_privilege then null;
+    end;
+  end loop;
 end;
 $$;
 
@@ -410,27 +466,6 @@ begin
 end;
 $$;
 
--- As user A: the seed templates and the seed function are unreachable.
-do $$
-declare
-  t text;
-begin
-  foreach t in array array['seed_products', 'seed_recipes', 'seed_recipe_components', 'seed_recipe_ingredients', 'seed_recipe_steps'] loop
-    begin
-      execute format('select count(*) from private.%I', t);
-      raise exception 'templates: user A could read private.%', t;
-    exception when insufficient_privilege then null;
-    end;
-  end loop;
-
-  begin
-    perform private.seed_household(current_setting('rls_test.a_household')::uuid);
-    raise exception 'templates: user A could execute private.seed_household()';
-  exception when insufficient_privilege then null;
-  end;
-end;
-$$;
-
 -- ---------------------------------------------------------------------------
 -- As user B: symmetric read check.
 -- ---------------------------------------------------------------------------
@@ -471,6 +506,33 @@ begin
   select count(*) into n from public.macro_targets where user_id <> '00000000-0000-4000-a000-00000000000b';
   if n <> 0 then
     raise exception 'targets: user B sees % macro_targets rows of other users', n;
+  end if;
+end;
+$$;
+
+-- As user B (NOT linked with A, different household): the same whole library A sees.
+do $$
+declare
+  t text;
+  n int;
+  counts text := '';
+begin
+  foreach t in array array['products', 'recipes', 'recipe_components', 'recipe_ingredients', 'recipe_steps'] loop
+    execute format('select count(*) from public.%I', t) into n;
+    counts := counts || t || '=' || n || ';';
+  end loop;
+  if counts <> current_setting('rls_test.library_counts') then
+    raise exception 'library: unlinked user B sees % but the library holds % -- the library must not be household-scoped',
+      counts, current_setting('rls_test.library_counts');
+  end if;
+
+  select count(*) into n from public.products where id = '00000000-0000-4000-b000-00000000c001';
+  if n <> 1 then
+    raise exception 'library: unlinked user B cannot see the fixture product';
+  end if;
+  select count(*) into n from public.recipes where id = '00000000-0000-4000-b000-00000000c002';
+  if n <> 1 then
+    raise exception 'library: unlinked user B cannot see the fixture recipe';
   end if;
 end;
 $$;
@@ -595,6 +657,140 @@ begin
     limit 1;
     if bad_policy is not null then
       raise exception 'catch-all: policy "%" on public.% targets anon/public or bypasses private.user_household_ids()', bad_policy, t.relname;
+    end if;
+  end loop;
+end;
+$$;
+
+-- ---------------------------------------------------------------------------
+-- Classification catch-all (as postgres, F-04): every public table belongs to exactly one known
+-- ownership class. Without this, a table that forgets household_id would look like a library table
+-- and escape every check above. A new public table must either carry household_id (and pass the
+-- catch-all above) or be added to library_tables here -- and then pass the library checks below.
+--
+-- Library section: the 5eed000N- id namespace is reserved for migrations, and no library write path
+-- may accept a client-supplied id. "Every library policy is SELECT-only" holds for F-04; S-07 must
+-- REPLACE that assertion with one requiring each write policy to reference created_by and a definer
+-- helper -- never simply delete it.
+-- ---------------------------------------------------------------------------
+do $$
+declare
+  library_tables text[] := array['products', 'recipes', 'recipe_components', 'recipe_ingredients', 'recipe_steps'];
+  t record;
+  lib text;
+  bad text;
+begin
+  for t in
+    select c.relname
+    from pg_class c
+    join pg_namespace n on n.oid = c.relnamespace
+    where n.nspname = 'public' and c.relkind in ('r', 'p')
+      and c.relname <> 'households'
+      and c.relname <> all (library_tables)
+      and not exists (
+        select 1 from pg_attribute a
+        where a.attrelid = c.oid and a.attname = 'household_id' and not a.attisdropped
+      )
+  loop
+    raise exception 'classification: public.% is neither household-scoped nor a declared library table', t.relname;
+  end loop;
+
+  -- A public view is API-exposed and bypasses RLS unless it runs as the invoker; a materialized
+  -- view cannot, so it fails outright.
+  select string_agg(c.relname, ', ') into bad
+  from pg_class c
+  join pg_namespace n on n.oid = c.relnamespace
+  where n.nspname = 'public' and c.relkind in ('v', 'm')
+    and not ('security_invoker=true' = any (coalesce(c.reloptions, '{}')));
+  if bad is not null then
+    raise exception 'classification: public views/materialized views without security_invoker=true: %', bad;
+  end if;
+
+  foreach lib in array library_tables loop
+    if to_regclass('public.' || lib) is null then
+      raise exception 'classification: declared library table public.% does not exist', lib;
+    end if;
+
+    if not (select c.relrowsecurity from pg_class c where c.oid = ('public.' || lib)::regclass) then
+      raise exception 'classification: library table public.% does not have RLS enabled', lib;
+    end if;
+
+    if exists (
+      select 1 from pg_attribute a
+      where a.attrelid = ('public.' || lib)::regclass and a.attname = 'household_id' and not a.attisdropped
+    ) then
+      raise exception 'classification: library table public.% has a household_id column; the library is not household-scoped', lib;
+    end if;
+
+    select p.policyname into bad
+    from pg_policies p
+    where p.schemaname = 'public' and p.tablename = lib
+      and ('anon' = any (p.roles) or 'public' = any (p.roles))
+    limit 1;
+    if bad is not null then
+      raise exception 'classification: policy "%" on library table public.% targets anon/public', bad, lib;
+    end if;
+
+    select p.policyname into bad
+    from pg_policies p
+    where p.schemaname = 'public' and p.tablename = lib and p.cmd <> 'SELECT'
+    limit 1;
+    if bad is not null then
+      raise exception 'classification: policy "%" on library table public.% is not SELECT-only; the library is read-only for clients', bad, lib;
+    end if;
+
+    if not exists (
+      select 1 from pg_policies p
+      where p.schemaname = 'public' and p.tablename = lib and p.cmd = 'SELECT' and 'authenticated' = any (p.roles)
+    ) then
+      raise exception 'classification: library table public.% has no SELECT policy for authenticated', lib;
+    end if;
+  end loop;
+end;
+$$;
+
+-- Grants (as postgres): the second lever. The library tables were recreated by F-04, and Supabase's
+-- default privileges grant everything on a new public table to anon and authenticated, so the
+-- migration's revokes are load-bearing. RLS alone would still deny writes -- both levers are kept
+-- and asserted independently.
+do $$
+declare
+  lib text;
+  p text;
+begin
+  foreach lib in array array['products', 'recipes', 'recipe_components', 'recipe_ingredients', 'recipe_steps'] loop
+    foreach p in array array['INSERT', 'UPDATE', 'DELETE', 'TRUNCATE', 'REFERENCES', 'TRIGGER'] loop
+      if has_table_privilege('authenticated', 'public.' || lib, p) then
+        raise exception 'grants: authenticated holds % on library table public.%; the revoke is missing', p, lib;
+      end if;
+    end loop;
+
+    if not has_table_privilege('authenticated', 'public.' || lib, 'SELECT') then
+      raise exception 'grants: authenticated lacks SELECT on library table public.%', lib;
+    end if;
+
+    foreach p in array array['SELECT', 'INSERT', 'UPDATE', 'DELETE', 'TRUNCATE', 'REFERENCES', 'TRIGGER'] loop
+      if has_table_privilege('anon', 'public.' || lib, p) then
+        raise exception 'grants: anon holds % on library table public.%; the revoke all is missing', p, lib;
+      end if;
+    end loop;
+  end loop;
+end;
+$$;
+
+-- Seed mechanism gone (as postgres, F-04): no per-household seed function and no templates. The
+-- public tables are the single source of truth for seed content.
+do $$
+declare
+  t text;
+begin
+  if to_regprocedure('private.seed_household(uuid)') is not null then
+    raise exception 'seed mechanism: private.seed_household(uuid) still exists';
+  end if;
+
+  foreach t in array array['seed_products', 'seed_recipes', 'seed_recipe_components', 'seed_recipe_ingredients', 'seed_recipe_steps'] loop
+    if to_regclass('private.' || t) is not null then
+      raise exception 'seed mechanism: template table private.% still exists', t;
     end if;
   end loop;
 end;
@@ -772,9 +968,6 @@ declare
   inv public.household_invites;
   hh uuid;
   n int;
-  t text;
-  copied int;
-  templates int;
 begin
   select count(*) into n from public.household_members
   where user_id = '00000000-0000-4000-a000-00000000000d' and household_id = c_household;
@@ -837,33 +1030,11 @@ begin
   if inv.redeemed_from_household_id = c_household then
     raise exception 'redeem: invite redeemed_from_household_id equals the TARGET household %; it must name the origin', c_household;
   end if;
-
-  -- No duplicate seed set and no merge: the target's seeded counts still equal the templates.
-  foreach t in array array['products', 'recipes', 'recipe_components', 'recipe_ingredients', 'recipe_steps'] loop
-    execute format('select count(*) from public.%I where household_id = $1 and seed_id is not null', t)
-      into copied using c_household;
-    execute format('select count(*) from private.%I', 'seed_' || t) into templates;
-    if copied <> templates then
-      raise exception 'redeem: target household has % seeded % rows after redemption, expected % (private.seed_%) -- a merge or a duplicate seed set happened',
-        copied, t, templates, t;
-    end if;
-  end loop;
-
-  -- The counts above CANNOT detect a re-seed: private.seed_household() is `on conflict do nothing`,
-  -- so re-running it on an already-seeded household inserts nothing and every count still matches.
-  -- The stated guarantee is "redemption never re-enters seed_household()", and the only
-  -- non-vacuous way to assert it is on the function body itself. It matters because seed_household()
-  -- re-inserts rows a household DELETED (see its own header comment), so once S-05 lets households
-  -- delete seed rows, a redemption that re-seeded would silently resurrect them.
-  if (select p.prosrc from pg_proc p
-      join pg_namespace n on n.oid = p.pronamespace
-      where n.nspname = 'public' and p.proname = 'redeem_household_invite') like '%seed_household%' then
-    raise exception 'redeem: public.redeem_household_invite() references seed_household(); redemption must never re-seed';
-  end if;
 end;
 $$;
 
--- As user C, then user D: both now see the same household and the same library (FR-003).
+-- As user C, then user D: both now see the same household (FR-003), and each still sees exactly the
+-- whole public library -- redemption neither adds nor removes library rows.
 set local role authenticated;
 select set_config(
   'request.jwt.claims',
@@ -886,7 +1057,10 @@ begin
     execute format('select count(*) from public.%I', t) into n;
     counts := counts || t || '=' || n || ';';
   end loop;
-  perform set_config('rls_test.c_counts', counts, true);
+  if counts <> current_setting('rls_test.library_counts') then
+    raise exception 'redeem: user C sees % but the library holds % after the join',
+      counts, current_setting('rls_test.library_counts');
+  end if;
 end;
 $$;
 
@@ -937,9 +1111,9 @@ begin
     execute format('select count(*) from public.%I', t) into n;
     counts := counts || t || '=' || n || ';';
   end loop;
-  if counts <> current_setting('rls_test.c_counts') then
-    raise exception 'redeem: user D sees % but user C sees % -- linked accounts must read identical rows',
-      counts, current_setting('rls_test.c_counts');
+  if counts <> current_setting('rls_test.library_counts') then
+    raise exception 'redeem: user D sees % but the library holds % after the join',
+      counts, current_setting('rls_test.library_counts');
   end if;
 end;
 $$;
@@ -975,17 +1149,16 @@ $$;
 -- definer raise is not a privilege error.
 --
 -- The `when others` branch is not decoration. The validations are ORDERED, so deleting any one check
--- makes the NEXT one fire: drop the KD005 cap and this file would otherwise report "caller household
--- holds 6 non-seed rows", sending a maintainer after the KD006 guard that is working fine. The
--- branch names the code that actually fired and the one that was expected. P0001 is re-raised
--- untouched because that is this file's own assertion failures.
+-- makes the NEXT one fire (or lets the redemption succeed), and a bare "expected KD005" failure would
+-- send a maintainer after the wrong check. The branch names the code that actually fired and the one
+-- that was expected. P0001 is re-raised untouched because that is this file's own assertion failures.
 --
 -- The partial unique index permits only one unredeemed invite per household, so each case needs its
--- own host household. Every case here raises before any write, so no state is disturbed.
---
--- The ordering is load-bearing, not incidental: the KD006 case is last because it is the one probe
--- that WOULD mutate on regression (user A actually moves), and nothing after it may read the
--- rls_test.a_household / b_household GUCs.
+-- own host household. Every remaining case raises before any write, so no state is disturbed (the
+-- non-seed-rows guard, the one probe that would have moved user A on regression, is retired with
+-- F-04). The rejection
+-- block still stays after every block that reads the rls_test.a_household / b_household GUCs, so a
+-- regression that lets a probe succeed can never corrupt an earlier assertion.
 -- ---------------------------------------------------------------------------
 
 -- KD003: the same code cannot be redeemed twice (checked before KD004, so D re-redeeming its own
@@ -1137,8 +1310,8 @@ values
   (current_setting('rls_test.d_household')::uuid, 'd0d0d0d0d0d0d009',
     null, now() + interval '7 days');
 
--- User A is the rejection probe for the rest: it never moved, still owns a one-person household,
--- holds its own fixture invite, and its household holds fixture rows with seed_id is null.
+-- User A is the rejection probe for the rest: it never moved, still owns a one-person household, and
+-- holds its own fixture invite.
 set local role authenticated;
 select set_config(
   'request.jwt.claims',
@@ -1157,12 +1330,8 @@ declare
     array['a0a0a0a0a0a0a001', 'KD004', 'an invite to the caller''s own household was accepted'],
     -- E's household already holds two members (E and F).
     array['f0f0f0f0f0f0f002', 'KD005', 'a full target household accepted a third member'],
-    -- A's household holds the fixture rows, which have seed_id is null, so redeeming would leave
-    -- real data behind. B's fixture invite is live and B's household has one member, so KD006 is
-    -- the first check that can fire.
-    array['b0b0b0b0b0b0b002', 'KD006', 'a caller holding non-seed rows was allowed to leave them behind'],
     -- D's former household survived the redemption memberless, so this invite points at a household
-    -- nobody is in. Checked before KD006, so A's non-seed fixture rows do not mask it.
+    -- nobody is in. Without KD009 this redemption would succeed and move A there.
     array['d0d0d0d0d0d0d009', 'KD009', 'an invite to a household with no members left was accepted']
   ];
   i int;
@@ -1193,10 +1362,10 @@ reset role;
 -- ---------------------------------------------------------------------------
 do $$
 begin
-  raise notice 'household_isolation: all assertions passed (trigger, seed copy, read isolation, write denial, products/recipes isolation and cross-household FKs, template/seed-function denial, anon denial, helper grants, household_id catch-all, invite read isolation, invite write denial, RPC grants, redemption with provenance and unchanged seed counts, macro targets isolation with owner-only writes and the redemption cascade, eight rejection SQLSTATEs)';
+  raise notice 'household_isolation: all assertions passed (trigger, sign-up creates no library rows, read isolation, write denial, public library visibility, library write denial and grants, seed mechanism removed, classification catch-all, anon denial, helper grants, household_id catch-all, invite read isolation, invite write denial, RPC grants, redemption with provenance and an unchanged library, macro targets isolation with owner-only writes and the redemption cascade, seven rejection SQLSTATEs)';
 end;
 $$;
 
-select 'household_isolation: all assertions passed (incl. invite isolation, RPC grants, redemption, macro targets and eight rejection SQLSTATEs)' as result;
+select 'household_isolation: all assertions passed (incl. public library, classification catch-all, invite isolation, RPC grants, redemption, macro targets and seven rejection SQLSTATEs)' as result;
 
 rollback;

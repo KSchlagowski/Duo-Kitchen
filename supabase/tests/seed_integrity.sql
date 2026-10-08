@@ -1,12 +1,29 @@
--- Seed integrity test (roadmap F-02).
+-- Seed integrity test (roadmap F-02, retargeted by F-04).
 --
--- Proves the repo-maintained seed set (private.seed_*) covers every solver/scheduler rule, is
--- internally consistent, and copies into a household faithfully and idempotently. Everything runs
--- in one transaction that is always rolled back. Re-run after every seed content migration.
+-- Proves the repo-maintained seed set covers every solver/scheduler rule and is internally
+-- consistent, and that the library has its public shape (F-04). Since F-04 the seed rows live in the
+-- public library tables themselves, identified by their reserved stable ids (5eed000N-…, N = 1..5
+-- for products, recipes, components, ingredients, steps; see
+-- 20261007120100_seed_products_and_recipes.sql). Every check reads the seed rows only, through the
+-- temp views below, so user-added library rows (S-07) can never fail CI.
+--
+-- Everything runs in one transaction that is always rolled back (the temp views vanish with it).
+-- Re-run after every seed content migration.
 --
 -- Run: npm run test:seed   (supabase db query --linked -f supabase/tests/seed_integrity.sql)
 
 begin;
+
+create temp view seed_products as
+  select * from public.products where id::text like '5eed0001-%';
+create temp view seed_recipes as
+  select * from public.recipes where id::text like '5eed0002-%';
+create temp view seed_recipe_components as
+  select * from public.recipe_components where id::text like '5eed0003-%';
+create temp view seed_recipe_ingredients as
+  select * from public.recipe_ingredients where id::text like '5eed0004-%';
+create temp view seed_recipe_steps as
+  select * from public.recipe_steps where id::text like '5eed0005-%';
 
 -- ---------------------------------------------------------------------------
 -- Counts
@@ -15,7 +32,7 @@ do $$
 declare
   n int;
 begin
-  select count(*) into n from private.seed_recipes;
+  select count(*) into n from pg_temp.seed_recipes;
   if n not between 5 and 10 then
     raise exception 'counts: % seed recipes, expected 5-10', n;
   end if;
@@ -38,7 +55,7 @@ begin
   select string_agg(format('%s (kcal %s vs formula %s)', p.name, p.kcal_per_100g,
       4 * p.protein_per_100g + 4 * p.carbs_per_100g + 9 * p.fat_per_100g), ', ')
   into bad
-  from private.seed_products p
+  from pg_temp.seed_products p
   where p.aisle <> 'spices'
     and p.id <> all (atwater_exempt)
     and abs(p.kcal_per_100g - (4 * p.protein_per_100g + 4 * p.carbs_per_100g + 9 * p.fat_per_100g))
@@ -58,8 +75,8 @@ declare
 begin
   select string_agg(format('%s (%s, %s components)', r.name, r.division_mode, coalesce(c.n, 0)), ', ')
   into bad
-  from private.seed_recipes r
-  left join (select recipe_id, count(*) as n from private.seed_recipe_components group by recipe_id) c
+  from pg_temp.seed_recipes r
+  left join (select recipe_id, count(*) as n from pg_temp.seed_recipe_components group by recipe_id) c
     on c.recipe_id = r.id
   where (r.division_mode = 'whole_dish' and coalesce(c.n, 0) <> 1)
      or (r.division_mode = 'per_component' and coalesce(c.n, 0) < 2);
@@ -68,29 +85,29 @@ begin
   end if;
 
   select string_agg(c.name, ', ') into bad
-  from private.seed_recipe_components c
-  where not exists (select 1 from private.seed_recipe_ingredients i where i.component_id = c.id);
+  from pg_temp.seed_recipe_components c
+  where not exists (select 1 from pg_temp.seed_recipe_ingredients i where i.component_id = c.id);
   if bad is not null then
     raise exception 'structure: components without ingredients: %', bad;
   end if;
 
   select string_agg(r.name, ', ') into bad
-  from private.seed_recipes r
-  where not exists (select 1 from private.seed_recipe_steps s where s.recipe_id = r.id);
+  from pg_temp.seed_recipes r
+  where not exists (select 1 from pg_temp.seed_recipe_steps s where s.recipe_id = r.id);
   if bad is not null then
     raise exception 'structure: recipes without steps: %', bad;
   end if;
 
   select string_agg(r.name, ', ') into bad
-  from private.seed_recipes r
+  from pg_temp.seed_recipes r
   where cardinality(r.meal_types) <> (select count(distinct m) from unnest(r.meal_types) as m);
   if bad is not null then
     raise exception 'structure: duplicate meal types in: %', bad;
   end if;
 
   select string_agg(s.id::text, ', ') into bad
-  from private.seed_recipe_steps s
-  join private.seed_recipe_components c on c.id = s.component_id
+  from pg_temp.seed_recipe_steps s
+  join pg_temp.seed_recipe_components c on c.id = s.component_id
   where c.recipe_id <> s.recipe_id;
   if bad is not null then
     raise exception 'structure: steps tied to a component of another recipe: %', bad;
@@ -108,8 +125,8 @@ begin
   select string_agg(format('%s %s g (step %s g)', p.name, i.base_amount_g,
       coalesce(i.rounding_step_g, p.rounding_step_g)), ', ')
   into bad
-  from private.seed_recipe_ingredients i
-  join private.seed_products p on p.id = i.product_id
+  from pg_temp.seed_recipe_ingredients i
+  join pg_temp.seed_products p on p.id = i.product_id
   where p.grams_per_piece is null
     and mod(i.base_amount_g, coalesce(i.rounding_step_g, p.rounding_step_g)) <> 0;
   if bad is not null then
@@ -119,8 +136,8 @@ begin
   select string_agg(format('%s %s g (piece %s g, halves %s)', p.name, i.base_amount_g,
       p.grams_per_piece, i.allow_half_pieces), ', ')
   into bad
-  from private.seed_recipe_ingredients i
-  join private.seed_products p on p.id = i.product_id
+  from pg_temp.seed_recipe_ingredients i
+  join pg_temp.seed_products p on p.id = i.product_id
   where p.grams_per_piece is not null
     and mod(i.base_amount_g,
       case when i.allow_half_pieces then p.grams_per_piece / 2 else p.grams_per_piece end) <> 0;
@@ -129,8 +146,8 @@ begin
   end if;
 
   select string_agg(p.name, ', ') into bad
-  from private.seed_recipe_ingredients i
-  join private.seed_products p on p.id = i.product_id
+  from pg_temp.seed_recipe_ingredients i
+  join pg_temp.seed_products p on p.id = i.product_id
   where i.allow_half_pieces and p.grams_per_piece is null;
   if bad is not null then
     raise exception 'amounts: allow_half_pieces set on non-piece products: %', bad;
@@ -138,8 +155,8 @@ begin
 
   select string_agg(format('%s min %s g (piece %s g)', p.name, i.min_amount_g, p.grams_per_piece), ', ')
   into bad
-  from private.seed_recipe_ingredients i
-  join private.seed_products p on p.id = i.product_id
+  from pg_temp.seed_recipe_ingredients i
+  join pg_temp.seed_products p on p.id = i.product_id
   where p.grams_per_piece is not null and i.min_amount_g is not null
     and mod(i.min_amount_g, p.grams_per_piece) <> 0;
   if bad is not null then
@@ -158,7 +175,7 @@ declare
 begin
   select string_agg(m::text, ', ') into missing
   from unnest(enum_range(null::public.meal_type)) as m
-  where not exists (select 1 from private.seed_recipes r where m = any (r.meal_types));
+  where not exists (select 1 from pg_temp.seed_recipes r where m = any (r.meal_types));
   if missing is not null then
     raise exception 'coverage: no recipe suggests meal types: %', missing;
   end if;
@@ -166,7 +183,7 @@ begin
   select string_agg(b, ', ') into missing
   from (values ('<=20'), ('21-45'), ('>45')) as buckets (b)
   where not exists (
-    select 1 from private.seed_recipes r
+    select 1 from pg_temp.seed_recipes r
     where case
       when r.prep_minutes <= 20 then '<=20'
       when r.prep_minutes <= 45 then '21-45'
@@ -179,19 +196,19 @@ begin
 
   select string_agg(a::text, ', ') into missing
   from unnest(enum_range(null::public.store_aisle)) as a
-  where not exists (select 1 from private.seed_products p where p.aisle = a);
+  where not exists (select 1 from pg_temp.seed_products p where p.aisle = a);
   if missing is not null then
     raise exception 'coverage: no product in aisles: %', missing;
   end if;
 
   select string_agg(d::text, ', ') into missing
   from unnest(enum_range(null::public.division_mode)) as d
-  where not exists (select 1 from private.seed_recipes r where r.division_mode = d);
+  where not exists (select 1 from pg_temp.seed_recipes r where r.division_mode = d);
   if missing is not null then
     raise exception 'coverage: no recipe with division modes: %', missing;
   end if;
 
-  select count(*) into n from private.seed_recipe_components where cooked_yield_ratio is not null;
+  select count(*) into n from pg_temp.seed_recipe_components where cooked_yield_ratio is not null;
   if n < 2 then
     raise exception 'coverage: % components with cooked_yield_ratio, expected at least 2', n;
   end if;
@@ -199,8 +216,8 @@ begin
   select string_agg(h::text, ', ') into missing
   from (values (true), (false)) as halves (h)
   where not exists (
-    select 1 from private.seed_recipe_ingredients i
-    join private.seed_products p on p.id = i.product_id
+    select 1 from pg_temp.seed_recipe_ingredients i
+    join pg_temp.seed_products p on p.id = i.product_id
     where p.grams_per_piece is not null and i.allow_half_pieces = h
   );
   if missing is not null then
@@ -208,31 +225,31 @@ begin
   end if;
 
   select count(*) into n
-  from private.seed_recipe_ingredients i
-  join private.seed_products p on p.id = i.product_id
+  from pg_temp.seed_recipe_ingredients i
+  join pg_temp.seed_products p on p.id = i.product_id
   where p.grams_per_piece is null and coalesce(i.rounding_step_g, p.rounding_step_g) = 1;
   if n < 3 then
     raise exception 'coverage: % ingredients with an effective 1 g step, expected at least 3', n;
   end if;
 
-  select count(*) into n from private.seed_recipe_ingredients where rounding_step_g is not null;
+  select count(*) into n from pg_temp.seed_recipe_ingredients where rounding_step_g is not null;
   if n < 1 then
     raise exception 'coverage: no ingredient-level rounding step override';
   end if;
 
-  select count(*) into n from private.seed_recipe_ingredients where min_amount_g is not null;
+  select count(*) into n from pg_temp.seed_recipe_ingredients where min_amount_g is not null;
   if n < 1 then
     raise exception 'coverage: no ingredient with min_amount_g';
   end if;
 
   select string_agg(t::text, ', ') into missing
   from unnest(enum_range(null::public.step_timing)) as t
-  where not exists (select 1 from private.seed_recipe_steps s where s.timing = t);
+  where not exists (select 1 from pg_temp.seed_recipe_steps s where s.timing = t);
   if missing is not null then
     raise exception 'coverage: no step with timing: %', missing;
   end if;
 
-  select count(*) into n from private.seed_recipes where cardinality(meal_types) = 0;
+  select count(*) into n from pg_temp.seed_recipes where cardinality(meal_types) = 0;
   if n < 1 then
     raise exception 'coverage: no recipe with 0 meal types';
   end if;
@@ -254,8 +271,8 @@ begin
       sum(i.base_amount_g * p.protein_per_100g / 100) * 4 as protein_kcal,
       sum(i.base_amount_g * p.carbs_per_100g / 100) * 4 as carbs_kcal,
       sum(i.base_amount_g * p.fat_per_100g / 100) * 9 as fat_kcal
-    from private.seed_recipe_ingredients i
-    join private.seed_products p on p.id = i.product_id
+    from pg_temp.seed_recipe_ingredients i
+    join pg_temp.seed_products p on p.id = i.product_id
     group by i.component_id
   ),
   shares as (
@@ -285,57 +302,59 @@ end;
 $$;
 
 -- ---------------------------------------------------------------------------
--- Copy fidelity: a fresh household gets exactly the templates, idempotently, and can be deleted.
+-- Library shape (F-04): one public library, no household copies, and seed recipes that depend only
+-- on seed rows.
 -- ---------------------------------------------------------------------------
-insert into public.households (id) values ('00000000-0000-4000-c000-000000000001');
-
 do $$
 declare
-  hh uuid := '00000000-0000-4000-c000-000000000001';
   t text;
-  copied int;
-  templates int;
-  round int;
+  bad text;
   n int;
 begin
-  for round in 1 .. 2 loop
-    perform private.seed_household(hh);
-
-    foreach t in array array['products', 'recipes', 'recipe_components', 'recipe_ingredients', 'recipe_steps'] loop
-      execute format('select count(*) from public.%I where household_id = $1', t) into copied using hh;
-      execute format('select count(*) from private.%I', 'seed_' || t) into templates;
-      if copied <> templates then
-        raise exception 'copy fidelity (run %): household has % % rows, expected % (private.seed_%)',
-          round, copied, t, templates, t;
-      end if;
-    end loop;
-  end loop;
-
-  select count(*) into n
-  from public.recipe_ingredients i
-  left join public.products p on p.id = i.product_id and p.household_id = i.household_id
-  where i.household_id = hh and p.id is null;
-  if n <> 0 then
-    raise exception 'copy fidelity: % copied ingredients do not resolve to a product of the same household', n;
+  -- (a) no household scoping and no copy bookkeeping left on any library table.
+  select string_agg(format('public.%s.%s', c.relname, a.attname), ', ') into bad
+  from pg_class c
+  join pg_namespace ns on ns.oid = c.relnamespace
+  join pg_attribute a on a.attrelid = c.oid and not a.attisdropped
+  where ns.nspname = 'public'
+    and c.relname in ('products', 'recipes', 'recipe_components', 'recipe_ingredients', 'recipe_steps')
+    and a.attname in ('household_id', 'seed_id');
+  if bad is not null then
+    raise exception 'library shape: library tables still carry household/copy columns: %', bad;
   end if;
 
-  select count(*) into n
-  from public.recipe_steps s
-  join private.seed_recipe_steps t on t.id = s.seed_id
-  left join public.recipe_components c on c.id = s.component_id
-  where s.household_id = hh and c.seed_id is distinct from t.component_id;
-  if n <> 0 then
-    raise exception 'copy fidelity: % copied steps lost or mismatched their component', n;
-  end if;
-
-  delete from public.households where id = hh;
-
-  foreach t in array array['products', 'recipes', 'recipe_components', 'recipe_ingredients', 'recipe_steps'] loop
-    execute format('select count(*) from public.%I where household_id = $1', t) into n using hh;
-    if n <> 0 then
-      raise exception 'copy fidelity: % % rows left after deleting the household', n, t;
+  -- (b) every seed view is non-empty.
+  foreach t in array array['seed_products', 'seed_recipes', 'seed_recipe_components', 'seed_recipe_ingredients', 'seed_recipe_steps'] loop
+    execute format('select count(*) from pg_temp.%I', t) into n;
+    if n = 0 then
+      raise exception 'library shape: pg_temp.% is empty; the seed rows are missing from the public library', t;
     end if;
   end loop;
+
+  -- (c) seed recipes never depend on user rows.
+  select count(*) into n
+  from pg_temp.seed_recipe_ingredients i
+  where not exists (select 1 from pg_temp.seed_products p where p.id = i.product_id)
+     or not exists (select 1 from pg_temp.seed_recipe_components c where c.id = i.component_id);
+  if n <> 0 then
+    raise exception 'library shape: % seed ingredients reference a non-seed product or component', n;
+  end if;
+
+  select count(*) into n
+  from pg_temp.seed_recipe_components c
+  where not exists (select 1 from pg_temp.seed_recipes r where r.id = c.recipe_id);
+  if n <> 0 then
+    raise exception 'library shape: % seed components belong to a non-seed recipe', n;
+  end if;
+
+  select count(*) into n
+  from pg_temp.seed_recipe_steps s
+  where not exists (select 1 from pg_temp.seed_recipes r where r.id = s.recipe_id)
+     or (s.component_id is not null
+       and not exists (select 1 from pg_temp.seed_recipe_components c where c.id = s.component_id));
+  if n <> 0 then
+    raise exception 'library shape: % seed steps reference a non-seed recipe or component', n;
+  end if;
 end;
 $$;
 
@@ -344,7 +363,7 @@ $$;
 -- ---------------------------------------------------------------------------
 do $$
 begin
-  raise notice 'seed_integrity: all assertions passed (counts, atwater, structure, amounts, coverage, macro diversity, copy fidelity)';
+  raise notice 'seed_integrity: all assertions passed (counts, atwater, structure, amounts, coverage, macro diversity, library shape)';
 end;
 $$;
 
