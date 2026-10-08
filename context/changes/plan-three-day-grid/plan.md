@@ -427,7 +427,7 @@ The migration is additive (new tables, a new function) and needs no backfill. Ro
 - [x] 2.8 Clearing every slot leaves an empty saved plan — 4b53440
 - [x] 2.9 A new start date creates a second plan; the old one stays reachable — 4b53440
 - [x] 2.10 A tampered unknown recipe shows the KD011 message — 4b53440
-- [x] 2.11 With a read failing, no form is rendered
+- [x] 2.11 With a read failing, no form is rendered — ff209f6
 
 > Phase 2 notes (non-interactive run): the implementer checked 2.5–2.10 over HTTP against the production preview with a scripted run, using a fresh `smoke-manual-…@example.com` account that the README cleanup glob covers. They were not checked in a browser. 2.11 was performed at the start of Phase 3 with a temporary build that selects a non-existent column in `getMealPlan` (reverted, never committed). `/plan` rendered no form and showed "Plan is unavailable right now.", and the dashboard showed that line with "Open plan". Choices made: (a) the embeds use the explicit FK names (`plan_meals!plan_meals_plan_fkey`, `plan_dishes!plan_meals_dish_fkey`), and the cloud project resolves them with no PGRST201; (b) prettier collapses a plain multi-line `PROTECTED_ROUTES`, so a `// S-03` comment line keeps it one entry per line; (c) the pure helpers (`MEAL_TYPES`, `isIsoDate`, `addDays`, `weekdayLabel`, `defaultPlanStart`, `formatPlanSummary`) live in `meal-plans.ts` because the page, the API and the dashboard all use them; (d) the API treats a missing household (`getCurrentHousehold()` returning null) like a failed read and redirects with the generic save error; (e) the day header uses the `en-GB` weekday name next to the ISO date.
 
@@ -435,14 +435,16 @@ The migration is additive (new tables, a new function) and needs no backfill. Ro
 
 #### Automated
 
-- [x] 3.1 Linting passes
-- [x] 3.2 Formatting is clean for docs
-- [x] 3.3 Full smoke run passes against the production preview
-- [x] 3.4 Isolation test still passes
+- [x] 3.1 Linting passes — ff209f6
+- [x] 3.2 Formatting is clean for docs — ff209f6
+- [x] 3.3 Full smoke run passes against the production preview — ff209f6
+- [x] 3.4 Isolation test still passes — ff209f6
 
 #### Manual
 
 - [ ] 3.5 Two-browser check: partner edits are visible to the other partner
-- [x] 3.6 Shared-file edits are self-contained S-03 blocks
+- [x] 3.6 Shared-file edits are self-contained S-03 blocks — ff209f6
 
 > Phase 3 notes (non-interactive run): **3.5 was NOT performed in real browsers.** Its HTTP equivalent passes in the smoke run: B saves an edit that marks a meal for the partner, and A's dashboard and `/plan` then show 3 meals with that meal as "me". A human should still do the two-browser check. 3.6 was checked by the implementer with `git diff -U0 main`: every hunk in `smoke.mjs`, `types.ts`, `recipes.ts`, `dashboard.astro` and the README is insert-only. The only in-place edits are the `PROTECTED_ROUTES` reformat (planned), the `recipes.ts` / `dashboard.astro` type-import lines and the one appended sentence in CLAUDE.md's Write-revoked rule. A human reviewer should confirm. One deviation from the plan: the failure-dump list in `smoke.mjs` is **not** edited. Prettier expanded the spread version into a 10-line hunk, so `S03_TEST_IDS` gets its own dump loop below the untouched shared line, leaving the hunk purely additive for S-05's rebase. The smoke run passes all 47 steps (12 new S-03 steps) against the production preview. The roadmap is untouched, because the archive step updates it.
+
+> Epilogue (non-interactive run): one Manual row is still open, 3.5 (two-browser check). The run took the straggler gate's "Proceed to epilogue" option instead of pausing, because the session was told to record checks it could not perform rather than stop. `change.md` is `implemented`, and 3.5 will show up as a warning under `/10x-archive`.
