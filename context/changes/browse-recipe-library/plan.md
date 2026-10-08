@@ -496,13 +496,15 @@ After the rebase and the re-verification, publish the rewritten branch with `git
 
 #### Automated
 
-- [ ] 1.1 Lint passes: `npm run lint`
-- [ ] 1.2 Type check passes: `npx astro check`
-- [ ] 1.3 Build passes: `npm run build`
+- [x] 1.1 Lint passes: `npm run lint`
+- [x] 1.2 Type check passes: `npx astro check`
+- [x] 1.3 Build passes: `npm run build`
 
 #### Manual
 
-- [ ] 1.4 `getRecipeDetail` returns ordered components, ingredients and steps for Kurczak curry with no PGRST201
+- [x] 1.4 `getRecipeDetail` returns ordered components, ingredients and steps for Kurczak curry with no PGRST201
+
+> Implementation notes (Phase 1, non-interactive run): 1.4 was verified through a throw-away signed-in page on the dev server (removed before commit), not a `console.log` in a real page. Small choices made without asking: the half-up normalisation `Math.round(Number(x.toFixed(6)))` is applied up front in `formatMacroTotals()` / `formatCookedLine()`; a single piece prints `1 pc`, not `1 pcs`; non-integer grams (stored as `numeric(…,1)`) keep their one decimal in amounts and rounding steps; numeric columns pass through `Number()` in case PostgREST returns them as strings.
 
 ### Phase 2: Pages, Card Component, Route Protection and Dashboard Link
 

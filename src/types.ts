@@ -29,6 +29,69 @@ export interface RecipeLibrarySummary {
   productCount: number;
 }
 
+// --- S-05: browsing the public recipe library ------------------------------------------------
+// Computed nutrition for an amount of food. Same shape as MacroTargetsInput, different meaning:
+// an amount eaten, not a goal.
+export interface MacroTotals {
+  kcal: number;
+  proteinG: number;
+  fatG: number;
+  carbsG: number;
+}
+
+// One card in the library grid. No rating fields: ratings belong to S-06. `photoUrl` is always null
+// until a slice that can supply photos adds the column.
+export interface RecipeCard {
+  id: string;
+  name: string;
+  cuisine: string;
+  prepMinutes: number;
+  mealTypes: MealType[];
+  divisionMode: DivisionMode;
+  photoUrl: string | null;
+}
+
+export interface RecipeDetailIngredient {
+  id: string;
+  position: number;
+  productName: string;
+  amountG: number;
+  // The ingredient's own rounding step, falling back to the product's.
+  effectiveRoundingStepG: number;
+  minAmountG: number | null;
+  gramsPerPiece: number | null;
+  allowHalfPieces: boolean;
+  macros: MacroTotals;
+}
+
+export interface RecipeDetailComponent {
+  id: string;
+  position: number;
+  name: string;
+  cookedYieldRatio: number | null;
+  ingredients: RecipeDetailIngredient[];
+  totals: MacroTotals;
+  rawWeightG: number;
+  cookedWeightG: number | null;
+}
+
+export interface RecipeDetailStep {
+  id: string;
+  position: number;
+  instruction: string;
+  timing: StepTiming;
+  componentName: string | null;
+  durationMinutes: number | null;
+}
+
+// Totals are for one whole base batch; splitting per person is S-04's job.
+export interface RecipeDetail extends RecipeCard {
+  components: RecipeDetailComponent[];
+  steps: RecipeDetailStep[];
+  totals: MacroTotals;
+}
+// --- end S-05 -------------------------------------------------------------------------------
+
 // One person's daily targets (S-02). Keyed on the person, not the household: the row follows its
 // owner through a redemption and stays readable by the partner.
 export interface MacroTargets {
