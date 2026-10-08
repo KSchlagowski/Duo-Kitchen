@@ -33,7 +33,7 @@ A couple who cook together in bulk, but have different daily macro targets, impr
 | F-02 | seed-products-and-recipes     | (foundation) product database and 5–10 seed recipes with solver-relevant attributes exist | F-01             | FR-010, FR-012                                | done     |
 | F-03 | deploy-and-install-skeleton   | (foundation) merges to main auto-deploy; the app installs on desktop, Android, iOS        | —                | NFR (installable), FR-024 (public endpoint)   | ready    |
 | S-01 | link-partner-household        | invite their partner and share one household                                              | F-01             | US-01, FR-001, FR-002, FR-003                 | done     |
-| S-02 | set-daily-macro-targets       | enter their own daily calorie/protein/fat/carb targets                                    | F-01             | US-01, FR-004                                 | ready    |
+| S-02 | set-daily-macro-targets       | enter their own daily calorie/protein/fat/carb targets                                    | F-01             | US-01, FR-004                                 | done     |
 | S-03 | plan-three-day-grid           | fill a 3-day × 5-meal plan, marking each meal for A, B or both, and save it unsolved      | F-01, F-02       | US-01, FR-013, FR-014, FR-015, FR-016, FR-020 | ready    |
 | S-04 | solve-daily-macros            | solve a day and see per-ingredient quantities and the A/B split within tolerance          | S-01, S-02, S-03 | US-01, FR-018, FR-019, FR-020                 | proposed |
 | S-05 | browse-recipe-library         | browse recipe cards and open full recipe details                                          | F-02             | FR-005, FR-009, FR-010, FR-012                | ready    |
@@ -137,7 +137,7 @@ Foundations below assume these are present and do NOT re-scaffold them.
 - **Blockers:** —
 - **Unknowns:** —
 - **Risk:** Small but on the critical path to S-04; deliberately no calculator (PRD §Non-Goals).
-- **Status:** ready
+- **Status:** done
 
 ### S-03: Plan a 3-day grid
 
@@ -339,3 +339,4 @@ Foundations below assume these are present and do NOT re-scaffold them.
 - **F-01: (foundation) every signed-up person belongs to a household (initially of one), and a household-scoped access policy pattern is in place for all household data.** — Archived 2026-10-07 → `context/archive/2026-10-06-household-data-scope/`. Lesson: —.
 - **F-02: (foundation) a product database with nutrition values and store aisles, plus 5–10 generated seed recipes carrying the attributes the solver needs (rounding step, minimum sensible amount, whole/half-piece rule, raw vs. cooked weight, per-component vs. whole-dish division, make-ahead vs. fresh steps).** — Archived 2026-10-07 → `context/archive/2026-10-07-seed-products-and-recipes/`. Lesson: —.
 - **S-01: user can generate an invite code/link that their partner redeems, after which both see the same recipes, plans and shopping lists.** — Archived 2026-10-08 → `context/archive/2026-10-07-link-partner-household/`. Lesson: —.
+- **S-02: user can manually enter their own daily calorie, protein, fat and carb targets and see their partner's.** — Archived 2026-10-08 → `context/archive/2026-10-08-set-daily-macro-targets/`. Lesson: —.
