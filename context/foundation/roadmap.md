@@ -32,13 +32,14 @@ A couple who cook together in bulk, but have different daily macro targets, impr
 | F-01 | household-data-scope          | (foundation) every account belongs to a household; data access is household-scoped        | —                | Access Control, NFR (household privacy)       | done     |
 | F-02 | seed-products-and-recipes     | (foundation) product database and 5–10 seed recipes with solver-relevant attributes exist | F-01             | FR-010, FR-012                                | done     |
 | F-03 | deploy-and-install-skeleton   | (foundation) merges to main auto-deploy; the app installs on desktop, Android, iOS        | —                | NFR (installable), FR-024 (public endpoint)   | ready    |
+| F-04 | shared-recipe-library         | (foundation) recipes and products are one public library, not owned by any household     | F-02             | Access Control, FR-010, FR-011, FR-012        | ready    |
 | S-01 | link-partner-household        | invite their partner and share one household                                              | F-01             | US-01, FR-001, FR-002, FR-003                 | done     |
 | S-02 | set-daily-macro-targets       | enter their own daily calorie/protein/fat/carb targets                                    | F-01             | US-01, FR-004                                 | done     |
-| S-03 | plan-three-day-grid           | fill a 3-day × 5-meal plan, marking each meal for A, B or both, and save it unsolved      | F-01, F-02       | US-01, FR-013, FR-014, FR-015, FR-016, FR-020 | ready    |
+| S-03 | plan-three-day-grid           | fill a 3-day × 5-meal plan, marking each meal for A, B or both, and save it unsolved      | F-01, F-04       | US-01, FR-013, FR-014, FR-015, FR-016, FR-020 | proposed |
 | S-04 | solve-daily-macros            | solve a day and see per-ingredient quantities and the A/B split within tolerance          | S-01, S-02, S-03 | US-01, FR-018, FR-019, FR-020                 | proposed |
-| S-05 | browse-recipe-library         | browse recipe cards and open full recipe details                                          | F-02             | FR-005, FR-009, FR-010, FR-012                | ready    |
-| S-06 | rate-and-filter-recipes       | rate recipes, see the partner's rating, and filter/sort the library                       | S-05, S-01       | FR-006, FR-007, FR-008                        | proposed |
-| S-07 | add-missing-product           | add a product with nutrition values and store aisle                                       | F-02             | FR-010, FR-011                                | ready    |
+| S-05 | browse-recipe-library         | browse recipe cards and open full recipe details                                          | F-04             | FR-005, FR-009, FR-010, FR-012                | proposed |
+| S-06 | rate-and-filter-recipes       | rate recipes, see the partner's rating, and filter/sort the library                       | S-05, S-01, F-04 | FR-006, FR-007, FR-008                        | proposed |
+| S-07 | add-missing-product           | add a product with nutrition values and store aisle                                       | F-04             | FR-010, FR-011                                | proposed |
 | S-08 | shared-dish-across-days       | make one cooked dish cover meals on several days and still solve                          | S-04             | US-01, FR-017                                 | proposed |
 | S-09 | shopping-list-from-plan       | open a combined, aisle-grouped shopping list and check items off                          | S-03             | US-02, FR-021                                 | proposed |
 | S-10 | cooking-session-schedule      | see the plan arranged into evening/morning cooking sessions with merged steps             | S-03             | US-03, FR-022                                 | proposed |
@@ -54,8 +55,8 @@ Navigation aid — groups items that share a Prerequisites chain. Canonical orde
 | Stream | Theme                  | Chain                                      | Note                                                                        |
 | ------ | ---------------------- | ------------------------------------------ | --------------------------------------------------------------------------- |
 | A      | Household & people     | `F-01` → `S-01` / `S-02`                   | Supplies the two people and their targets; joins Stream B at `S-04`.        |
-| B      | Plan & solve           | `F-02` → `S-03` → `S-04` → `S-08`          | The market-feedback path: shortest route to a real solved day.              |
-| C      | Recipe library & agent | `S-05` → `S-06` / `S-07` → `S-12` → `S-13` | Hangs off `F-02`; runs in parallel with Stream B; `S-12` also needs `F-03`. |
+| B      | Plan & solve           | `F-02` → `F-04` → `S-03` → `S-04` → `S-08`| The market-feedback path: shortest route to a real solved day.              |
+| C      | Recipe library & agent | `S-05` → `S-06` / `S-07` → `S-12` → `S-13` | Hangs off `F-04`; runs in parallel with Stream B; `S-12` also needs `F-03`. |
 | D      | Shop & cook            | `S-09` / `S-10` → `S-11`                   | Branches off `S-03`; `S-11` joins Stream B at `S-04` for A/B portions.      |
 | E      | Ship & polish          | `F-03`, `S-14`                             | Independent from day one; gets the solved day onto the couple's phones.     |
 
@@ -95,7 +96,7 @@ Foundations below assume these are present and do NOT re-scaffold them.
 - **Prerequisites:** F-01
 - **Parallel with:** F-03, S-14
 - **Blockers:** —
-- **Unknowns:** — (resolved 2026-10-07: products and recipes are per-household copies of templates kept in `private`, copied into each new household by `private.seed_household()`; every copy keeps a `seed_id` back to its template.)
+- **Unknowns:** — (resolved 2026-10-07: products and recipes are per-household copies of templates kept in `private`, copied into each new household by `private.seed_household()`; every copy keeps a `seed_id` back to its template.) **Superseded 2026-10-08 by F-04:** recipes and products become one public library.
 - **Risk:** The solver is only as good as these attributes; capturing rounding and piece rules here (rather than in S-04) keeps the solver slice focused on the split itself. Scope stays to seed data and the minimum shape — no recipe UI.
 - **Status:** done
 
@@ -110,6 +111,20 @@ Foundations below assume these are present and do NOT re-scaffold them.
 - **Blockers:** —
 - **Unknowns:** —
 - **Risk:** Cheap to do early and essential to market-feedback — a solver only tested on localhost doesn't validate anything in the kitchen. Scope is adding auto-deploy from `main` and installability (PWA manifest); CI already triggers on `main` and the worker is already named `duo-kitchen`. No offline support (parked).
+- **Status:** ready
+
+### F-04: Shared public recipe library
+
+- **Outcome:** (foundation) recipes and products are one public library shared by every user — no recipe or product belongs to a household — replacing F-02's per-household copies.
+- **Change ID:** shared-recipe-library
+- **PRD refs:** Access Control (recipes and products are a public library), FR-005, FR-006, FR-010, FR-011, FR-012
+- **Unlocks:** S-03 (plan slots reference public recipes), S-05 (one library to browse), S-06 (ratings are per user and reference public recipes, so they travel with the person through a redemption), S-07 (an added product is available to everyone)
+- **Prerequisites:** F-02
+- **Parallel with:** F-03, S-14
+- **Blockers:** —
+- **Unknowns:**
+  - Who may edit or delete a public recipe or product once anyone can see it (anyone, only its author, only "system")? — Owner: user. Block: no (decide before `/10x-plan`).
+- **Risk:** Decided 2026-10-08 while reviewing S-02 — a per-person rating cannot reference a household copy of a recipe (the redemption cascade would move it into a household that copy is not in). Must land before anything else references `recipes` or `products`, or that reference has to be migrated twice. Scope: convert the five seed-copied tables to public tables, drop `seed_household()` copying from the sign-up trigger, collapse existing household copies, and update the isolation, seed-integrity and smoke tests.
 - **Status:** ready
 
 ## Slices
@@ -144,12 +159,12 @@ Foundations below assume these are present and do NOT re-scaffold them.
 - **Outcome:** user can fill 3 consecutive days with up to 5 meals each, place any recipe in any slot, mark each meal or day for A, B or both, leave slots empty, and save and use the plan without solving.
 - **Change ID:** plan-three-day-grid
 - **PRD refs:** US-01, FR-013, FR-014, FR-015, FR-016, FR-020
-- **Prerequisites:** F-01, F-02
+- **Prerequisites:** F-01, F-04
 - **Parallel with:** S-01, S-02, S-05, S-07, S-14, F-03
 - **Blockers:** —
 - **Unknowns:** —
 - **Risk:** Uses a minimal recipe picker over seed recipes so it doesn't wait on the full library (S-05); the plan shape must already allow later cross-day dishes (S-08) without rework.
-- **Status:** ready
+- **Status:** proposed
 
 ### S-04: Solve a day's macros for A and B
 
@@ -170,19 +185,19 @@ Foundations below assume these are present and do NOT re-scaffold them.
 - **Outcome:** user can browse recipe cards (photo, name, cuisine, both partners' ratings) and open a recipe's full details: ingredients with quantities, macros and rounding step, make-ahead vs. fresh steps, divisible components or whole-dish flag, raw/cooked weights, suggested meal types, cuisine and prep time.
 - **Change ID:** browse-recipe-library
 - **PRD refs:** FR-005, FR-009, FR-010, FR-012
-- **Prerequisites:** F-02
+- **Prerequisites:** F-04
 - **Parallel with:** S-01, S-02, S-03, S-04, S-07, S-09, S-10, S-14
 - **Blockers:** —
 - **Unknowns:** —
 - **Risk:** Not on the path to the first solved day (S-03 uses a minimal picker), so it can run in a parallel agent session; it is where agent-imported recipes (S-12) become visible.
-- **Status:** ready
+- **Status:** proposed
 
 ### S-06: Rate and filter recipes
 
 - **Outcome:** user can rate a recipe thumbs up/down, see their partner's rating, filter by cuisine, meal type, prep-time bucket (≤ 20 / 20–45 / 45+ min) and minimum sensible calories, with thumbs-down recipes sorted last by default.
 - **Change ID:** rate-and-filter-recipes
 - **PRD refs:** FR-006, FR-007, FR-008
-- **Prerequisites:** S-05, S-01
+- **Prerequisites:** S-05, S-01, F-04
 - **Parallel with:** S-04, S-07, S-08, S-09, S-10, S-11, S-12
 - **Blockers:** —
 - **Unknowns:**
@@ -195,12 +210,12 @@ Foundations below assume these are present and do NOT re-scaffold them.
 - **Outcome:** user can add a product with nutrition values and a store aisle from the fixed list, and recipe macros using it are computed from those values.
 - **Change ID:** add-missing-product
 - **PRD refs:** FR-010, FR-011
-- **Prerequisites:** F-02
+- **Prerequisites:** F-04
 - **Parallel with:** S-01–S-06, S-08–S-11, S-14
 - **Blockers:** —
 - **Unknowns:** —
 - **Risk:** Same write path the agent will use in S-12; doing it first for the person keeps the agent slice focused on the conversation.
-- **Status:** ready
+- **Status:** proposed
 
 ### S-08: One dish across several days
 
@@ -297,13 +312,14 @@ Foundations below assume these are present and do NOT re-scaffold them.
 | F-01       | household-data-scope          | Household-scoped data access for all accounts         | done                  | Archived 2026-10-07                                                                      |
 | F-02       | seed-products-and-recipes     | Seed product database and 5–10 test recipes           | done                  | Archived 2026-10-07                                                                      |
 | F-03       | deploy-and-install-skeleton   | Auto-deploy from main and make the app installable    | yes                   | Run `/10x-plan deploy-and-install-skeleton`                                              |
+| F-04       | shared-recipe-library         | Make recipes and products one public library          | yes                   | Run `/10x-plan shared-recipe-library` (decide who may edit public recipes first)          |
 | S-01       | link-partner-household        | Invite partner and link accounts into one household   | done                  | Archived 2026-10-08 (old household preserved memberless, not merged or discarded) |
-| S-02       | set-daily-macro-targets       | Enter daily macro targets per person                  | yes                   | Run `/10x-plan set-daily-macro-targets`                                                  |
-| S-03       | plan-three-day-grid           | Build and save a 3-day meal plan for A/B              | yes                   | Run `/10x-plan plan-three-day-grid`                                                      |
+| S-02       | set-daily-macro-targets       | Enter daily macro targets per person                  | done                  | Archived 2026-10-08                                                                       |
+| S-03       | plan-three-day-grid           | Build and save a 3-day meal plan for A/B              | no                    | Waits on F-04                                                                           |
 | S-04       | solve-daily-macros            | Solve a day's macros and split quantities for A and B | no                    | North star; waits on S-02, S-03                                                          |
-| S-05       | browse-recipe-library         | Browse recipe cards and view recipe details           | yes                   | Run `/10x-plan browse-recipe-library`                                                    |
-| S-06       | rate-and-filter-recipes       | Rate, filter and sort recipes                         | no                    | Waits on S-05                                                                            |
-| S-07       | add-missing-product           | Add a product with nutrition and store aisle          | yes                   | Run `/10x-plan add-missing-product`                                                      |
+| S-05       | browse-recipe-library         | Browse recipe cards and view recipe details           | no                    | Waits on F-04                                                                            |
+| S-06       | rate-and-filter-recipes       | Rate, filter and sort recipes                         | no                    | Waits on S-05, F-04                                                                            |
+| S-07       | add-missing-product           | Add a product with nutrition and store aisle          | no                    | Waits on F-04                                                                            |
 | S-08       | shared-dish-across-days       | Cover meals on several days with one cooked dish      | no                    | Waits on S-04                                                                            |
 | S-09       | shopping-list-from-plan       | Aisle-grouped shopping list with check-off            | no                    | Waits on S-03                                                                            |
 | S-10       | cooking-session-schedule      | Arrange plan into evening/morning cooking sessions    | no                    | Waits on S-03                                                                            |
@@ -315,7 +331,7 @@ Foundations below assume these are present and do NOT re-scaffold them.
 ## Open Roadmap Questions
 
 1. **If the 1-week budget runs short, which must-haves may slip past the first real cycle?** Candidates by distance from the Success Criteria: S-06 (rating/filters), S-13 (agent edits and plans), S-14 (language/theme). — Owner: user. Block: roadmap-wide (sequencing only; no slice is blocked).
-2. ~~**Is the product database a shared repo-maintained seed, per-household data, or a seed plus household extensions?**~~ — Resolved 2026-10-07 in F-02: per-household copies of a `private` template set (see `context/archive/2026-10-07-seed-products-and-recipes/plan.md`).
+2. ~~**Is the product database a shared repo-maintained seed, per-household data, or a seed plus household extensions?**~~ — Resolved 2026-10-07 in F-02: per-household copies of a `private` template set (see `context/archive/2026-10-07-seed-products-and-recipes/plan.md`). **Superseded 2026-10-08:** one public library shared by all users (F-04).
 
 (PRD `## Open Questions`: none open — all resolved on 2026-10-06.)
 

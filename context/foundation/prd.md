@@ -135,7 +135,7 @@ At launch the app serves one couple. Support for other couples is possible later
 - The same plan and targets always produce the same solver and schedule output (deterministic and reproducible).
 - Macro calculation and scheduling incur no per-use paid AI cost. Paid AI usage is limited to agent-driven recipe and plan work.
 - Every displayed quantity is weighable in practice: it follows the ingredient's rounding step, and a halved item may be shown as "podziel na pół" without a gram amount.
-- Each household's data is visible only to that household's linked accounts and to the AI agent acting on their command.
+- Each household's data (plans, shopping lists, and its members' targets and ratings) is visible only to that household's linked accounts and to the AI agent acting on their command. The recipe and product library is public.
 
 ## Business Logic
 
@@ -147,9 +147,10 @@ A second rule orders the cooking: steps from all planned recipes are merged into
 
 ## Access Control
 - One account per person; sign-up and sign-in with email + password.
-- Two accounts link into one household via an invite code/link. Linked accounts share recipes, plans and shopping lists; each person keeps their own macro targets and ratings (visible to the partner).
+- Two accounts link into one household via an invite code/link. Linked accounts share plans and shopping lists; each person keeps their own macro targets and ratings (visible to the partner, so the recipe list shows whether each of them likes a recipe).
+- Recipes and products are one public library shared by all users; no recipe or product belongs to a household (decided 2026-10-08, implemented by roadmap F-04).
 - Flat role model inside a household (no admin/member split).
-- The AI agent acts as a separate user named "system". It has no account of its own to sign up for; it reaches a household through a connection that a household member authorizes, and gets access to that household's recipes, plans and product data. Its changes are attributed to "system", not to person A or B. It acts only on a user's explicit command.
+- The AI agent acts as a separate user named "system". It has no account of its own to sign up for; it reaches a household through a connection that a household member authorizes, and gets access to that household's plans and to the public recipe and product library. Its changes are attributed to "system", not to person A or B. It acts only on a user's explicit command.
 - Unauthenticated users can reach only sign-in / sign-up / invite redemption.
 
 ## Non-Goals
