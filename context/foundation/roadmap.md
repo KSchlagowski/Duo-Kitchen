@@ -32,7 +32,7 @@ A couple who cook together in bulk, but have different daily macro targets, impr
 | F-01 | household-data-scope          | (foundation) every account belongs to a household; data access is household-scoped        | —                | Access Control, NFR (household privacy)       | done     |
 | F-02 | seed-products-and-recipes     | (foundation) product database and 5–10 seed recipes with solver-relevant attributes exist | F-01             | FR-010, FR-012                                | done     |
 | F-03 | deploy-and-install-skeleton   | (foundation) merges to main auto-deploy; the app installs on desktop, Android, iOS        | —                | NFR (installable), FR-024 (public endpoint)   | ready    |
-| F-04 | shared-recipe-library         | (foundation) recipes and products are one public library, not owned by any household      | F-02             | Access Control, FR-010, FR-011, FR-012        | ready    |
+| F-04 | shared-recipe-library         | (foundation) recipes and products are one public library, not owned by any household      | F-02             | Access Control, FR-010, FR-011, FR-012        | done     |
 | S-01 | link-partner-household        | invite their partner and share one household                                              | F-01             | US-01, FR-001, FR-002, FR-003                 | done     |
 | S-02 | set-daily-macro-targets       | enter their own daily calorie/protein/fat/carb targets                                    | F-01             | US-01, FR-004                                 | done     |
 | S-03 | plan-three-day-grid           | fill a 3-day × 5-meal plan, marking each meal for A, B or both, and save it unsolved      | F-01, F-04       | US-01, FR-013, FR-014, FR-015, FR-016, FR-020 | proposed |
@@ -122,9 +122,9 @@ Foundations below assume these are present and do NOT re-scaffold them.
 - **Prerequisites:** F-02
 - **Parallel with:** F-03, S-14
 - **Blockers:** —
-- **Unknowns:** — (resolved 2026-10-08: the library is read-only for clients in F-04; seed rows stay immutable to people; user-added rows will be editable by their author and the author's current household partner; `created_by` lands with S-07, the first slice that writes. See `context/changes/shared-recipe-library/plan.md` §Assumptions.)
+- **Unknowns:** — (resolved 2026-10-08: the library is read-only for clients in F-04; seed rows stay immutable to people; user-added rows will be editable by their author and the author's current household partner; `created_by` lands with S-07, the first slice that writes. See `context/archive/2026-10-08-shared-recipe-library/plan.md` §Assumptions.)
 - **Risk:** Decided 2026-10-08 while reviewing S-02 — a per-person rating cannot reference a household copy of a recipe (the redemption cascade would move it into a household that copy is not in). Must land before anything else references `recipes` or `products`, or that reference has to be migrated twice. Scope: convert the five seed-copied tables to public tables, drop `seed_household()` copying from the sign-up trigger, collapse existing household copies, and update the isolation, seed-integrity and smoke tests.
-- **Status:** ready
+- **Status:** done
 
 ## Slices
 
@@ -311,7 +311,7 @@ Foundations below assume these are present and do NOT re-scaffold them.
 | F-01       | household-data-scope          | Household-scoped data access for all accounts         | done                  | Archived 2026-10-07                                                               |
 | F-02       | seed-products-and-recipes     | Seed product database and 5–10 test recipes           | done                  | Archived 2026-10-07                                                               |
 | F-03       | deploy-and-install-skeleton   | Auto-deploy from main and make the app installable    | yes                   | Run `/10x-plan deploy-and-install-skeleton`                                       |
-| F-04       | shared-recipe-library         | Make recipes and products one public library          | yes                   | Implemented; run `/10x-impl-review shared-recipe-library`, then `/10x-archive`    |
+| F-04       | shared-recipe-library         | Make recipes and products one public library          | done                  | Archived 2026-10-08                                                               |
 | S-01       | link-partner-household        | Invite partner and link accounts into one household   | done                  | Archived 2026-10-08 (old household preserved memberless, not merged or discarded) |
 | S-02       | set-daily-macro-targets       | Enter daily macro targets per person                  | done                  | Archived 2026-10-08                                                               |
 | S-03       | plan-three-day-grid           | Build and save a 3-day meal plan for A/B              | no                    | Waits on F-04                                                                     |
@@ -355,3 +355,4 @@ Foundations below assume these are present and do NOT re-scaffold them.
 - **F-02: (foundation) a product database with nutrition values and store aisles, plus 5–10 generated seed recipes carrying the attributes the solver needs (rounding step, minimum sensible amount, whole/half-piece rule, raw vs. cooked weight, per-component vs. whole-dish division, make-ahead vs. fresh steps).** — Archived 2026-10-07 → `context/archive/2026-10-07-seed-products-and-recipes/`. Lesson: —.
 - **S-01: user can generate an invite code/link that their partner redeems, after which both see the same recipes, plans and shopping lists.** — Archived 2026-10-08 → `context/archive/2026-10-07-link-partner-household/`. Lesson: —.
 - **S-02: user can manually enter their own daily calorie, protein, fat and carb targets and see their partner's.** — Archived 2026-10-08 → `context/archive/2026-10-08-set-daily-macro-targets/`. Lesson: —.
+- **F-04: (foundation) recipes and products are one public library shared by every user — no recipe or product belongs to a household — replacing F-02's per-household copies.** — Archived 2026-10-08 → `context/archive/2026-10-08-shared-recipe-library/`. Lesson: —.
