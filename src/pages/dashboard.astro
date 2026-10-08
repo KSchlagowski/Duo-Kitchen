@@ -58,6 +58,8 @@ const targetsLabel =
     : myTargets
       ? `Targets: ${formatMacroTargets(myTargets)}`
       : "Targets: not set";
+// "Set targets" only when the read succeeded and found no row: a failed read must not claim "not set".
+const targetsLinkLabel = targets === null ? "Open targets" : myTargets ? "Edit targets" : "Set targets";
 
 const isLinked = memberCount >= 2;
 // Built from the request origin so the link works in dev, preview and production unconfigured.
@@ -93,7 +95,7 @@ const joined = Astro.url.searchParams.get("joined") === "1";
         {targetsLabel}
       </p>
       <a href="/targets" class="text-sm text-purple-300 hover:underline">
-        {myTargets ? "Edit targets" : "Set targets"}
+        {targetsLinkLabel}
       </a>
 
       {joined && (

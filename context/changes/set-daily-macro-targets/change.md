@@ -1,7 +1,7 @@
 ---
 change_id: set-daily-macro-targets
 title: Let each person set their own daily calorie, protein, fat and carb targets (S-02)
-status: implementing
+status: impl_reviewed
 created: 2026-10-08
 updated: 2026-10-08
 archived_at: null
