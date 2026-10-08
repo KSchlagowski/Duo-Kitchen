@@ -123,6 +123,13 @@ const joined = Astro.url.searchParams.get("joined") === "1";
         {planLinkLabel}
       </a>
 
+      {/* S-05: recipe library */}
+      <p class="mt-2 text-sm">
+        <a href="/recipes" class="text-purple-300 hover:underline">
+          Browse recipes
+        </a>
+      </p>
+
       {joined && (
         <p class="mt-4 rounded-lg border border-emerald-400/30 bg-emerald-500/10 p-3 text-sm text-emerald-200">
           You've joined the household.

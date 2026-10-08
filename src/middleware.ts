@@ -6,6 +6,8 @@ const PROTECTED_ROUTES = [
   "/targets",
   // S-03
   "/plan",
+  // S-05
+  "/recipes",
 ];
 
 export const onRequest = defineMiddleware(async (context, next) => {

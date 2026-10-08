@@ -1,0 +1,53 @@
+---
+import Layout from "@/layouts/Layout.astro";
+import RecipeCard from "@/components/recipes/RecipeCard.astro";
+import { createClient } from "@/lib/supabase";
+import { getRecipeCards } from "@/lib/services/recipes";
+import type { RecipeCard as RecipeCardData } from "@/types";
+
+// null = the read failed (or Supabase is not configured); [] = the library is genuinely empty.
+let recipes: RecipeCardData[] | null = null;
+const supabase = createClient(Astro.request.headers, Astro.cookies);
+if (supabase) {
+  try {
+    recipes = await getRecipeCards(supabase);
+  } catch (error) {
+    // eslint-disable-next-line no-console -- surfaced in Cloudflare Workers observability logs
+    console.error("getRecipeCards failed", error);
+  }
+}
+
+const countLabel =
+  recipes === null
+    ? "Recipe library is unavailable right now"
+    : recipes.length === 0
+      ? "No recipes yet"
+      : `${recipes.length} recipe${recipes.length === 1 ? "" : "s"}`;
+---
+
+<Layout title="Recipes">
+  <div class="bg-cosmic min-h-screen p-4 sm:p-8">
+    <div class="mx-auto max-w-5xl text-white">
+      <h1 class="bg-gradient-to-r from-blue-200 to-purple-200 bg-clip-text text-3xl font-bold text-transparent">
+        Recipes
+      </h1>
+      <p class="mt-1 text-sm text-blue-100/80" data-testid="recipe-count">
+        {countLabel}
+      </p>
+
+      {recipes && recipes.length > 0 && (
+        <div class="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {recipes.map((recipe) => (
+            <RecipeCard recipe={recipe} />
+          ))}
+        </div>
+      )}
+
+      <p class="mt-8 text-center text-sm">
+        <a href="/dashboard" class="text-purple-300 hover:underline">
+          Back to dashboard
+        </a>
+      </p>
+    </div>
+  </div>
+</Layout>

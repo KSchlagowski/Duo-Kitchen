@@ -496,13 +496,13 @@ After the rebase and the re-verification, publish the rewritten branch with `git
 
 #### Automated
 
-- [x] 1.1 Lint passes: `npm run lint`
-- [x] 1.2 Type check passes: `npx astro check`
-- [x] 1.3 Build passes: `npm run build`
+- [x] 1.1 Lint passes: `npm run lint` — 7e8bcd6
+- [x] 1.2 Type check passes: `npx astro check` — 7e8bcd6
+- [x] 1.3 Build passes: `npm run build` — 7e8bcd6
 
 #### Manual
 
-- [x] 1.4 `getRecipeDetail` returns ordered components, ingredients and steps for Kurczak curry with no PGRST201
+- [x] 1.4 `getRecipeDetail` returns ordered components, ingredients and steps for Kurczak curry with no PGRST201 — 7e8bcd6
 
 > Implementation notes (Phase 1, non-interactive run): 1.4 was verified through a throw-away signed-in page on the dev server (removed before commit), not a `console.log` in a real page. Small choices made without asking: the half-up normalisation `Math.round(Number(x.toFixed(6)))` is applied up front in `formatMacroTotals()` / `formatCookedLine()`; a single piece prints `1 pc`, not `1 pcs`; non-integer grams (stored as `numeric(…,1)`) keep their one decimal in amounts and rounding steps; numeric columns pass through `Number()` in case PostgREST returns them as strings.
 
@@ -510,19 +510,21 @@ After the rebase and the re-verification, publish the rewritten branch with `git
 
 #### Automated
 
-- [ ] 2.1 Lint passes: `npm run lint`
-- [ ] 2.2 Type check passes: `npx astro check`
-- [ ] 2.3 Build passes: `npm run build`
+- [x] 2.1 Lint passes: `npm run lint`
+- [x] 2.2 Type check passes: `npx astro check`
+- [x] 2.3 Build passes: `npm run build`
 
 #### Manual
 
-- [ ] 2.4 Signed-out `/recipes` and `/recipes/<id>` redirect to sign-in
-- [ ] 2.5 `/recipes` shows 8 sorted cards with placeholder photos and no rating UI
-- [ ] 2.6 Kurczak curry detail shows components, cooked lines, both step sections and meal types
-- [ ] 2.7 Leczo shows "Whole dish only"; Zapiekanka shows "No suggested meal type"
-- [ ] 2.8 Piece, min-amount, rounding-step and null-component/duration cases render correctly
-- [ ] 2.9 Malformed and absent ids return 404 "Recipe not found"
+- [x] 2.4 Signed-out `/recipes` and `/recipes/<id>` redirect to sign-in
+- [x] 2.5 `/recipes` shows 8 sorted cards with placeholder photos and no rating UI
+- [x] 2.6 Kurczak curry detail shows components, cooked lines, both step sections and meal types
+- [x] 2.7 Leczo shows "Whole dish only"; Zapiekanka shows "No suggested meal type"
+- [x] 2.8 Piece, min-amount, rounding-step and null-component/duration cases render correctly
+- [x] 2.9 Malformed and absent ids return 404 "Recipe not found"
 - [ ] 2.10 Layout works at phone width
+
+> Implementation notes (Phase 2): 2.4–2.9 were checked over HTTP against the dev server with a throw-away `smoke-s05-…@example.com` account (all 8 detail pages read as text). 2.10 is left for a human: no browser was available in the session; the markup is mobile-first (`grid-cols-1` below `sm`, stacked ingredient rows) but was not looked at. Choices: the card and detail use `class:list={cn(…)}` (the repo's eslint rule `astro/prefer-class-list-directive`, as in `targets.astro`); `recipe-name` is a `<p role="heading" aria-level="1">` so the smoke `</p>` matcher works; per-component subtotals carry `data-testid="component-total"` and are shown only for divisible recipes; a read failure renders `data-testid="recipe-unavailable"`. Seed data has no half-piece amounts, so the `½` branch of `formatIngredientAmount()` is not exercised by any seed recipe.
 
 ### Phase 3: Smoke Test, Documentation and Roadmap
 
