@@ -33,7 +33,7 @@ import { MEAL_TYPES } from "@/lib/services/meal-plans";
 
 // Part of the fingerprint: bump it whenever the algorithm or its constants change, so stored
 // results computed by an older version show as out of date.
-export const SOLVER_VERSION = 1;
+export const SOLVER_VERSION = 2;
 
 // Each eater eats 0.2×–1.5× of a component's base batch (a base batch serves two).
 export const MIN_SCALE = 0.2;
@@ -134,6 +134,11 @@ export function checkSolvable(input: SolveDayInput): UnsolvableReason | null {
       recipe.components.some((c) => c.ingredients.length === 0 || c.ingredients.every((i) => i.baseAmountG <= 0))
     ) {
       return { reason: "empty_recipe", recipeName: recipe?.name };
+    }
+    // The model gives a whole dish one scale per eater only because it has one component; a
+    // multi-component whole dish would be scaled per component with no coupling (no ratio bound).
+    if (recipe.divisionMode === "whole_dish" && recipe.components.length > 1) {
+      return { reason: "invalid_recipe", recipeName: recipe.name };
     }
   }
   return null;
@@ -718,6 +723,8 @@ export interface SolveDiagnostics {
   // The LP minimax optimum t* (a fraction) and the unrounded worst deviation of the rounded result.
   lpOptimum: number;
   worstDeviation: number;
+  // The total bound violation left after repair (0 when every hard bound holds).
+  boundsViolation: number;
 }
 
 // The full pipeline with the numbers the unit tests compare. Throws on unsolvable input.
@@ -757,9 +764,11 @@ export function solveDayWithDiagnostics(input: SolveDayInput): SolveDiagnostics 
       maxDeviationPct,
       requiredTier,
       explanation: requiredTier === null ? explain(meals, people, input.targets, lp) : null,
+      boundsViolated: evaluation.violation > EPSILON,
     },
     lpOptimum: lp.t,
     worstDeviation: evaluation.max,
+    boundsViolation: evaluation.violation,
   };
 }
 

@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { z } from "zod";
 import type {
   DaySolution,
   DaySolutionComponent,
@@ -74,8 +75,93 @@ interface DaySolutionRow {
   status: DaySolveStatus;
   accepted_tolerance_pct: SolveTier;
   input_fingerprint: string;
-  result: DaySolution;
+  result: unknown;
   solved_at: string;
+}
+
+// The stored result is client-assertable: save_day_solution only checks that it is a jsonb object,
+// and any household member can call it directly. Every reader goes through this schema, so a
+// malformed row reads as "not solved" (and can be solved again) instead of breaking the page.
+const macroTotalsSchema = z.object({
+  kcal: z.number(),
+  proteinG: z.number(),
+  fatG: z.number(),
+  carbsG: z.number(),
+});
+
+const solveTierSchema = z.union([z.literal(10), z.literal(15), z.literal(20)]);
+
+const daySolutionSchema: z.ZodType<DaySolution> = z.object({
+  version: z.literal(1),
+  people: z.array(
+    z.object({
+      userId: z.string(),
+      targets: macroTotalsSchema,
+      totals: macroTotalsSchema,
+      deviations: macroTotalsSchema,
+    }),
+  ),
+  meals: z.array(
+    z.object({
+      mealId: z.string(),
+      mealType: z.enum(["breakfast", "second_breakfast", "lunch", "afternoon_snack", "dinner"]),
+      recipeId: z.string(),
+      recipeName: z.string(),
+      divisionMode: z.enum(["per_component", "whole_dish"]),
+      eaterUserIds: z.array(z.string()).min(1),
+      components: z.array(
+        z.object({
+          id: z.string(),
+          name: z.string(),
+          cookedYieldRatio: z.number().nullable(),
+          ingredients: z.array(
+            z.object({
+              id: z.string(),
+              productName: z.string(),
+              amountG: z.number(),
+              gramsPerPiece: z.number().nullable(),
+              allowHalfPieces: z.boolean(),
+              perPerson: z.record(z.string(), z.number()).nullable(),
+            }),
+          ),
+          split: z.object({
+            kind: z.enum(["grams_cooked", "percent", "pieces", "per_ingredient", "all"]),
+            evenSplit: z.boolean(),
+            shares: z
+              .array(z.object({ userId: z.string(), value: z.number().nullable(), fraction: z.number() }))
+              .min(1),
+          }),
+        }),
+      ),
+    }),
+  ),
+  maxDeviationPct: z.number(),
+  requiredTier: solveTierSchema.nullable(),
+  explanation: z
+    .discriminatedUnion("kind", [
+      z.object({
+        kind: z.literal("recipe"),
+        mealId: z.string(),
+        recipeName: z.string(),
+        macro: z.enum(["kcal", "proteinG", "fatG", "carbsG"]),
+        direction: z.enum(["over", "under"]),
+      }),
+      z.object({ kind: z.literal("targets"), userId: z.string() }),
+    ])
+    .nullable(),
+  // Absent in rows stored before SOLVER_VERSION 2; those rows read as out of date anyway.
+  boundsViolated: z.boolean().default(false),
+});
+
+// The stored result, or null (logged) when it does not match the version-1 shape.
+function parseStoredSolution(result: unknown): DaySolution | null {
+  const parsed = daySolutionSchema.safeParse(result);
+  if (!parsed.success) {
+    // eslint-disable-next-line no-console -- surfaced in Cloudflare Workers observability logs
+    console.error("plan_day_solutions.result failed validation", parsed.error.issues);
+    return null;
+  }
+  return parsed.data;
 }
 
 // The stored solution for one plan day, or null when the day has never been solved.
@@ -96,13 +182,18 @@ export async function getDaySolution(
   if (!data) {
     return null;
   }
-  // Without a generated Database type the row is untyped; the table's checks guarantee this shape.
+  // Without a generated Database type the row is untyped; the table's checks guarantee its scalar
+  // columns, and parseStoredSolution() the jsonb result.
   const row: DaySolutionRow = data;
+  const solution = parseStoredSolution(row.result);
+  if (!solution) {
+    return null;
+  }
   return {
     status: row.status,
     acceptedTolerancePct: row.accepted_tolerance_pct,
     inputFingerprint: row.input_fingerprint,
-    solution: row.result,
+    solution,
     solvedAt: row.solved_at,
   };
 }
@@ -194,13 +285,14 @@ export async function getPlanSolveStatuses(
         return [day, { kind: "unsolvable", mealCount }];
       }
       const stored = storedRows.find((row) => row.day_index === day);
-      if (!stored) {
+      const solution = stored ? parseStoredSolution(stored.result) : null;
+      if (!stored || !solution) {
         return [day, { kind: "unsolved", mealCount }];
       }
       if (stored.input_fingerprint !== (await dayFingerprint(input))) {
         return [day, { kind: "stale", mealCount }];
       }
-      return [day, { kind: stored.status, mealCount, requiredTier: stored.result.requiredTier }];
+      return [day, { kind: stored.status, mealCount, requiredTier: solution.requiredTier }];
     }),
   );
   return Object.fromEntries(entries) as Record<PlanDayIndex, PlanDaySolveStatus>;
@@ -246,6 +338,8 @@ export const DAY_UNAVAILABLE = "This day is unavailable right now.";
 export const FULL_TARGETS_NOTE = "Portions are scaled to each person's full daily targets.";
 export const NOT_SOLVED_YET = "Not solved yet";
 export const DAY_SOLVE_STALE = "Out of date — the plan, targets or recipes changed since this was solved.";
+export const DAY_BOUNDS_WARNING =
+  "Some portions break the solver's limits (an ingredient minimum, 0.2–1.5× of a batch, or one part over 3× another) — check them before cooking.";
 
 // Rejection SQLSTATEs raised by save_day_solution. KD007 is shared with S-01 but gets solve wording.
 export const DAY_SOLVE_ERRORS = {
@@ -283,6 +377,8 @@ export const UNSOLVABLE_MESSAGES = {
   missing_targets_you: "Set your daily targets first — the solver needs them.",
   missing_targets_partner: "Your partner hasn't set their daily targets yet.",
   empty_recipe: (recipeName: string) => `${recipeName} has no ingredients, so this day can't be solved.`,
+  invalid_recipe: (recipeName: string) =>
+    `${recipeName} is a whole dish with more than one part, so this day can't be solved.`,
   eater_not_member: "A meal is marked for someone who isn't in your household.",
 } as const;
 
@@ -296,6 +392,8 @@ export function unsolvableMessage(reason: UnsolvableReason, viewerId: string): s
         : UNSOLVABLE_MESSAGES.missing_targets_partner;
     case "empty_recipe":
       return UNSOLVABLE_MESSAGES.empty_recipe(reason.recipeName ?? "A recipe");
+    case "invalid_recipe":
+      return UNSOLVABLE_MESSAGES.invalid_recipe(reason.recipeName ?? "A recipe");
     case "eater_not_member":
       return UNSOLVABLE_MESSAGES.eater_not_member;
   }

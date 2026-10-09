@@ -55,7 +55,7 @@ Verification: `npm test` (solver unit tests), `npm run test:rls`, `npm run lint`
 ### Key Discoveries:
 
 - One variable per component per eater is the entire model. A `whole_dish` recipe has one component, so it needs no special case (research §5, `context/archive/2026-10-07-seed-products-and-recipes/plan.md:85`).
-- Rounding, not the LP, decides the tier. Naive rounding moved a day from an 11.4 % optimum to 16.1 % (research §6). Any rounded solution is a feasible LP point, so its deviation is never below the LP optimum `t*`. A day's rounded result can therefore never reach a deviation below `t*`; the tier uses the value rounded to 0.1, as displayed (P9).
+- Rounding, not the LP, decides the tier. Naive rounding moved a day from an 11.4 % optimum to 16.1 % (research §6). ~~Any rounded solution is a feasible LP point, so its deviation is never below the LP optimum `t*`.~~ Corrected in implementation (see Addendum): rounding each ingredient on its own shifts a component's internal proportions, which the LP holds fixed, so a rounded result can land slightly (up to ~1 pp) below `t*`. The tier uses the value rounded to 0.1, as displayed (P9).
 - `save_meal_plan` keeps meal ids on eater-only edits (`20261008170000_meal_plans.sql:294-301`). Staleness must come from a fingerprint, not from FKs.
 - Plan rows must never carry the per-person composite membership FK, because redemption would fail with 23503 (`20261008170000_meal_plans.sql:18-25`). The solution row follows the plan, and target snapshots live in jsonb.
 - KD001–KD012 are claimed and KD006 is retired, so S-04 claims **KD013** and **KD014** (`20261008170000_meal_plans.sql:32-38`).
@@ -163,7 +163,7 @@ Objective: minimise `t + 0.001·Σ (u+v)/D`.
 
 Build the `yalps` model by inserting variables and constraints in a fixed order: meals in slot order, then component `position`, then eaters by user id. Never iterate a `Map` built from DB row order. A non-optimal `yalps` status throws, and the route shows a generic failure.
 
-**Tier on rounded values only.** Never store or show the LP `t*` as the result. `t*` is used only inside leave-one-out (P10). The rounded result can never beat `t*`, so a test asserting "unrounded worst deviation of the rounded result ≥ LP" is a cheap invariant.
+**Tier on rounded values only.** Never store or show the LP `t*` as the result. `t*` is used only inside leave-one-out (P10). The rounded result cannot beat `t*` by more than its rounding granularity, so a test asserting "unrounded worst deviation of the rounded result ≥ LP − 0.01" is a cheap invariant (the strict form is false, see Addendum).
 
 **FR-020 isolation on `/plan`.** The solve-status read added in Phase 3 must sit in its own `try/catch`. It must not feed `canEdit` (`src/pages/plan.astro:57-61`), so a failing solve read can never hide or disable the plan grid. The per-day solve forms go **outside** the grid `<form>`, because HTML forms cannot nest. A `formaction` button inside the grid would also post unsaved grid edits that the solve route ignores.
 
@@ -239,8 +239,8 @@ Install a vitest release whose `peerDependencies.vite` includes `^8` (check with
 **Contract**: Fixture days (all meals "both" unless noted), with the smoke targets A = 2200/160/70/230 and B = 1800/120/60/180:
 
 - **F1 fits.** Jajecznica (…001) breakfast, Owsianka (…002) second breakfast, Curry (…004) lunch, Twarożek (…007) afternoon snack, Leczo (…006) dinner. Expect `requiredTier === 10`.
-- **F2 no fit.** Ciastka (…003), Leczo, Zapiekanka (…008), Ciastka, Leczo in the five slots. Expect `requiredTier === null`, with the explanation recipe being *Leczo z kiełbasą* at the earlier Leczo slot and the macro chosen by P10 step 4 (expected `fat`).
-- **F3 escalation.** Ciastka, Leczo, Zapiekanka, Ciastka in the first four slots. Expect `requiredTier` to be 15 or 20, since the LP optimum is about 11.4 %, so a rounded result cannot reach 10 %.
+- **F2 no fit.** Ciastka (…003), Leczo, Zapiekanka (…008), Ciastka, Leczo in the five slots. Expect `requiredTier === null`, with the explanation recipe being *Leczo z kiełbasą* at the earlier Leczo slot and the macro chosen by P10 step 4 (planned `fat`; P10 step 4 actually yields B's `carbsG`/`under`, see Addendum).
+- **F3 escalation.** Ciastka, Leczo, Zapiekanka, Ciastka in the first four slots. Expect `requiredTier` to be 15 or 20, since the LP optimum is about 11.4 %. This rests on the observed result, not a guarantee: the rounded result can sit up to ~1 pp below `t*` (see Addendum).
 - **F4 mixed eaters.** F1, with Owsianka for A only and Twarożek for B only.
 
 Assertions:
@@ -253,7 +253,7 @@ Assertions:
   - Every 1 g-step ingredient (salt, spices) stays at least 1 g and is not rounded up to 10 g.
   - No cook amount is 0.
   - Every eater's portion respects the min-amount bound as defined in P8 (`share × roundedAmount ≥ min_amount_g`, so eggs ≥ 50 g each in jajecznica), and every `effScale` respects the P4 scale and ratio bounds.
-- **Invariant.** The **unrounded** worst deviation ≥ the LP optimum `t*`. Expose both on the same test-only path (or recompute them); never compare the 0.1-rounded `maxDeviationPct`, which can sit just below `t*` at the boundary.
+- **Invariant.** The **unrounded** worst deviation ≥ the LP optimum `t*` − 0.01 (the strict form is false, see Addendum). Expose both on the same test-only path (or recompute them); never compare the 0.1-rounded `maxDeviationPct`, which can sit just below `t*` at the boundary.
 - **Totals.** Recomputing each person's totals from the displayed amounts and shares matches `people[].totals`.
 - **Zero target.** A target with `fatG: 0` on F1 never produces an `Infinity`/`NaN` deviation.
 - **Targets explanation.** A kcal-mismatched target on F2 (kcal 3000 with P/F/C summing to about 2000) makes the explanation `kind: "targets"`.
@@ -730,3 +730,11 @@ Vitest, in `src/lib/services/macro-solver.test.ts`:
 - [x] 3.11 "Solves the saved plan — save your changes first" helper text is shown under the solve cards — verified manually 2026-10-09
 - [x] 3.12 A failing solve-status read shows a notice while the grid still renders and saves — verified manually 2026-10-09
 - [x] 3.13 `npm run smoke` against dev passes every step — verified manually 2026-10-09
+
+## Addendum — implementation review (2026-10-09)
+
+Premises the implementation disproved, recorded after `/10x-impl-review` (`reviews/impl-review.md`, F3):
+
+- **Rounded ≥ `t*` is false.** Repair chooses between each ingredient's two roundings, which shifts a component's internal proportions; the LP holds them fixed. F3 lands 0.4 pp below `t*`. The unit invariant is therefore `worstDeviation ≥ lpOptimum − 0.01`. A day whose `t*` is slightly above 10 % can legitimately store as ±10 %, and F3's escalation (and smoke step 8) rest on the observed result rather than a guarantee.
+- **F2's reason macro is carbs, not fat.** Applying P10 step 4 as written, the (person, macro) that improves most without the blamed Leczo is B's carbs (−20.0 % → −1.5 %), ahead of fat (+21.1 % → +11.4 %), so the page reads "Leczo z kiełbasą (too little carbs)". Whether step 4 should prefer the macro the blamed recipe pushes in the deviation's direction is left open.
+- **Hard bounds after repair (F2 of the review).** Repair can stop with a bound still violated. Such a result keeps its tier but carries `boundsViolated: true` and the day page warns; `SOLVER_VERSION` is 2.

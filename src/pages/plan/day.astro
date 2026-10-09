@@ -2,6 +2,7 @@
 import Layout from "@/layouts/Layout.astro";
 import { createClient } from "@/lib/supabase";
 import {
+  DAY_BOUNDS_WARNING,
   DAY_NOT_FOUND,
   DAY_SOLVE_STALE,
   DAY_UNAVAILABLE,
@@ -162,6 +163,14 @@ const buttonClass =
             {formatDaySolveSummary(solution, stored.status, viewerId)}
           </p>
           <p class="text-xs text-blue-100/60">{formatSolvedAt(stored.solvedAt)}</p>
+          {solution.boundsViolated && (
+            <p
+              class="mt-3 rounded-lg border border-amber-400/30 bg-amber-500/10 p-3 text-sm text-amber-100"
+              data-testid="day-bounds-warning"
+            >
+              {DAY_BOUNDS_WARNING}
+            </p>
+          )}
 
           {!stale && (
             <div class="mt-3 flex flex-wrap gap-2">

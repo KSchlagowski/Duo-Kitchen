@@ -176,7 +176,8 @@ export type MacroKey = keyof MacroTotals;
 export type SolveTier = 10 | 15 | 20;
 export type DaySolveStatus = "solved" | "needs_confirmation" | "no_fit";
 
-export type UnsolvableReasonCode = "no_meals" | "missing_targets" | "empty_recipe" | "eater_not_member";
+export type UnsolvableReasonCode =
+  "no_meals" | "missing_targets" | "empty_recipe" | "invalid_recipe" | "eater_not_member";
 
 export interface UnsolvableReason {
   reason: UnsolvableReasonCode;
@@ -249,6 +250,9 @@ export interface DaySolution {
   maxDeviationPct: number;
   requiredTier: SolveTier | null;
   explanation: DaySolveExplanation | null;
+  // True when the repaired rounding still breaks a hard bound (an ingredient minimum, 0.2×–1.5× of
+  // a batch, or the 3× component ratio). The tier is still judged on the deviation; the day page warns.
+  boundsViolated: boolean;
 }
 
 export type SolveDayResult = { kind: "solution"; solution: DaySolution } | ({ kind: "unsolvable" } & UnsolvableReason);

@@ -252,6 +252,12 @@ describe("invariants", () => {
       expect(worstDeviation).toBeGreaterThanOrEqual(lpOptimum - ROUNDING_ALLOWANCE);
     });
 
+    it(`${name}: repair leaves no hard bound violated`, () => {
+      const { solution, boundsViolation } = solveDayWithDiagnostics(input(meals));
+      expect(boundsViolation).toBe(0);
+      expect(solution.boundsViolated).toBe(false);
+    });
+
     it(`${name}: totals recomputed from the displayed amounts and shares match`, () => {
       const solution = solved(meals);
       for (const person of solution.people) {
@@ -292,6 +298,47 @@ describe("edge inputs", () => {
     expect(Number.isFinite(solution.maxDeviationPct)).toBe(true);
   });
 
+  it("a bound that rounding cannot honour is flagged, not hidden", () => {
+    // One whole 400 g piece is the smallest cookable amount of a 100 g base: 4× the batch, far
+    // above MAX_SCALE, and the rounding window [400, 400] leaves repair nothing to try.
+    const giant: SolverRecipe = {
+      id: "00000000-0000-4000-8000-0000000002ff",
+      name: "Giant loaf",
+      divisionMode: "per_component",
+      components: [
+        {
+          id: "00000000-0000-4000-8000-0000000003ff",
+          position: 1,
+          name: "Loaf",
+          cookedYieldRatio: null,
+          ingredients: [
+            {
+              id: "00000000-0000-4000-8000-0000000004ff",
+              position: 1,
+              productName: "Loaf",
+              baseAmountG: 100,
+              effectiveRoundingStepG: 10,
+              minAmountG: null,
+              gramsPerPiece: 400,
+              allowHalfPieces: false,
+              kcalPer100g: 250,
+              proteinPer100g: 9,
+              fatPer100g: 3,
+              carbsPer100g: 48,
+            },
+          ],
+        },
+      ],
+    };
+    const meals = day([giant.id], [USER_A]);
+    const { solution, boundsViolation } = solveDayWithDiagnostics({
+      ...input(meals),
+      recipes: { ...SEED_RECIPES, [giant.id]: giant },
+    });
+    expect(boundsViolation).toBeGreaterThan(0);
+    expect(solution.boundsViolated).toBe(true);
+  });
+
   it("kcal-mismatched targets on a no-fit day blame the targets, not a recipe", () => {
     const mismatched = { kcal: 3000, proteinG: 150, fatG: 60, carbsG: 200 }; // 4/4/9 → 1940 kcal
     const solution = solved(F2, { [USER_B]: mismatched });
@@ -322,6 +369,18 @@ describe("edge inputs", () => {
     expect(solveDay({ ...input(F1), recipes })).toEqual({
       kind: "unsolvable",
       reason: "empty_recipe",
+      recipeName: "Leczo z kiełbasą",
+    });
+  });
+
+  it("a whole dish with more than one component is unsolvable: invalid_recipe", () => {
+    const leczo = SEED_RECIPES[LECZO];
+    expect(leczo.divisionMode).toBe("whole_dish");
+    const second = { ...leczo.components[0], id: "00000000-0000-4000-8000-0000000003fe", position: 2 };
+    const recipes = { ...SEED_RECIPES, [LECZO]: { ...leczo, components: [...leczo.components, second] } };
+    expect(solveDay({ ...input(F1), recipes })).toEqual({
+      kind: "unsolvable",
+      reason: "invalid_recipe",
       recipeName: "Leczo z kiełbasą",
     });
   });

@@ -60,7 +60,7 @@ Every file in the plan's "Changes Required" is in the diff. No planned item is m
   - Tradeoff: needs a new migration plus `db push` before merge; a partial check in SQL duplicates the TS type.
   - Confidence: MED — it catches gross malformation only, not deep shape errors.
   - Blind spot: whether S-09/S-11 will read the jsonb in SQL at all.
-- **Decision**: PENDING
+- **Decision**: FIXED via Fix A — zod `daySolutionSchema` + `parseStoredSolution()` in day-solutions.ts, used by `getDaySolution` and `getPlanSolveStatuses` (a failing row reads as not solved, logged); CLAUDE.md S-04 bullet notes the jsonb is client-assertable.
 
 ### F2 — A rounded result that still breaks a hard bound is stored as "Solved"
 
@@ -79,7 +79,7 @@ Every file in the plan's "Changes Required" is in the diff. No planned item is m
   - Tradeoff: one more field in the persisted jsonb (it is versioned, so bump `SOLVER_VERSION`), or a stricter tier that can turn borderline days into no-fit.
   - Confidence: MED — the code path is clear, but whether the seed library can ever hit it is unmeasured.
   - Blind spot: how often violations survive repair on real user recipes.
-- **Decision**: PENDING
+- **Decision**: FIXED — `DaySolution.boundsViolated` (set when repair leaves violation > EPSILON) plus `boundsViolation` in the diagnostics; `SOLVER_VERSION` bumped to 2 (the zod schema defaults the field to false for older rows, which read as out of date); amber `DAY_BOUNDS_WARNING` on /plan/day; tests assert zero violation for F1–F4 and a synthetic 400 g-piece recipe that is flagged. CLAUDE.md S-04 bullet updated.
 
 ### F3 — Plan premises the implementation disproved are not recorded in the plan
 
@@ -94,7 +94,7 @@ Every file in the plan's "Changes Required" is in the diff. No planned item is m
   - **The F2 reason macro differs.** The plan expects `fat`; the code (correctly applying P10 step 4) yields `carbsG`/`under`. The UI then reads "Leczo z kiełbasą (too little carbs)", which is a counter-intuitive reason for a fatty dish.
   - Neither deviation is in the Progress notes, and CLAUDE.md does not mention the weaker invariant.
 - **Fix**: Append a Progress/addendum note to plan.md recording both outcomes, and correct Key Discoveries l.58 and Critical Details l.166. Add one sentence to the CLAUDE.md "Macro solver (S-04)" bullet: rounding can land up to ~1 pp below the LP optimum, and the tier is judged on the displayed 0.1-rounded value, so 10.04 % counts as ±10 %. Separately, decide whether the P10 step-4 reason should prefer the macro that the blamed recipe pushes in the deviation's direction, so "too much fat" is not lost to "too little carbs".
-- **Decision**: PENDING
+- **Decision**: FIXED — plan.md premises corrected (Key Discoveries, Critical Details, F2/F3 fixtures, invariant) and an Addendum appended; CLAUDE.md S-04 bullet records the weaker invariant. The P10 step-4 reason choice is left open (noted in the addendum).
 
 ### F4 — The solver relies on `whole_dish` recipes having exactly one component, and nothing enforces it
 
@@ -117,7 +117,7 @@ Every file in the plan's "Changes Required" is in the diff. No planned item is m
   - Tradeoff: a new migration plus `db push`, and trigger logic across two tables.
   - Confidence: MED — cross-table triggers need care with update ordering.
   - Blind spot: S-07's intended write path (RPC vs column grants) is not designed yet.
-- **Decision**: PENDING
+- **Decision**: FIXED via Fix A — `checkSolvable` returns `invalid_recipe` (with `recipeName`) for a `whole_dish` recipe with more than one component; message in `UNSOLVABLE_MESSAGES`, unit test added.
 
 ### F5 — "split in half" is shown for near-even, unequal splits
 
@@ -127,7 +127,7 @@ Every file in the plan's "Changes Required" is in the diff. No planned item is m
 - **Location**: src/lib/services/macro-solver.ts:619
 - **Detail**: `evenSplit: Math.abs(values[0] - values[1]) < splitUnit(cs)`. A cooked split of 320 g / 311 g (remainder rule) or 50 % / 50.4 % is labelled "split in half". P7 says only an *equal* split shows it, and the per-person branch (`:592`) uses strict equality.
 - **Fix**: Use `evenSplit: values[0] === values[1]` (after `round6`), and add a unit test with an odd remainder that asserts `evenSplit === false`.
-- **Decision**: PENDING
+- **Decision**: DEFERRED — observation left open when S-04 was archived (2026-10-09)
 
 ### F6 — Leave-one-out blame is biased toward a person's only meal
 
@@ -144,7 +144,7 @@ Every file in the plan's "Changes Required" is in the diff. No planned item is m
   - Tradeoff: deviates from P10 step 3 as written, so it needs a plan note.
   - Confidence: MED — the reasoning is sound, but no fixture demonstrates the misattribution yet.
   - Blind spot: an all-single-eater day, where every candidate changes the people set.
-- **Decision**: PENDING
+- **Decision**: DEFERRED — observation left open when S-04 was archived (2026-10-09)
 
 ### F7 — Small undocumented additions and drifts in the solver and readers
 
@@ -158,7 +158,7 @@ Every file in the plan's "Changes Required" is in the diff. No planned item is m
   - `getSolverRecipes` does not select `products.id`, which the plan asked for. The fingerprint still covers every product value, so staleness is unaffected.
   - `formatDaySolveSummary` takes an optional `viewerId` and adds a "Your partner's daily targets don't add up…" variant that is not in the Desired End State strings.
 - **Fix**: Record these four points in a plan.md addendum (and, for the partner-targets string, in the CLAUDE.md S-04 bullet next to the pinned templates). No code change is needed, except optionally adding `id` to the products embed in `COMPONENT_COLUMNS` to match the contract.
-- **Decision**: PENDING
+- **Decision**: DEFERRED — observation left open when S-04 was archived (2026-10-09)
 
 ### F8 — The fingerprint omits display names that the stored result copies
 
@@ -168,7 +168,7 @@ Every file in the plan's "Changes Required" is in the diff. No planned item is m
 - **Location**: src/lib/services/macro-solver.ts:783-826
 - **Detail**: The fingerprint leaves out `recipe.name`, component `name` and `productName`, but `DaySolution` copies all three for display. Today the library is immutable, so this does not matter. Once S-07 makes rows editable, a rename keeps showing the old name and the result does not go "Out of date".
 - **Fix**: Add the three name fields to the canonical fingerprint JSON and bump `SOLVER_VERSION` to 2. Alternatively, add an explicit S-07 hand-off note to the CLAUDE.md S-04 bullet.
-- **Decision**: PENDING
+- **Decision**: DEFERRED — observation left open when S-04 was archived (2026-10-09)
 
 ### F9 — `/plan` reads more than it needs, and the solve's Workers CPU cost is unmeasured
 
@@ -181,7 +181,7 @@ Every file in the plan's "Changes Required" is in the diff. No planned item is m
   - Through `loadSharedInputs` it also repeats a `getCurrentHousehold` read that `plan.astro` already made. It is not N+1.
   - The plan's CPU claim (about 1 ms per day) came from Node measurements. A no-fit solve (1 LP + up to 5 leave-one-out LPs + repair) on a cold isolate has not been measured on workerd against the Free plan's 10 ms limit.
 - **Fix**: Select `result->requiredTier` (or `result->>requiredTier`) instead of `result` in the statuses read, and pass the already-loaded household into `getPlanSolveStatuses`. Measure `POST /api/plan/solve` for the F2 (all-whole-dish) day with `npx wrangler tail` after a deploy, and record the CPU time in the plan's Progress notes.
-- **Decision**: PENDING
+- **Decision**: DEFERRED — observation left open when S-04 was archived (2026-10-09)
 
 ### F10 — A concurrent plain "Solve again" can silently undo a partner's acceptance
 
@@ -194,4 +194,4 @@ Every file in the plan's "Changes Required" is in the diff. No planned item is m
   - If partner B accepts ±20 % while partner A's plain Solve again is in flight (A having read the pre-accept row), A's write stores tolerance 10 and the day falls back to `needs_confirmation`.
   - The accept-fingerprint binding is sound, so "accept what you saw" still holds. The only effect is that a confirmation can be lost.
 - **Fix**: In `save_day_solution`'s upsert, keep the larger tolerance when the fingerprint is unchanged: `accepted_tolerance_pct = case when plan_day_solutions.input_fingerprint = excluded.input_fingerprint then greatest(plan_day_solutions.accepted_tolerance_pct, excluded.accepted_tolerance_pct) else excluded.accepted_tolerance_pct end`, with `status` recomputed to match. The cheaper alternative is to document the race in a comment at the upsert.
-- **Decision**: PENDING
+- **Decision**: DEFERRED — observation left open when S-04 was archived (2026-10-09)
