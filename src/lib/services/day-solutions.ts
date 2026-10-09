@@ -10,6 +10,7 @@ import type {
   MacroTargetsInput,
   MealPlan,
   PlanDayIndex,
+  PlanDaySolveStatus,
   SolveDayInput,
   SolveTier,
   StoredDaySolution,
@@ -18,7 +19,7 @@ import type {
 import { getCurrentHousehold } from "@/lib/services/household";
 import { checkSolvable, dayFingerprint } from "@/lib/services/macro-solver";
 import { formatMacroTargets, getHouseholdMacroTargets } from "@/lib/services/macro-targets";
-import { errorCode, getMealPlan, type RpcResult } from "@/lib/services/meal-plans";
+import { MEAL_TYPES, PLAN_DAYS, errorCode, getMealPlan, type RpcResult } from "@/lib/services/meal-plans";
 import { roundHalfUp } from "@/lib/services/recipe-macros";
 import { getSolverRecipes } from "@/lib/services/recipes";
 import { EATER_LABELS, MACRO_DIRECTION_LABELS, MACRO_SHORT_LABELS, SPLIT_LABELS } from "@/lib/recipe-labels";
@@ -38,16 +39,22 @@ export async function loadDaySolveInputs(
     return null;
   }
   const meals = plan.meals.filter((meal) => meal.dayIndex === dayIndex);
+  const shared = await loadSharedInputs(
+    supabase,
+    meals.map((meal) => meal.recipeId),
+  );
+  return { plan, input: { ...shared, meals } };
+}
+
+// The day-independent part of a solve input: members, targets and the library rows of `recipeIds`.
+async function loadSharedInputs(supabase: SupabaseClient, recipeIds: string[]): Promise<Omit<SolveDayInput, "meals">> {
   const [household, targets, recipes] = await Promise.all([
     getCurrentHousehold(supabase),
     getHouseholdMacroTargets(supabase),
-    getSolverRecipes(
-      supabase,
-      meals.map((meal) => meal.recipeId),
-    ),
+    getSolverRecipes(supabase, recipeIds),
   ]);
   if (!household) {
-    throw new Error("loadDaySolveInputs: the caller has no household");
+    throw new Error("loadSharedInputs: the caller has no household");
   }
 
   const targetsByUser: Record<string, MacroTargetsInput> = {};
@@ -55,13 +62,9 @@ export async function loadDaySolveInputs(
     targetsByUser[t.userId] = { kcal: t.kcal, proteinG: t.proteinG, fatG: t.fatG, carbsG: t.carbsG };
   }
   return {
-    plan,
-    input: {
-      memberIds: household.members.map((member) => member.userId),
-      meals,
-      recipes,
-      targets: targetsByUser,
-    },
+    memberIds: household.members.map((member) => member.userId),
+    recipes,
+    targets: targetsByUser,
   };
 }
 
@@ -158,7 +161,85 @@ export async function getDayView(
   };
 }
 
+// Where each of the plan's three days stands, for the /plan grid. One read of the plan's stored
+// solutions plus one shared input load; it fingerprints every day but never solves one.
+export async function getPlanSolveStatuses(
+  supabase: SupabaseClient,
+  plan: MealPlan,
+): Promise<Record<PlanDayIndex, PlanDaySolveStatus>> {
+  const [rows, shared] = await Promise.all([
+    supabase
+      .from("plan_day_solutions")
+      .select("day_index, status, accepted_tolerance_pct, input_fingerprint, result, solved_at")
+      .eq("plan_id", plan.id),
+    loadSharedInputs(
+      supabase,
+      plan.meals.map((meal) => meal.recipeId),
+    ),
+  ]);
+  if (rows.error) {
+    throw rows.error;
+  }
+  // Without a generated Database type the rows are untyped; the table's checks guarantee this shape.
+  const storedRows: (DaySolutionRow & { day_index: PlanDayIndex })[] = rows.data;
+
+  const entries = await Promise.all(
+    PLAN_DAYS.map(async (day): Promise<[PlanDayIndex, PlanDaySolveStatus]> => {
+      const input: SolveDayInput = { ...shared, meals: plan.meals.filter((meal) => meal.dayIndex === day) };
+      if (input.meals.length === 0) {
+        return [day, { kind: "empty", mealCount: 0 }];
+      }
+      const mealCount = input.meals.length;
+      if (checkSolvable(input) !== null) {
+        return [day, { kind: "unsolvable", mealCount }];
+      }
+      const stored = storedRows.find((row) => row.day_index === day);
+      if (!stored) {
+        return [day, { kind: "unsolved", mealCount }];
+      }
+      if (stored.input_fingerprint !== (await dayFingerprint(input))) {
+        return [day, { kind: "stale", mealCount }];
+      }
+      return [day, { kind: stored.status, mealCount, requiredTier: stored.result.requiredTier }];
+    }),
+  );
+  return Object.fromEntries(entries) as Record<PlanDayIndex, PlanDaySolveStatus>;
+}
+
+// A full day (all 5 meals) with no current solution gets the solve prompt (FR-018). An unsolvable
+// day gets "Can't solve yet" instead, since solving it would only bounce back.
+export function needsSolvePrompt(status: PlanDaySolveStatus): boolean {
+  return status.mealCount === MEAL_TYPES.length && (status.kind === "unsolved" || status.kind === "stale");
+}
+
 // --- display text --------------------------------------------------------------------------------
+
+export const SOLVE_STATUS_UNAVAILABLE = "Solve status is unavailable right now.";
+export const SOLVE_SAVED_PLAN_HINT = "Solves the saved plan — save your changes first.";
+
+// The smoke test matches these exact strings (/plan `day-status-<n>`).
+export function formatPlanDayStatus(status: PlanDaySolveStatus): string {
+  switch (status.kind) {
+    case "empty":
+      return "No meals";
+    case "unsolved":
+      return "Not solved";
+    case "stale":
+      return "Out of date";
+    case "unsolvable":
+      return "Can't solve yet — see day";
+    case "solved":
+      return `Solved within ±${status.requiredTier ?? 10}%`;
+    case "needs_confirmation":
+      return `Needs ±${status.requiredTier ?? 20}% — open to accept`;
+    case "no_fit":
+      return "No fit within ±20%";
+  }
+}
+
+export function formatSolvePrompt(weekday: string): string {
+  return `${weekday} has all 5 meals. Solve its macros?`;
+}
 
 export const DAY_NOT_FOUND = "Day not found";
 export const DAY_UNAVAILABLE = "This day is unavailable right now.";

@@ -273,4 +273,11 @@ export interface DayView {
   stored: StoredDaySolution | null;
   stale: boolean;
 }
+
+// One day's standing on the /plan grid. `requiredTier` is set for a current stored solution only.
+export interface PlanDaySolveStatus {
+  kind: "empty" | "unsolved" | "stale" | "unsolvable" | DaySolveStatus;
+  mealCount: number;
+  requiredTier?: SolveTier | null;
+}
 // --- end S-04 -------------------------------------------------------------------------------

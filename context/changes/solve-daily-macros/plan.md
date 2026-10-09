@@ -690,14 +690,14 @@ Vitest, in `src/lib/services/macro-solver.test.ts`:
 
 #### Automated
 
-- [x] 2.1 Migration applies to the hosted project: `npx supabase db push`
-- [x] 2.2 Isolation test passes against the deployed schema: `npm run test:rls`
-- [x] 2.3 Seed integrity still passes: `npm run test:seed`
-- [x] 2.4 Unit tests pass: `npm test`
-- [x] 2.5 Linting passes: `npm run lint`
-- [x] 2.6 Type checking passes: `npx astro check`
-- [x] 2.7 Build succeeds: `npm run build`
-- [x] 2.8 Existing smoke still passes against the preview
+- [x] 2.1 Migration applies to the hosted project: `npx supabase db push` — ab39035
+- [x] 2.2 Isolation test passes against the deployed schema: `npm run test:rls` — ab39035
+- [x] 2.3 Seed integrity still passes: `npm run test:seed` — ab39035
+- [x] 2.4 Unit tests pass: `npm test` — ab39035
+- [x] 2.5 Linting passes: `npm run lint` — ab39035
+- [x] 2.6 Type checking passes: `npx astro check` — ab39035
+- [x] 2.7 Build succeeds: `npm run build` — ab39035
+- [x] 2.8 Existing smoke still passes against the preview — ab39035
 
 #### Manual
 
@@ -714,13 +714,13 @@ Vitest, in `src/lib/services/macro-solver.test.ts`:
 
 #### Automated
 
-- [ ] 3.1 Unit tests pass: `npm test`
-- [ ] 3.2 Isolation test still passes: `npm run test:rls`
-- [ ] 3.3 Linting passes: `npm run lint`
-- [ ] 3.4 Type checking passes: `npx astro check`
-- [ ] 3.5 Build succeeds: `npm run build`
-- [ ] 3.6 Full smoke including S-04 steps passes against the production preview
-- [ ] 3.7 Prettier is clean for the edited markdown
+- [x] 3.1 Unit tests pass: `npm test`
+- [x] 3.2 Isolation test still passes: `npm run test:rls`
+- [x] 3.3 Linting passes: `npm run lint`
+- [x] 3.4 Type checking passes: `npx astro check`
+- [x] 3.5 Build succeeds: `npm run build`
+- [x] 3.6 Full smoke including S-04 steps passes against the production preview
+- [x] 3.7 Prettier is clean for the edited markdown
 
 #### Manual
 

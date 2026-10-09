@@ -13,10 +13,18 @@ import {
   isIsoDate,
   weekdayLabel,
 } from "@/lib/services/meal-plans";
+import {
+  SOLVE_SAVED_PLAN_HINT,
+  SOLVE_STATUS_UNAVAILABLE,
+  formatPlanDayStatus,
+  formatSolvePrompt,
+  getPlanSolveStatuses,
+  needsSolvePrompt,
+} from "@/lib/services/day-solutions";
 import { MEAL_TYPE_LABELS } from "@/lib/recipe-labels";
 import { getRecipeCards } from "@/lib/services/recipes";
 import { cn } from "@/lib/utils";
-import type { Household, MealPlan, PlanEater, PlanMeal, RecipeCard } from "@/types";
+import type { Household, MealPlan, PlanDayIndex, PlanDaySolveStatus, PlanEater, PlanMeal, RecipeCard } from "@/types";
 
 const { user } = Astro.locals;
 
@@ -59,6 +67,20 @@ if (recipes === null) unavailable.push("Recipes are unavailable right now.");
 if (household === null) unavailable.push("Household information is unavailable right now.");
 if (planFailed) unavailable.push(PLAN_UNAVAILABLE);
 const canEdit = unavailable.length === 0;
+
+// S-04 solve status per day. Its own try/catch and never part of canEdit: a failing solve read must
+// not hide or disable the grid (FR-020). A date with no saved plan has only empty days.
+let solveStatuses: Record<PlanDayIndex, PlanDaySolveStatus> | null = null;
+if (supabase && canEdit) {
+  try {
+    solveStatuses = plan
+      ? await getPlanSolveStatuses(supabase, plan)
+      : { 0: { kind: "empty", mealCount: 0 }, 1: { kind: "empty", mealCount: 0 }, 2: { kind: "empty", mealCount: 0 } };
+  } catch (error) {
+    // eslint-disable-next-line no-console -- surfaced in Cloudflare Workers observability logs
+    console.error("getPlanSolveStatuses failed on /plan", error);
+  }
+}
 
 const isLinked = (household?.members.length ?? 0) >= 2;
 const startDate = requestedStart ?? plan?.startDate ?? defaultPlanStart();
@@ -146,10 +168,6 @@ const selectClass =
                   <h2 class="font-semibold">
                     {weekdayLabel(date)} <span class="text-sm font-normal text-blue-100/60">{date}</span>
                   </h2>
-                  {/* A plain link, not a form control: the day page solves the SAVED plan for this day. */}
-                  <a href={`/plan/day?start=${startDate}&day=${day}`} class="text-xs text-purple-300 hover:underline">
-                    Macros →
-                  </a>
                   <label class="flex flex-col gap-1 text-xs text-blue-100/70">
                     Whole day for
                     <select name={`day${day}_eater`} class:list={selectClass}>
@@ -221,6 +239,64 @@ const selectClass =
             Save plan
           </button>
         </form>
+      )}
+
+      {/* S-04: a sibling AFTER the grid form, never inside it. Forms cannot nest, and a formaction
+          button in the grid would post unsaved grid edits that the solve route ignores. */}
+      {canEdit && !solveStatuses && (
+        <p class="mt-6 rounded-lg border border-red-400/30 bg-red-500/10 p-3 text-sm text-red-200">
+          {SOLVE_STATUS_UNAVAILABLE}
+        </p>
+      )}
+      {canEdit && solveStatuses && (
+        <section class="mt-8 flex flex-col gap-3">
+          <h2 class="text-lg font-semibold">Macros</h2>
+          <div class="grid gap-4 md:grid-cols-3">
+            {PLAN_DAYS.map((day) => {
+              const status = solveStatuses[day];
+              const weekday = weekdayLabel(addDays(startDate, day));
+              const solveForm = (
+                <form method="POST" action="/api/plan/solve">
+                  <input type="hidden" name="start_date" value={startDate} />
+                  <input type="hidden" name="day_index" value={String(day)} />
+                  <button
+                    type="submit"
+                    class="rounded-lg border border-white/20 bg-white/10 px-3 py-1.5 text-sm transition-colors hover:bg-white/20"
+                  >
+                    Solve macros
+                  </button>
+                </form>
+              );
+              return (
+                <section class="flex flex-col gap-2 rounded-xl border border-white/10 bg-white/5 p-4">
+                  <h3 class="font-semibold">{weekday}</h3>
+                  <p
+                    class:list={cn("text-sm", status.kind === "stale" ? "text-amber-200" : "text-blue-100/80")}
+                    data-testid={`day-status-${day}`}
+                  >
+                    {formatPlanDayStatus(status)}
+                  </p>
+                  {needsSolvePrompt(status) ? (
+                    <div class="flex flex-col items-start gap-2 rounded-lg border border-purple-300/30 bg-purple-500/10 p-3">
+                      <p class="text-sm text-purple-100" data-testid={`day-prompt-${day}`}>
+                        {formatSolvePrompt(weekday)}
+                      </p>
+                      {solveForm}
+                    </div>
+                  ) : (
+                    status.kind !== "empty" && solveForm
+                  )}
+                  {plan && status.kind !== "empty" && (
+                    <a href={`/plan/day?start=${startDate}&day=${day}`} class="text-xs text-purple-300 hover:underline">
+                      View day →
+                    </a>
+                  )}
+                </section>
+              );
+            })}
+          </div>
+          <p class="text-center text-xs text-blue-100/60">{SOLVE_SAVED_PLAN_HINT}</p>
+        </section>
       )}
 
       <p class="mt-8 text-center text-sm">

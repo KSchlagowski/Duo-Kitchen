@@ -58,6 +58,7 @@ npm run dev
 - `npm run lint:fix` - Auto-fix ESLint issues
 - `npm run format` - Run Prettier
 - `npm run smoke` - Smoke test the auth flow against a running server (`BASE_URL`, defaults to `http://localhost:4321`)
+- `npm test` - Run the vitest unit tests (`src/**/*.test.ts`), currently the macro solver suite; pure, no Supabase or secrets needed
 - `npm run test:rls` - Run the household isolation (RLS) test against the linked Supabase project (`supabase/tests/household_isolation.sql`); it runs in a rolled-back transaction, so it leaves no data behind
 - `npm run test:seed` - Run the seed integrity test against the linked Supabase project (`supabase/tests/seed_integrity.sql`): checks that the seed rows of the shared recipe/product library cover every solver rule and are internally consistent; also rolled back
 
@@ -134,6 +135,7 @@ Users can then sign in immediately after sign-up without clicking a confirmation
 | `/dashboard`          | Example protected page (redirects to `/auth/signin` if unauthenticated) |
 | `/targets`            | Your own daily macro targets (editable) and your partner's (read-only)  |
 | `/plan`               | Household 3-day meal plan (shared with your partner)                    |
+| `/plan/day`           | One plan day's macro solve (`?start=<date>&day=<0-2>`); 404 if no plan  |
 | `/recipes`            | The shared recipe library as a grid of cards                            |
 | `/recipes/[id]`       | One recipe's full detail; 404 for a malformed or unknown id             |
 
@@ -181,6 +183,8 @@ For S-03 it also covers the meal plan. `/plan` and `/api/plan` turn away anonymo
 
 It also covers S-05: both recipe routes redirect a signed-out visitor, `/recipes` lists at least the 8 seed recipes as cards, the `Kurczak curry z ryżem` detail shows its meal types, division mode, make-ahead/fresh step split and a whole-batch macro total and cooked weights pinned from an independent SQL query (see the comment above the S-05 fixtures in `scripts/smoke.mjs`), the whole-dish and no-meal-type cases render, and a malformed or unknown recipe id returns 404.
 
+For S-04 it solves days of a separate plan (`2031-01-13`) saved by the first account. Signed-out visitors are sent to sign-in from `/plan/day` and `/api/plan/solve`. Only the two full days get the solve prompt on `/plan`. The fitting day solves `Solved within ±10%`, and solving it again gives identical numbers. The partner sees the same numbers with "You" and "Partner" swapped. The all-whole-dish day names _Leczo z kiełbasą_ as the most obstructive recipe. The 4-meal day needs ±15 % or ±20 % and is accepted at that tier. An eater-only edit by the partner then marks the first day **Out of date**, and an unknown day index returns 404. The solve numbers are not pinned from an SQL oracle, because there is no LP in SQL: determinism and partner symmetry are asserted instead, and the exact quantities are covered by `npm test`.
+
 > **Note:** this script exists primarily to guard the development of the starter itself — it is a fast sanity check that dependency upgrades did not break the build, the Cloudflare adapter or the Supabase auth flow. It is **not** a substitute for a real test suite. Once you build your own product on top of this starter, add proper tests (unit, integration, end-to-end) suited to your application.
 
 ## CI
@@ -213,6 +217,8 @@ where not exists (select 1 from public.household_members m where m.household_id 
 Run that **until it deletes 0 rows**. It needs more than one pass by design: deleting a shared household cascades its `household_invites` rows, and only then is the pre-redemption household it pointed at released for the next pass.
 
 Deleting a household also cascades its meal plans (S-03). Plans stay behind on redemption, so a preserved pre-redemption household may now hold the redeemer's plans: one more reason never to delete memberless households blindly. The smoke run itself saves no plan before redeeming.
+
+Stored macro solves (S-04, `plan_day_solutions`) cascade with their plan and their household, so the queries above need no extra step for them.
 
 ## License
 

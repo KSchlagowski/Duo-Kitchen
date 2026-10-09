@@ -124,6 +124,80 @@ function planError(message) {
   return new RegExp(`^${escapeRe(`/plan?start=${planStart}&error=${encodeURIComponent(message)}`)}$`);
 }
 
+// S-04 fixtures: solving a planned day's macros. Unlike S-05, the numbers are NOT pinned from an SQL
+// oracle: the solve is a minimax LP plus rounding repair, and there is no LP in SQL to agree with.
+// The run asserts what an end-to-end test can prove instead -- the status strings (which mirror
+// formatDaySolveSummary() / formatPlanDayStatus() in src/lib/services/day-solutions.ts), that
+// solving twice gives identical numbers, and that the partner sees the same numbers from the other
+// side. The exact quantities are covered by `npm test` (src/lib/services/macro-solver.test.ts).
+// A start date of its own, so the S-03 plan at planStart is untouched. Fixture days mirror F1-F3.
+const solveStart = "2031-01-13";
+const seedRecipe4 = curryId;
+const seedRecipe6 = leczoId;
+const seedRecipe7 = "5eed0002-0000-4000-8000-000000000007";
+const seedRecipe8 = zapiekankaId;
+const S04_SLOTS = ["breakfast", "second_breakfast", "lunch", "afternoon_snack", "dinner"];
+const S04_DAYS = [
+  // F1 fits within ±10 %: Jajecznica, Owsianka, curry, Twarożek, Leczo.
+  [seedRecipe1, seedRecipe2, seedRecipe4, seedRecipe7, seedRecipe6],
+  // F2 no fit: Ciastka, Leczo, Zapiekanka, Ciastka, Leczo.
+  [seedRecipe3, seedRecipe6, seedRecipe8, seedRecipe3, seedRecipe6],
+  // F3 escalation: F2 without dinner, so 4 meals and no prompt.
+  [seedRecipe3, seedRecipe6, seedRecipe8, seedRecipe3],
+];
+const S04_TEST_IDS = [
+  "day-solve-summary",
+  "day-solve-stale",
+  "day-unsolvable",
+  "day-not-found",
+  "day-person",
+  ...[0, 1, 2].flatMap((n) => [`day-status-${n}`, `day-prompt-${n}`]),
+];
+
+function solveForm(extra = {}) {
+  const form = { start_date: solveStart };
+  S04_DAYS.forEach((recipes, day) => {
+    recipes.forEach((recipeId, slot) => {
+      form[`d${day}_${S04_SLOTS[slot]}_recipe`] = recipeId;
+    });
+  });
+  return { ...form, ...extra };
+}
+
+function solveDayPath(day) {
+  return `/plan/day?start=${solveStart}&day=${day}`;
+}
+
+function solvedLocation(day) {
+  return new RegExp(`^${escapeRe(`${solveDayPath(day)}&solved=1`)}$`);
+}
+
+// Every match, not only the first (testIdText); keyed by data-person so "You"/"Partner" can be swapped.
+function personLines(body) {
+  const lines = {};
+  for (const match of body.matchAll(
+    /<p[^>]*data-testid="day-person"[^>]*data-person="(you|partner)"[^>]*>([\s\S]*?)<\/p>/g,
+  )) {
+    lines[match[1]] = match[2].trim().replace(/^(You|Partner) · /, "");
+  }
+  return lines;
+}
+
+let s04LinesA = {};
+let s04Tier = "";
+let s04Fingerprint = "";
+
+// POSTs a solve, then returns the day page it redirected to; a wrong redirect fails as a 302.
+async function solveThenOpen(client, day, extra = {}) {
+  const res = await client.request("/api/plan/solve", {
+    method: "POST",
+    form: { start_date: solveStart, day_index: String(day), ...extra },
+  });
+  return solvedLocation(day).test(res.location) ? client.request(res.location) : res;
+}
+
+const anon = makeClient();
+
 function targetsPageBody(mine, partner) {
   return new RegExp(
     `${testIdBody("targets-mine", mine).source}[\\s\\S]*${testIdBody("targets-partner", partner).source}`,
@@ -498,6 +572,118 @@ const steps = [
     { status: 404, body: testIdBody("recipe-not-found", "Recipe not found") },
   ],
 
+  // --- S-04: solving a day's macros ----------------------------------------------------------
+  [
+    "solve API redirects anonymous user",
+    () => anon.request("/api/plan/solve", { method: "POST", form: { start_date: solveStart, day_index: "0" } }),
+    { status: 302, location: /^\/auth\/signin$/ },
+  ],
+  [
+    "day page redirects anonymous user",
+    () => anon.request(solveDayPath(0)),
+    { status: 302, location: /^\/auth\/signin$/ },
+  ],
+  [
+    "A saves a 3-day plan to solve",
+    () => a.request("/api/plan", { method: "POST", form: solveForm() }),
+    { status: 302, location: new RegExp(`^${escapeRe(`/plan?start=${solveStart}&saved=1`)}$`) },
+  ],
+  [
+    // FR-018: only a full day prompts; the 4-meal day is just "Not solved".
+    "A plan page prompts the two full days only",
+    () => a.request(`/plan?start=${solveStart}`),
+    {
+      status: 200,
+      body: new RegExp(
+        `^(?![\\s\\S]*data-testid="day-prompt-2")(?=[\\s\\S]*data-testid="day-prompt-0")(?=[\\s\\S]*data-testid="day-prompt-1")` +
+          `[\\s\\S]*${testIdBody("day-status-2", "Not solved").source}`,
+      ),
+    },
+  ],
+  [
+    "A solves the fitting day within ±10%",
+    async () => {
+      const res = await solveThenOpen(a, 0);
+      s04LinesA = personLines(res.body);
+      return res;
+    },
+    { status: 200, body: testIdBody("day-solve-summary", "Solved within ±10%") },
+  ],
+  [
+    "solving the same day again gives identical numbers",
+    () => solveThenOpen(a, 0),
+    () => ({
+      status: 200,
+      body: new RegExp(
+        `data-person="you"[^>]*>\\s*You · ${escapeRe(s04LinesA.you ?? "missing")}\\s*</p>[\\s\\S]*` +
+          `data-person="partner"[^>]*>\\s*Partner · ${escapeRe(s04LinesA.partner ?? "missing")}\\s*</p>`,
+      ),
+    }),
+  ],
+  [
+    // B reads A's stored result: A's own line is B's partner line, and the other way round.
+    "B sees the same numbers from the other side",
+    () => b.request(solveDayPath(0)),
+    () => ({
+      status: 200,
+      body: new RegExp(
+        `data-person="you"[^>]*>\\s*You · ${escapeRe(s04LinesA.partner ?? "missing")}\\s*</p>[\\s\\S]*` +
+          `data-person="partner"[^>]*>\\s*Partner · ${escapeRe(s04LinesA.you ?? "missing")}\\s*</p>`,
+      ),
+    }),
+  ],
+  [
+    // A prefix: the reason in brackets is unit-tested.
+    "A solves the all-whole-dish day: no fit, Leczo named",
+    () => solveThenOpen(a, 1),
+    {
+      status: 200,
+      body: /data-testid="day-solve-summary"[^>]*>\s*No fit within ±20% · Most obstructive recipe: Leczo z kiełbasą/,
+    },
+  ],
+  [
+    "A solves the 4-meal day: it needs a looser tier",
+    async () => {
+      const res = await solveThenOpen(a, 2);
+      s04Tier =
+        /Best fit needs ±(15|20)% — accept to use it/.exec(testIdText(res.body, "day-solve-summary"))?.[1] ?? "";
+      s04Fingerprint = /name="fingerprint" value="([0-9a-f]{64})"/.exec(res.body)?.[1] ?? "";
+      return res;
+    },
+    { status: 200, body: /data-testid="day-solve-summary"[^>]*>\s*Best fit needs ±(15|20)% — accept to use it\s*</ },
+  ],
+  [
+    "A accepts that tier for the result it saw",
+    () => solveThenOpen(a, 2, { accept_tolerance: s04Tier, fingerprint: s04Fingerprint }),
+    () => ({ status: 200, body: testIdBody("day-solve-summary", `Solved within ±${s04Tier}%`) }),
+  ],
+  [
+    "A plan page shows the accepted day as solved",
+    () => a.request(`/plan?start=${solveStart}`),
+    () => ({ status: 200, body: testIdBody("day-status-2", `Solved within ±${s04Tier}%`) }),
+  ],
+  [
+    // An eater-only edit keeps the meal id; only the fingerprint can notice it.
+    "B marks day 1's second breakfast for A only",
+    () => b.request("/api/plan", { method: "POST", form: solveForm({ d0_second_breakfast_eater: "partner" }) }),
+    { status: 302, location: new RegExp(`^${escapeRe(`/plan?start=${solveStart}&saved=1`)}$`) },
+  ],
+  [
+    "A day page marks the edited day out of date",
+    () => a.request(solveDayPath(0)),
+    { status: 200, body: /data-testid="day-solve-stale"/ },
+  ],
+  [
+    "A plan page shows the edited day out of date",
+    () => a.request(`/plan?start=${solveStart}`),
+    { status: 200, body: testIdBody("day-status-0", "Out of date") },
+  ],
+  [
+    "an unknown day index is 404",
+    () => a.request(`/plan/day?start=${solveStart}&day=7`),
+    { status: 404, body: testIdBody("day-not-found", "Day not found") },
+  ],
+
   [
     "signout clears session",
     () => a.request("/api/auth/signout", { method: "POST" }),
@@ -553,6 +739,12 @@ for (const [name, run, rawExpected] of steps) {
       }
       // S-03: its own loop, so the shared id list above stays untouched for parallel slices.
       for (const id of S03_TEST_IDS) {
+        if (actual.body.includes(`data-testid="${id}"`)) {
+          console.log(`      got ${id}: ${testIdText(actual.body, id)}`);
+        }
+      }
+      // S-04: likewise its own loop.
+      for (const id of S04_TEST_IDS) {
         if (actual.body.includes(`data-testid="${id}"`)) {
           console.log(`      got ${id}: ${testIdText(actual.body, id)}`);
         }
