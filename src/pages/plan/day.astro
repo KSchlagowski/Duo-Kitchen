@@ -1,0 +1,179 @@
+---
+import Layout from "@/layouts/Layout.astro";
+import { createClient } from "@/lib/supabase";
+import { solveDay, statusFor } from "@/lib/services/macro-solver";
+import {
+  DAY_NOT_FOUND,
+  DAY_UNAVAILABLE,
+  FULL_TARGETS_NOTE,
+  formatDaySolveSummary,
+  formatEaters,
+  formatPersonLine,
+  formatSplitLine,
+  formatTargetLine,
+  loadDaySolveInputs,
+  unsolvableMessage,
+  viewerFirst,
+} from "@/lib/services/day-solutions";
+import { addDays, isIsoDate, weekdayLabel } from "@/lib/services/meal-plans";
+import { formatIngredientAmount } from "@/lib/services/recipe-macros";
+import { MEAL_TYPE_LABELS } from "@/lib/recipe-labels";
+import type { DaySolution, PlanDayIndex, UnsolvableReason } from "@/types";
+
+// S-04 phase 1: a read-only PREVIEW of the day's solve, computed on every render and never stored.
+// A malformed start/day or a date with no saved plan is 404; a failed read is 500.
+type State =
+  | { kind: "not-found" }
+  | { kind: "unavailable" }
+  | { kind: "unsolvable"; reason: UnsolvableReason }
+  | { kind: "solved"; solution: DaySolution };
+
+const viewerId = Astro.locals.user?.id ?? "";
+const startParam = Astro.url.searchParams.get("start") ?? "";
+const dayParam = Astro.url.searchParams.get("day") ?? "";
+const dayIndex = (["0", "1", "2"] as const).includes(dayParam as "0" | "1" | "2")
+  ? (Number(dayParam) as PlanDayIndex)
+  : null;
+
+let state: State = { kind: "not-found" };
+if (isIsoDate(startParam) && dayIndex !== null) {
+  const supabase = createClient(Astro.request.headers, Astro.cookies);
+  if (!supabase) {
+    state = { kind: "unavailable" };
+  } else {
+    try {
+      const loaded = await loadDaySolveInputs(supabase, startParam, dayIndex);
+      if (loaded) {
+        const result = solveDay(loaded.input);
+        state =
+          result.kind === "solution"
+            ? { kind: "solved", solution: result.solution }
+            : { kind: "unsolvable", reason: result };
+      }
+    } catch (error) {
+      state = { kind: "unavailable" };
+      // eslint-disable-next-line no-console -- surfaced in Cloudflare Workers observability logs
+      console.error("solving the day failed on /plan/day", error);
+    }
+  }
+}
+
+if (state.kind === "not-found") {
+  Astro.response.status = 404;
+} else if (state.kind === "unavailable") {
+  Astro.response.status = 500;
+}
+
+const date = dayIndex !== null && isIsoDate(startParam) ? addDays(startParam, dayIndex) : null;
+const heading = date ? `${weekdayLabel(date)} ${date}` : "Day";
+const solution = state.kind === "solved" ? state.solution : null;
+const missingOwnTargets =
+  state.kind === "unsolvable" &&
+  state.reason.reason === "missing_targets" &&
+  (state.reason.userIds?.includes(viewerId) ?? false);
+---
+
+<Layout title={`Macros · ${heading}`}>
+  <div class="bg-cosmic min-h-screen p-4 sm:p-8">
+    <div class="mx-auto max-w-3xl rounded-2xl border border-white/10 bg-white/10 p-6 text-white backdrop-blur-xl sm:p-8">
+      <h1 class="mb-1 bg-gradient-to-r from-blue-200 to-purple-200 bg-clip-text text-3xl font-bold text-transparent">
+        Macros
+      </h1>
+      <p class="mb-4 text-sm text-blue-100/80">{heading}</p>
+
+      {state.kind === "not-found" && (
+        <p class="text-center text-lg" data-testid="day-not-found">
+          {DAY_NOT_FOUND}
+        </p>
+      )}
+      {state.kind === "unavailable" && (
+        <p class="text-center text-lg" data-testid="day-unavailable">
+          {DAY_UNAVAILABLE}
+        </p>
+      )}
+      {state.kind === "unsolvable" && (
+        <p
+          class="rounded-lg border border-amber-400/30 bg-amber-500/10 p-3 text-sm text-amber-100"
+          data-testid="day-unsolvable"
+        >
+          {unsolvableMessage(state.reason, viewerId)}
+          {missingOwnTargets && (
+            <>
+              {" "}
+              <a href="/targets" class="text-purple-300 hover:underline">
+                Set targets
+              </a>
+            </>
+          )}
+        </p>
+      )}
+
+      {solution && (
+        <>
+          <p class="mb-3 inline-block rounded-full border border-white/20 bg-white/5 px-3 py-1 text-xs text-blue-100/80">
+            Preview — not saved
+          </p>
+          <p class="text-lg font-semibold" data-testid="day-solve-summary">
+            {formatDaySolveSummary(solution, statusFor(solution, 10), viewerId)}
+          </p>
+
+          <section class="mt-4 flex flex-col gap-2">
+            {viewerFirst(solution.people, viewerId).map((person) => (
+              <div class="rounded-xl border border-white/10 bg-white/5 p-3">
+                <p
+                  class="text-sm"
+                  data-testid="day-person"
+                  data-person={person.userId === viewerId ? "you" : "partner"}
+                >
+                  {formatPersonLine(person, viewerId)}
+                </p>
+                <p class="text-xs text-blue-100/60">{formatTargetLine(person)}</p>
+              </div>
+            ))}
+            <p class="text-xs text-blue-100/60">{FULL_TARGETS_NOTE}</p>
+          </section>
+
+          {solution.meals.map((meal) => (
+            <section class="mt-4 rounded-xl border border-white/10 bg-white/5 p-4">
+              <h2 class="font-semibold">
+                <a href={`/recipes/${meal.recipeId}`} class="hover:underline">
+                  {meal.recipeName}
+                </a>
+              </h2>
+              <p class="mb-2 text-xs text-blue-100/70">
+                {MEAL_TYPE_LABELS[meal.mealType]} · {formatEaters(meal, viewerId)}
+              </p>
+              {meal.components.map((component) => (
+                <div class="mt-2 border-t border-white/10 pt-2">
+                  {meal.divisionMode === "per_component" && <h3 class="text-sm font-medium">{component.name}</h3>}
+                  <ul class="mt-1 space-y-0.5 text-sm">
+                    {component.ingredients.map((ingredient) => (
+                      <li>
+                        <span class="text-white">{ingredient.productName}</span>
+                        <span class="text-blue-100/80">
+                          {" "}
+                          {formatIngredientAmount(
+                            ingredient.amountG,
+                            ingredient.gramsPerPiece,
+                            ingredient.allowHalfPieces,
+                          )}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                  <p class="mt-1 text-sm text-purple-200">{formatSplitLine(component, viewerId)}</p>
+                </div>
+              ))}
+            </section>
+          ))}
+        </>
+      )}
+
+      <p class="mt-8 text-center text-sm">
+        <a href={isIsoDate(startParam) ? `/plan?start=${startParam}` : "/plan"} class="text-purple-300 hover:underline">
+          Back to plan
+        </a>
+      </p>
+    </div>
+  </div>
+</Layout>

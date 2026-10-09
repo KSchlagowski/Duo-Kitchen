@@ -7,6 +7,8 @@ import type {
   RecipeDetailComponent,
   RecipeDetailIngredient,
   RecipeLibrarySummary,
+  SolverIngredient,
+  SolverRecipe,
   StepTiming,
 } from "@/types";
 import { cookedWeight, ingredientMacros, sumMacros } from "@/lib/services/recipe-macros";
@@ -153,18 +155,16 @@ function toComponent(row: ComponentRow): RecipeDetailComponent {
   };
 }
 
+const COMPONENT_COLUMNS =
+  "id, position, name, cooked_yield_ratio, recipe_ingredients(id, position, base_amount_g, rounding_step_g, min_amount_g, allow_half_pieces, products(name, kcal_per_100g, protein_per_100g, fat_per_100g, carbs_per_100g, rounding_step_g, grams_per_piece))";
+
 // Three flat queries instead of one nested embed: recipe_steps has FKs to both recipes and
 // recipe_components, so embedding components and steps under recipes risks PostgREST's PGRST201
 // (ambiguous relationship). The id must already be a valid uuid; validating it is the page's job.
 export async function getRecipeDetail(supabase: SupabaseClient, id: string): Promise<RecipeDetail | null> {
   const [recipe, components, steps] = await Promise.all([
     supabase.from("recipes").select(RECIPE_COLUMNS).eq("id", id).maybeSingle(),
-    supabase
-      .from("recipe_components")
-      .select(
-        "id, position, name, cooked_yield_ratio, recipe_ingredients(id, position, base_amount_g, rounding_step_g, min_amount_g, allow_half_pieces, products(name, kcal_per_100g, protein_per_100g, fat_per_100g, carbs_per_100g, rounding_step_g, grams_per_piece))",
-      )
-      .eq("recipe_id", id),
+    supabase.from("recipe_components").select(COMPONENT_COLUMNS).eq("recipe_id", id),
     supabase
       .from("recipe_steps")
       .select("id, position, instruction, timing, component_id, duration_minutes")
@@ -204,3 +204,65 @@ export async function getRecipeDetail(supabase: SupabaseClient, id: string): Pro
   };
 }
 // --- end S-05 -------------------------------------------------------------------------------
+
+// --- S-04: solver input for the recipes of a day -------------------------------------------------
+
+function toSolverIngredient(row: IngredientRow): SolverIngredient {
+  const product = row.products;
+  return {
+    id: row.id,
+    position: row.position,
+    productName: product.name,
+    baseAmountG: Number(row.base_amount_g),
+    effectiveRoundingStepG: Number(row.rounding_step_g ?? product.rounding_step_g),
+    minAmountG: toNumberOrNull(row.min_amount_g),
+    gramsPerPiece: toNumberOrNull(product.grams_per_piece),
+    allowHalfPieces: row.allow_half_pieces,
+    kcalPer100g: Number(product.kcal_per_100g),
+    proteinPer100g: Number(product.protein_per_100g),
+    fatPer100g: Number(product.fat_per_100g),
+    carbsPer100g: Number(product.carbs_per_100g),
+  };
+}
+
+// Two flat queries for any number of recipes (no steps, so no PGRST201 risk). Recipes that do not
+// exist are simply absent from the result; the solver classifies them as unsolvable.
+export async function getSolverRecipes(
+  supabase: SupabaseClient,
+  recipeIds: string[],
+): Promise<Record<string, SolverRecipe>> {
+  const ids = [...new Set(recipeIds)];
+  if (ids.length === 0) {
+    return {};
+  }
+  const [recipes, components] = await Promise.all([
+    supabase.from("recipes").select("id, name, division_mode").in("id", ids),
+    supabase.from("recipe_components").select(`recipe_id, ${COMPONENT_COLUMNS}`).in("recipe_id", ids),
+  ]);
+
+  if (recipes.error) {
+    throw recipes.error;
+  }
+  if (components.error) {
+    throw components.error;
+  }
+
+  const result: Record<string, SolverRecipe> = {};
+  for (const row of recipes.data as Pick<RecipeRow, "id" | "name" | "division_mode">[]) {
+    result[row.id] = { id: row.id, name: row.name, divisionMode: row.division_mode, components: [] };
+  }
+  for (const row of components.data as unknown as (ComponentRow & { recipe_id: string })[]) {
+    (result[row.recipe_id] as SolverRecipe | undefined)?.components.push({
+      id: row.id,
+      position: row.position,
+      name: row.name,
+      cookedYieldRatio: toNumberOrNull(row.cooked_yield_ratio),
+      ingredients: row.recipe_ingredients.map(toSolverIngredient).sort(byPosition),
+    });
+  }
+  for (const recipe of Object.values(result)) {
+    recipe.components.sort(byPosition);
+  }
+  return result;
+}
+// --- end S-04 -------------------------------------------------------------------------------

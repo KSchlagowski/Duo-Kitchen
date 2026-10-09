@@ -146,6 +146,10 @@ const selectClass =
                   <h2 class="font-semibold">
                     {weekdayLabel(date)} <span class="text-sm font-normal text-blue-100/60">{date}</span>
                   </h2>
+                  {/* A plain link, not a form control: it previews the SAVED plan for this day. */}
+                  <a href={`/plan/day?start=${startDate}&day=${day}`} class="text-xs text-purple-300 hover:underline">
+                    Macros →
+                  </a>
                   <label class="flex flex-col gap-1 text-xs text-blue-100/70">
                     Whole day for
                     <select name={`day${day}_eater`} class:list={selectClass}>

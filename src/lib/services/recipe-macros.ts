@@ -39,8 +39,8 @@ export function cookedWeight(rawG: number, ratio: number | null): number | null 
 }
 
 // Half-up rounding that agrees with Postgres round(numeric) at exact .5 values: the toFixed pass
-// strips float noise such as 402.49999999 before Math.round sees it.
-function roundHalfUp(value: number): number {
+// strips float noise such as 402.49999999 before Math.round sees it. The solver (S-04) rounds with it too.
+export function roundHalfUp(value: number): number {
   return Math.round(Number(value.toFixed(6)));
 }
 

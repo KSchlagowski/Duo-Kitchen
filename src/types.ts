@@ -120,9 +120,136 @@ export interface PlanMeal {
   eaterUserId: string | null;
 }
 
+// A stored meal, with the id S-04 fingerprints (save_meal_plan keeps it across eater-only edits).
+export interface PlanMealRecord extends PlanMeal {
+  mealId: string;
+}
+
 export interface MealPlan {
   id: string;
   startDate: string;
   updatedAt: string;
-  meals: PlanMeal[];
+  meals: PlanMealRecord[];
 }
+
+// --- S-04: solving a day's macros -----------------------------------------------------------
+// Solver inputs: the library rows a day uses, flattened to what the LP and the rounding need.
+export interface SolverIngredient {
+  id: string;
+  position: number;
+  productName: string;
+  baseAmountG: number;
+  effectiveRoundingStepG: number;
+  minAmountG: number | null;
+  gramsPerPiece: number | null;
+  allowHalfPieces: boolean;
+  kcalPer100g: number;
+  proteinPer100g: number;
+  fatPer100g: number;
+  carbsPer100g: number;
+}
+
+export interface SolverComponent {
+  id: string;
+  position: number;
+  name: string;
+  cookedYieldRatio: number | null;
+  ingredients: SolverIngredient[];
+}
+
+export interface SolverRecipe {
+  id: string;
+  name: string;
+  divisionMode: DivisionMode;
+  components: SolverComponent[];
+}
+
+// One day's meals plus everything needed to solve them. `memberIds` resolves "both" (null eater).
+export interface SolveDayInput {
+  memberIds: string[];
+  meals: PlanMealRecord[];
+  recipes: Record<string, SolverRecipe>;
+  targets: Record<string, MacroTargetsInput>;
+}
+
+export type MacroKey = keyof MacroTotals;
+export type SolveTier = 10 | 15 | 20;
+export type DaySolveStatus = "solved" | "needs_confirmation" | "no_fit";
+
+export type UnsolvableReasonCode = "no_meals" | "missing_targets" | "empty_recipe" | "eater_not_member";
+
+export interface UnsolvableReason {
+  reason: UnsolvableReasonCode;
+  userIds?: string[];
+  recipeName?: string;
+}
+
+// How one component is shared between its eaters. `value` is per kind: cooked grams, a whole
+// percentage, a piece count, or null ("per_ingredient" reads each ingredient's perPerson; "all" is
+// a single eater). `fraction` is the share the totals were computed from.
+export type DaySplitKind = "grams_cooked" | "percent" | "pieces" | "per_ingredient" | "all";
+
+export interface DaySplitShare {
+  userId: string;
+  value: number | null;
+  fraction: number;
+}
+
+export interface DaySplit {
+  kind: DaySplitKind;
+  evenSplit: boolean;
+  shares: DaySplitShare[];
+}
+
+export interface DaySolutionIngredient {
+  id: string;
+  productName: string;
+  // The batch cook amount (for a per-person component, the sum of its perPerson amounts).
+  amountG: number;
+  gramsPerPiece: number | null;
+  allowHalfPieces: boolean;
+  perPerson: Record<string, number> | null;
+}
+
+export interface DaySolutionComponent {
+  id: string;
+  name: string;
+  cookedYieldRatio: number | null;
+  ingredients: DaySolutionIngredient[];
+  split: DaySplit;
+}
+
+export interface DaySolutionMeal {
+  mealId: string;
+  mealType: MealType;
+  recipeId: string;
+  recipeName: string;
+  divisionMode: DivisionMode;
+  eaterUserIds: string[];
+  components: DaySolutionComponent[];
+}
+
+export interface DaySolutionPerson {
+  userId: string;
+  targets: MacroTargetsInput;
+  totals: MacroTotals;
+  // Signed fractions: (total − target) / target, or / 50 g for a zero target.
+  deviations: MacroTotals;
+}
+
+export type DaySolveExplanation =
+  | { kind: "recipe"; mealId: string; recipeName: string; macro: MacroKey; direction: "over" | "under" }
+  | { kind: "targets"; userId: string };
+
+// Also the persisted jsonb shape (S-04 phase 2).
+export interface DaySolution {
+  version: 1;
+  people: DaySolutionPerson[];
+  meals: DaySolutionMeal[];
+  maxDeviationPct: number;
+  requiredTier: SolveTier | null;
+  explanation: DaySolveExplanation | null;
+}
+
+export type SolveDayResult = { kind: "solution"; solution: DaySolution } | ({ kind: "unsolvable" } & UnsolvableReason);
+// --- end S-04 -------------------------------------------------------------------------------
