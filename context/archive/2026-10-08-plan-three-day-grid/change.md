@@ -1,10 +1,10 @@
 ---
 change_id: plan-three-day-grid
 title: Household three-day meal plan grid with recipe picker (S-03)
-status: impl_reviewed
+status: archived
 created: 2026-10-08
-updated: 2026-10-08
-archived_at: null
+updated: 2026-10-09
+archived_at: 2026-10-09T09:37:32Z
 ---
 
 ## Notes

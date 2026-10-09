@@ -3,7 +3,7 @@ project: "Duo Kitchen"
 version: 1
 status: draft
 created: 2026-10-06
-updated: 2026-10-08
+updated: 2026-10-09
 prd_version: 1
 main_goal: market-feedback
 top_blocker: time
@@ -35,7 +35,7 @@ A couple who cook together in bulk, but have different daily macro targets, impr
 | F-04 | shared-recipe-library         | (foundation) recipes and products are one public library, not owned by any household      | F-02             | Access Control, FR-010, FR-011, FR-012        | done     |
 | S-01 | link-partner-household        | invite their partner and share one household                                              | F-01             | US-01, FR-001, FR-002, FR-003                 | done     |
 | S-02 | set-daily-macro-targets       | enter their own daily calorie/protein/fat/carb targets                                    | F-01             | US-01, FR-004                                 | done     |
-| S-03 | plan-three-day-grid           | fill a 3-day × 5-meal plan, marking each meal for A, B or both, and save it unsolved      | F-01, F-04       | US-01, FR-013, FR-014, FR-015, FR-016, FR-020 | proposed |
+| S-03 | plan-three-day-grid           | fill a 3-day × 5-meal plan, marking each meal for A, B or both, and save it unsolved      | F-01, F-04       | US-01, FR-013, FR-014, FR-015, FR-016, FR-020 | done     |
 | S-04 | solve-daily-macros            | solve a day and see per-ingredient quantities and the A/B split within tolerance          | S-01, S-02, S-03 | US-01, FR-018, FR-019, FR-020                 | proposed |
 | S-05 | browse-recipe-library         | browse recipe cards and open full recipe details                                          | F-04             | FR-005, FR-009, FR-010, FR-012                | proposed |
 | S-06 | rate-and-filter-recipes       | rate recipes, see the partner's rating, and filter/sort the library                       | S-05, S-01, F-04 | FR-006, FR-007, FR-008                        | proposed |
@@ -163,7 +163,7 @@ Foundations below assume these are present and do NOT re-scaffold them.
 - **Blockers:** —
 - **Unknowns:** —
 - **Risk:** Uses a minimal recipe picker over seed recipes so it doesn't wait on the full library (S-05); the plan shape must already allow later cross-day dishes (S-08) without rework.
-- **Status:** proposed
+- **Status:** done
 
 ### S-04: Solve a day's macros for A and B
 
@@ -314,7 +314,7 @@ Foundations below assume these are present and do NOT re-scaffold them.
 | F-04       | shared-recipe-library         | Make recipes and products one public library          | done                  | Archived 2026-10-08                                                               |
 | S-01       | link-partner-household        | Invite partner and link accounts into one household   | done                  | Archived 2026-10-08 (old household preserved memberless, not merged or discarded) |
 | S-02       | set-daily-macro-targets       | Enter daily macro targets per person                  | done                  | Archived 2026-10-08                                                               |
-| S-03       | plan-three-day-grid           | Build and save a 3-day meal plan for A/B              | no                    | Waits on F-04                                                                     |
+| S-03       | plan-three-day-grid           | Build and save a 3-day meal plan for A/B              | done                  | Archived 2026-10-09                                                               |
 | S-04       | solve-daily-macros            | Solve a day's macros and split quantities for A and B | no                    | North star; waits on S-02, S-03                                                   |
 | S-05       | browse-recipe-library         | Browse recipe cards and view recipe details           | no                    | Waits on F-04                                                                     |
 | S-06       | rate-and-filter-recipes       | Rate, filter and sort recipes                         | no                    | Waits on S-05, F-04                                                               |
@@ -356,3 +356,4 @@ Foundations below assume these are present and do NOT re-scaffold them.
 - **S-01: user can generate an invite code/link that their partner redeems, after which both see the same recipes, plans and shopping lists.** — Archived 2026-10-08 → `context/archive/2026-10-07-link-partner-household/`. Lesson: —.
 - **S-02: user can manually enter their own daily calorie, protein, fat and carb targets and see their partner's.** — Archived 2026-10-08 → `context/archive/2026-10-08-set-daily-macro-targets/`. Lesson: —.
 - **F-04: (foundation) recipes and products are one public library shared by every user — no recipe or product belongs to a household — replacing F-02's per-household copies.** — Archived 2026-10-08 → `context/archive/2026-10-08-shared-recipe-library/`. Lesson: —.
+- **S-03: user can fill 3 consecutive days with up to 5 meals each, place any recipe in any slot, mark each meal or day for A, B or both, leave slots empty, and save and use the plan without solving.** — Archived 2026-10-09 → `context/archive/2026-10-08-plan-three-day-grid/`. Lesson: —.
