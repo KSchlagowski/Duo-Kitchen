@@ -1,10 +1,10 @@
 ---
 change_id: browse-recipe-library
 title: Browse the shared recipe library (S-05) with recipe cards and detail view
-status: impl_reviewed
+status: archived
 created: 2026-10-08
-updated: 2026-10-08
-archived_at: null
+updated: 2026-10-09
+archived_at: 2026-10-09T10:06:05Z
 ---
 
 ## Notes
