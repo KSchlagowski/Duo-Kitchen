@@ -53,4 +53,4 @@
 - **Location**: context/changes/plan-three-day-grid/plan.md (Progress 3.5)
 - **Detail**: Progress row 3.5 is still `[ ]`, and the Phase 3 notes say so honestly. Its HTTP equivalent passes in the smoke run: B edits, then A sees 3 meals with the partner meal shown as "me". The other manual rows (2.5–2.11) were scripted over HTTP rather than checked in a browser, which the Phase 2 notes also disclose. That is not rubber-stamping.
 - **Fix**: A human opens two browsers, A and B linked, B edits a slot on `/plan`, and A reloads and sees the change.
-- **Decision**: DEFERRED. It needs a human with two real browser sessions and can't be done in a non-interactive run.
+- **Decision**: FIXED. Manual two-browser check performed by the user on 2026-10-09: the partner's edit was visible after a reload (plan.md Progress 3.5).

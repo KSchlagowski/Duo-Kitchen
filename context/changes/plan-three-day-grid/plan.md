@@ -442,7 +442,7 @@ The migration is additive (new tables, a new function) and needs no backfill. Ro
 
 #### Manual
 
-- [ ] 3.5 Two-browser check: partner edits are visible to the other partner
+- [x] 3.5 Two-browser check: partner edits are visible to the other partner — confirmed manually 2026-10-09
 - [x] 3.6 Shared-file edits are self-contained S-03 blocks — ff209f6
 
 > Phase 3 notes (non-interactive run): **3.5 was NOT performed in real browsers.** Its HTTP equivalent passes in the smoke run: B saves an edit that marks a meal for the partner, and A's dashboard and `/plan` then show 3 meals with that meal as "me". A human should still do the two-browser check. 3.6 was checked by the implementer with `git diff -U0 main`: every hunk in `smoke.mjs`, `types.ts`, `recipes.ts`, `dashboard.astro` and the README is insert-only. The only in-place edits are the `PROTECTED_ROUTES` reformat (planned), the `recipes.ts` / `dashboard.astro` type-import lines and the one appended sentence in CLAUDE.md's Write-revoked rule. A human reviewer should confirm. One deviation from the plan: the failure-dump list in `smoke.mjs` is **not** edited. Prettier expanded the spread version into a 10-line hunk, so `S03_TEST_IDS` gets its own dump loop below the untouched shared line, leaving the hunk purely additive for S-05's rebase. The smoke run passes all 47 steps (12 new S-03 steps) against the production preview. The roadmap is untouched, because the archive step updates it.
