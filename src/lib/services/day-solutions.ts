@@ -5,16 +5,20 @@ import type {
   DaySolutionMeal,
   DaySolutionPerson,
   DaySolveStatus,
+  DayView,
   MacroKey,
   MacroTargetsInput,
   MealPlan,
   PlanDayIndex,
   SolveDayInput,
+  SolveTier,
+  StoredDaySolution,
   UnsolvableReason,
 } from "@/types";
 import { getCurrentHousehold } from "@/lib/services/household";
+import { checkSolvable, dayFingerprint } from "@/lib/services/macro-solver";
 import { formatMacroTargets, getHouseholdMacroTargets } from "@/lib/services/macro-targets";
-import { getMealPlan } from "@/lib/services/meal-plans";
+import { errorCode, getMealPlan, type RpcResult } from "@/lib/services/meal-plans";
 import { roundHalfUp } from "@/lib/services/recipe-macros";
 import { getSolverRecipes } from "@/lib/services/recipes";
 import { EATER_LABELS, MACRO_DIRECTION_LABELS, MACRO_SHORT_LABELS, SPLIT_LABELS } from "@/lib/recipe-labels";
@@ -61,11 +65,136 @@ export async function loadDaySolveInputs(
   };
 }
 
+// --- persistence (phase 2) -----------------------------------------------------------------------
+
+interface DaySolutionRow {
+  status: DaySolveStatus;
+  accepted_tolerance_pct: SolveTier;
+  input_fingerprint: string;
+  result: DaySolution;
+  solved_at: string;
+}
+
+// The stored solution for one plan day, or null when the day has never been solved.
+export async function getDaySolution(
+  supabase: SupabaseClient,
+  planId: string,
+  dayIndex: PlanDayIndex,
+): Promise<StoredDaySolution | null> {
+  const { data, error } = await supabase
+    .from("plan_day_solutions")
+    .select("status, accepted_tolerance_pct, input_fingerprint, result, solved_at")
+    .eq("plan_id", planId)
+    .eq("day_index", dayIndex)
+    .maybeSingle();
+  if (error) {
+    throw error;
+  }
+  if (!data) {
+    return null;
+  }
+  // Without a generated Database type the row is untyped; the table's checks guarantee this shape.
+  const row: DaySolutionRow = data;
+  return {
+    status: row.status,
+    acceptedTolerancePct: row.accepted_tolerance_pct,
+    inputFingerprint: row.input_fingerprint,
+    solution: row.result,
+    solvedAt: row.solved_at,
+  };
+}
+
+// Stores a solve through public.save_day_solution and returns the row id.
+export async function saveDaySolution(
+  supabase: SupabaseClient,
+  startDate: string,
+  dayIndex: PlanDayIndex,
+  status: DaySolveStatus,
+  acceptedTolerance: SolveTier,
+  fingerprint: string,
+  solution: DaySolution,
+): Promise<string> {
+  const { data, error } = (await supabase.rpc("save_day_solution", {
+    p_start_date: startDate,
+    p_day_index: dayIndex,
+    p_status: status,
+    p_accepted_tolerance_pct: acceptedTolerance,
+    p_input_fingerprint: fingerprint,
+    p_result: solution,
+  })) as RpcResult<string>;
+
+  if (error) {
+    throw error;
+  }
+  if (data === null) {
+    throw new Error("save_day_solution returned no id");
+  }
+  return data;
+}
+
+// Everything the day page and the solve route need, or null when no plan exists for that date. It
+// never solves: a stored result is compared to the current inputs by fingerprint only.
+export async function getDayView(
+  supabase: SupabaseClient,
+  startDate: string,
+  dayIndex: PlanDayIndex,
+): Promise<DayView | null> {
+  const loaded = await loadDaySolveInputs(supabase, startDate, dayIndex);
+  if (!loaded) {
+    return null;
+  }
+  const [stored, fingerprint] = await Promise.all([
+    getDaySolution(supabase, loaded.plan.id, dayIndex),
+    dayFingerprint(loaded.input),
+  ]);
+  const unsolvable = checkSolvable(loaded.input);
+  return {
+    plan: loaded.plan,
+    input: loaded.input,
+    unsolvable,
+    fingerprint,
+    stored,
+    stale: stored !== null && (unsolvable !== null || stored.inputFingerprint !== fingerprint),
+  };
+}
+
 // --- display text --------------------------------------------------------------------------------
 
 export const DAY_NOT_FOUND = "Day not found";
 export const DAY_UNAVAILABLE = "This day is unavailable right now.";
 export const FULL_TARGETS_NOTE = "Portions are scaled to each person's full daily targets.";
+export const NOT_SOLVED_YET = "Not solved yet";
+export const DAY_SOLVE_STALE = "Out of date — the plan, targets or recipes changed since this was solved.";
+
+// Rejection SQLSTATEs raised by save_day_solution. KD007 is shared with S-01 but gets solve wording.
+export const DAY_SOLVE_ERRORS = {
+  KD007: "You need to be signed in to solve a day.",
+  KD013: "That solve result could not be saved. Please try again.",
+  KD014: "Save the plan before solving it.",
+} as const;
+
+export const DAY_CHANGED_BEFORE_ACCEPT = "The day changed since you looked — review the new result before accepting.";
+export const DAY_SOLVE_FAILED = "Macros could not be solved right now. Please try again.";
+
+export function daySolveErrorMessage(error: unknown): string {
+  const code = errorCode(error);
+  return code !== null && code in DAY_SOLVE_ERRORS
+    ? DAY_SOLVE_ERRORS[code as keyof typeof DAY_SOLVE_ERRORS]
+    : DAY_SOLVE_FAILED;
+}
+
+// "Solved at 14:05, 9 Oct 2026" in the household's locale.
+export function formatSolvedAt(solvedAt: string): string {
+  const date = new Date(solvedAt);
+  const time = date.toLocaleTimeString("en-GB", { timeZone: "Europe/Warsaw", hour: "2-digit", minute: "2-digit" });
+  const day = date.toLocaleDateString("en-GB", {
+    timeZone: "Europe/Warsaw",
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+  });
+  return `Solved at ${time}, ${day}`;
+}
 
 // P11 reasons, with "You" / "Your partner" resolved against the viewer.
 export const UNSOLVABLE_MESSAGES = {

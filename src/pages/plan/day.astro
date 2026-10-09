@@ -1,32 +1,32 @@
 ---
 import Layout from "@/layouts/Layout.astro";
 import { createClient } from "@/lib/supabase";
-import { solveDay, statusFor } from "@/lib/services/macro-solver";
 import {
   DAY_NOT_FOUND,
+  DAY_SOLVE_STALE,
   DAY_UNAVAILABLE,
   FULL_TARGETS_NOTE,
+  NOT_SOLVED_YET,
   formatDaySolveSummary,
   formatEaters,
   formatPersonLine,
+  formatSolvedAt,
   formatSplitLine,
   formatTargetLine,
-  loadDaySolveInputs,
+  getDayView,
   unsolvableMessage,
   viewerFirst,
 } from "@/lib/services/day-solutions";
 import { addDays, isIsoDate, weekdayLabel } from "@/lib/services/meal-plans";
 import { formatIngredientAmount } from "@/lib/services/recipe-macros";
 import { MEAL_TYPE_LABELS } from "@/lib/recipe-labels";
-import type { DaySolution, PlanDayIndex, UnsolvableReason } from "@/types";
+import { cn } from "@/lib/utils";
+import type { DayView, PlanDayIndex } from "@/types";
 
-// S-04 phase 1: a read-only PREVIEW of the day's solve, computed on every render and never stored.
+// S-04: one plan day's STORED macro solve, and the forms that solve or accept it. The page never
+// computes a result it does not store; staleness is a fingerprint comparison (getDayView).
 // A malformed start/day or a date with no saved plan is 404; a failed read is 500.
-type State =
-  | { kind: "not-found" }
-  | { kind: "unavailable" }
-  | { kind: "unsolvable"; reason: UnsolvableReason }
-  | { kind: "solved"; solution: DaySolution };
+type State = { kind: "not-found" } | { kind: "unavailable" } | { kind: "loaded"; view: DayView };
 
 const viewerId = Astro.locals.user?.id ?? "";
 const startParam = Astro.url.searchParams.get("start") ?? "";
@@ -42,18 +42,14 @@ if (isIsoDate(startParam) && dayIndex !== null) {
     state = { kind: "unavailable" };
   } else {
     try {
-      const loaded = await loadDaySolveInputs(supabase, startParam, dayIndex);
-      if (loaded) {
-        const result = solveDay(loaded.input);
-        state =
-          result.kind === "solution"
-            ? { kind: "solved", solution: result.solution }
-            : { kind: "unsolvable", reason: result };
+      const view = await getDayView(supabase, startParam, dayIndex);
+      if (view) {
+        state = { kind: "loaded", view };
       }
     } catch (error) {
       state = { kind: "unavailable" };
       // eslint-disable-next-line no-console -- surfaced in Cloudflare Workers observability logs
-      console.error("solving the day failed on /plan/day", error);
+      console.error("getDayView failed on /plan/day", error);
     }
   }
 }
@@ -66,11 +62,22 @@ if (state.kind === "not-found") {
 
 const date = dayIndex !== null && isIsoDate(startParam) ? addDays(startParam, dayIndex) : null;
 const heading = date ? `${weekdayLabel(date)} ${date}` : "Day";
-const solution = state.kind === "solved" ? state.solution : null;
+const view = state.kind === "loaded" ? state.view : null;
+const stored = view?.stored ?? null;
+const solution = stored?.solution ?? null;
+const stale = view?.stale ?? false;
+const unsolvable = view?.unsolvable ?? null;
 const missingOwnTargets =
-  state.kind === "unsolvable" &&
-  state.reason.reason === "missing_targets" &&
-  (state.reason.userIds?.includes(viewerId) ?? false);
+  unsolvable !== null && unsolvable.reason === "missing_targets" && (unsolvable.userIds?.includes(viewerId) ?? false);
+// Accepting is offered only for the exact result on screen, and never for an out-of-date one.
+const acceptTier =
+  stored !== null && !stale && stored.status === "needs_confirmation" ? stored.solution.requiredTier : null;
+
+const solved = Astro.url.searchParams.get("solved") === "1";
+const notice = Astro.url.searchParams.get("error");
+
+const buttonClass =
+  "rounded-lg border border-white/20 bg-white/10 px-4 py-2 text-sm transition-colors hover:bg-white/20";
 ---
 
 <Layout title={`Macros · ${heading}`}>
@@ -80,6 +87,15 @@ const missingOwnTargets =
         Macros
       </h1>
       <p class="mb-4 text-sm text-blue-100/80">{heading}</p>
+
+      {solved && (
+        <p class="mb-4 rounded-lg border border-emerald-400/30 bg-emerald-500/10 p-3 text-sm text-emerald-200">
+          Solved.
+        </p>
+      )}
+      {notice && (
+        <p class="mb-4 rounded-lg border border-red-400/30 bg-red-500/10 p-3 text-sm text-red-200">{notice}</p>
+      )}
 
       {state.kind === "not-found" && (
         <p class="text-center text-lg" data-testid="day-not-found">
@@ -91,12 +107,12 @@ const missingOwnTargets =
           {DAY_UNAVAILABLE}
         </p>
       )}
-      {state.kind === "unsolvable" && (
+      {unsolvable && (
         <p
-          class="rounded-lg border border-amber-400/30 bg-amber-500/10 p-3 text-sm text-amber-100"
+          class="mb-4 rounded-lg border border-amber-400/30 bg-amber-500/10 p-3 text-sm text-amber-100"
           data-testid="day-unsolvable"
         >
-          {unsolvableMessage(state.reason, viewerId)}
+          {unsolvableMessage(unsolvable, viewerId)}
           {missingOwnTargets && (
             <>
               {" "}
@@ -108,14 +124,67 @@ const missingOwnTargets =
         </p>
       )}
 
-      {solution && (
-        <>
-          <p class="mb-3 inline-block rounded-full border border-white/20 bg-white/5 px-3 py-1 text-xs text-blue-100/80">
-            Preview — not saved
+      {view && stale && (
+        <div class="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-amber-400/30 bg-amber-500/10 p-3">
+          <p class="text-sm text-amber-100" data-testid="day-solve-stale">
+            {DAY_SOLVE_STALE}
           </p>
+          {!unsolvable && (
+            <form method="POST" action="/api/plan/solve">
+              <input type="hidden" name="start_date" value={startParam} />
+              <input type="hidden" name="day_index" value={dayParam} />
+              <button type="submit" class:list={buttonClass}>
+                Solve again
+              </button>
+            </form>
+          )}
+        </div>
+      )}
+
+      {view && !stored && !unsolvable && (
+        <section class="flex flex-col items-start gap-3">
           <p class="text-lg font-semibold" data-testid="day-solve-summary">
-            {formatDaySolveSummary(solution, statusFor(solution, 10), viewerId)}
+            {NOT_SOLVED_YET}
           </p>
+          <form method="POST" action="/api/plan/solve">
+            <input type="hidden" name="start_date" value={startParam} />
+            <input type="hidden" name="day_index" value={dayParam} />
+            <button type="submit" class:list={buttonClass}>
+              Solve macros
+            </button>
+          </form>
+        </section>
+      )}
+
+      {stored && solution && (
+        <div class:list={cn(stale && "opacity-50")}>
+          <p class="text-lg font-semibold" data-testid="day-solve-summary">
+            {formatDaySolveSummary(solution, stored.status, viewerId)}
+          </p>
+          <p class="text-xs text-blue-100/60">{formatSolvedAt(stored.solvedAt)}</p>
+
+          {!stale && (
+            <div class="mt-3 flex flex-wrap gap-2">
+              {acceptTier !== null && (
+                <form method="POST" action="/api/plan/solve">
+                  <input type="hidden" name="start_date" value={startParam} />
+                  <input type="hidden" name="day_index" value={dayParam} />
+                  <input type="hidden" name="accept_tolerance" value={String(acceptTier)} />
+                  <input type="hidden" name="fingerprint" value={stored.inputFingerprint} />
+                  <button type="submit" class:list={buttonClass}>
+                    Accept ±{acceptTier}%
+                  </button>
+                </form>
+              )}
+              <form method="POST" action="/api/plan/solve">
+                <input type="hidden" name="start_date" value={startParam} />
+                <input type="hidden" name="day_index" value={dayParam} />
+                <button type="submit" class:list={buttonClass}>
+                  Solve again
+                </button>
+              </form>
+            </div>
+          )}
 
           <section class="mt-4 flex flex-col gap-2">
             {viewerFirst(solution.people, viewerId).map((person) => (
@@ -166,7 +235,7 @@ const missingOwnTargets =
               ))}
             </section>
           ))}
-        </>
+        </div>
       )}
 
       <p class="mt-8 text-center text-sm">

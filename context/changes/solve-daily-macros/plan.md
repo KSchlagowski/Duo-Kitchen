@@ -668,12 +668,12 @@ Vitest, in `src/lib/services/macro-solver.test.ts`:
 
 #### Automated
 
-- [x] 1.1 Dependencies install and the lockfile is updated: `npm install`
-- [x] 1.2 Solver unit tests pass: `npm test`
-- [x] 1.3 Linting passes: `npm run lint`
-- [x] 1.4 Type checking passes: `npx astro check`
-- [x] 1.5 Production build succeeds, so the bundle includes `yalps` for workerd: `npm run build`
-- [x] 1.6 Existing smoke still passes against the preview
+- [x] 1.1 Dependencies install and the lockfile is updated: `npm install` — f15f9ef
+- [x] 1.2 Solver unit tests pass: `npm test` — f15f9ef
+- [x] 1.3 Linting passes: `npm run lint` — f15f9ef
+- [x] 1.4 Type checking passes: `npx astro check` — f15f9ef
+- [x] 1.5 Production build succeeds, so the bundle includes `yalps` for workerd: `npm run build` — f15f9ef
+- [x] 1.6 Existing smoke still passes against the preview — f15f9ef
 
 #### Manual
 
@@ -690,14 +690,14 @@ Vitest, in `src/lib/services/macro-solver.test.ts`:
 
 #### Automated
 
-- [ ] 2.1 Migration applies to the hosted project: `npx supabase db push`
-- [ ] 2.2 Isolation test passes against the deployed schema: `npm run test:rls`
-- [ ] 2.3 Seed integrity still passes: `npm run test:seed`
-- [ ] 2.4 Unit tests pass: `npm test`
-- [ ] 2.5 Linting passes: `npm run lint`
-- [ ] 2.6 Type checking passes: `npx astro check`
-- [ ] 2.7 Build succeeds: `npm run build`
-- [ ] 2.8 Existing smoke still passes against the preview
+- [x] 2.1 Migration applies to the hosted project: `npx supabase db push`
+- [x] 2.2 Isolation test passes against the deployed schema: `npm run test:rls`
+- [x] 2.3 Seed integrity still passes: `npm run test:seed`
+- [x] 2.4 Unit tests pass: `npm test`
+- [x] 2.5 Linting passes: `npm run lint`
+- [x] 2.6 Type checking passes: `npx astro check`
+- [x] 2.7 Build succeeds: `npm run build`
+- [x] 2.8 Existing smoke still passes against the preview
 
 #### Manual
 

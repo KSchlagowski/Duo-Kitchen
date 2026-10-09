@@ -252,4 +252,25 @@ export interface DaySolution {
 }
 
 export type SolveDayResult = { kind: "solution"; solution: DaySolution } | ({ kind: "unsolvable" } & UnsolvableReason);
+
+// One row of public.plan_day_solutions, as the app reads it.
+export interface StoredDaySolution {
+  status: DaySolveStatus;
+  acceptedTolerancePct: SolveTier;
+  inputFingerprint: string;
+  solution: DaySolution;
+  solvedAt: string;
+}
+
+// The day page's model: the current inputs (or why they cannot be solved), the stored result, and
+// whether that result is out of date. `stale` is true when the stored fingerprint differs from the
+// current one, or when a stored result exists but the current inputs are unsolvable.
+export interface DayView {
+  plan: MealPlan;
+  input: SolveDayInput;
+  unsolvable: UnsolvableReason | null;
+  fingerprint: string;
+  stored: StoredDaySolution | null;
+  stale: boolean;
+}
 // --- end S-04 -------------------------------------------------------------------------------

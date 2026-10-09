@@ -61,8 +61,9 @@ const PLAN_ERRORS: Record<string, string> = {
 
 export const PLAN_SAVE_FAILED = "Your plan could not be saved. Please try again.";
 
-// PostgREST surfaces the SQLSTATE as the error's `code` field (see invites.ts).
-function errorCode(error: unknown): string | null {
+// PostgREST surfaces the SQLSTATE as the error's `code` field (see invites.ts). day-solutions.ts
+// reuses it for save_day_solution.
+export function errorCode(error: unknown): string | null {
   if (typeof error !== "object" || error === null || !("code" in error)) {
     return null;
   }
@@ -130,7 +131,7 @@ export async function getMealPlan(supabase: SupabaseClient, startDate?: string):
 }
 
 // There is no generated `Database` type, so `rpc()` resolves to `any`; cast at the boundary.
-interface RpcResult<T> {
+export interface RpcResult<T> {
   data: T | null;
   error: PostgrestError | null;
 }

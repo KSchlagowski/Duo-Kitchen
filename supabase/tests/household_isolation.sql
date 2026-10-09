@@ -785,6 +785,131 @@ begin
 end;
 $$;
 
+-- As user A: day solutions (S-04) against A's own RPC-saved 2030-05-01 plan. save_day_solution
+-- returns an id, a second call for the same day updates that row in place, and the table is
+-- write-revoked. The solution id is stashed for B's invisibility check and the cascade block at the end.
+do $$
+declare
+  a_household uuid := current_setting('rls_test.a_household')::uuid;
+  fp constant text := repeat('ab', 32);
+  plan uuid;
+  sol uuid;
+  sol2 uuid;
+  v_status text;
+  v_tol smallint;
+  n int;
+begin
+  plan := public.save_meal_plan('2030-05-01', jsonb_build_array(
+    jsonb_build_object('day_index', 0, 'meal_type', 'lunch',
+      'recipe_id', '5eed0002-0000-4000-8000-000000000004', 'eater_user_id', null)));
+
+  sol := public.save_day_solution('2030-05-01', 0, 'needs_confirmation', 10, fp, '{"version":1}'::jsonb);
+  if sol is null then
+    raise exception 'solutions[rpc]: save_day_solution returned no id';
+  end if;
+  select count(*) into n from public.plan_day_solutions
+  where id = sol and plan_id = plan and household_id = a_household and day_index = 0;
+  if n <> 1 then
+    raise exception 'solutions[rpc]: save_day_solution returned %, which is not A''s 2030-05-01 day 0 row', sol;
+  end if;
+
+  sol2 := public.save_day_solution('2030-05-01', 0, 'solved', 15, fp, '{"version":1}'::jsonb);
+  if sol2 is distinct from sol then
+    raise exception 'solutions[rpc]: re-saving the same day returned %, expected the same row %', sol2, sol;
+  end if;
+  select status, accepted_tolerance_pct into v_status, v_tol from public.plan_day_solutions where id = sol;
+  if v_status <> 'solved' or v_tol <> 15 then
+    raise exception 'solutions[rpc]: re-saving left status % / tolerance %, expected solved / 15', v_status, v_tol;
+  end if;
+  select count(*) into n from public.plan_day_solutions where plan_id = plan;
+  if n <> 1 then
+    raise exception 'solutions[rpc]: the plan holds % solution rows after two saves of one day, expected 1', n;
+  end if;
+
+  -- Valid values in A's own household and plan: the policies alone would ALLOW this, so only the
+  -- revoke can raise insufficient_privilege, and no other handler is accepted on purpose.
+  begin
+    insert into public.plan_day_solutions
+      (household_id, plan_id, day_index, status, accepted_tolerance_pct, input_fingerprint, result)
+    values (a_household, plan, 2, 'solved', 10, fp, '{}'::jsonb);
+    raise exception 'solutions: user A could insert into public.plan_day_solutions directly';
+  exception when insufficient_privilege then null;
+  end;
+
+  begin
+    update public.plan_day_solutions set status = 'no_fit' where household_id = a_household;
+    get diagnostics n = row_count;
+    if n <> 0 then
+      raise exception 'solutions: user A updated % own plan_day_solutions rows directly', n;
+    end if;
+  exception when insufficient_privilege then null;
+  end;
+
+  begin
+    delete from public.plan_day_solutions where household_id = a_household;
+    get diagnostics n = row_count;
+    if n <> 0 then
+      raise exception 'solutions: user A deleted % own plan_day_solutions rows directly', n;
+    end if;
+  exception when insufficient_privilege then null;
+  end;
+
+  begin
+    truncate public.plan_day_solutions;
+    raise exception 'solutions: user A could truncate public.plan_day_solutions';
+  exception when insufficient_privilege then null;
+  end;
+
+  -- Saving the plan with zero meals keeps the plan row, so the solution stays (the app shows it as
+  -- out of date by fingerprint; nothing here deletes it).
+  perform public.save_meal_plan('2030-05-01', '[]'::jsonb);
+  select count(*) into n from public.plan_day_solutions where id = sol;
+  if n <> 1 then
+    raise exception 'solutions: saving the plan with zero meals removed its day solution';
+  end if;
+
+  perform set_config('rls_test.a_solution', sol::text, true);
+end;
+$$;
+
+-- As user A: save_day_solution rejections, one SQLSTATE each (same when others + P0001 re-raise
+-- idiom as the save_meal_plan rejections above).
+do $$
+declare
+  fp constant text := repeat('ab', 32);
+  cases text[][] := array[
+    -- start date, day_index, status, tolerance, fingerprint, result, expected SQLSTATE, what the case proves
+    array['2030-05-01', '3', 'solved', '10', fp, '{}', 'KD013', 'day_index 3 was accepted'],
+    array['2030-05-01', '0', 'great', '10', fp, '{}', 'KD013', 'an unknown status was accepted'],
+    array['2030-05-01', '0', 'solved', '12', fp, '{}', 'KD013', 'a tolerance of 12 was accepted'],
+    array['2030-05-01', '0', 'solved', '10', repeat('zz', 32), '{}', 'KD013', 'a non-hex fingerprint was accepted'],
+    array['2030-05-01', '0', 'solved', '10', fp, '[]', 'KD013', 'a jsonb array result was accepted'],
+    array[null, '0', 'solved', '10', fp, '{}', 'KD013', 'a null start date was accepted'],
+    array['2030-05-01', '0', 'solved', '10', fp,
+      jsonb_build_object('pad', repeat('x', 70000))::text, 'KD013', 'a result over 65536 bytes was accepted'],
+    array['2030-05-09', '0', 'solved', '10', fp, '{}', 'KD014', 'a start date with no plan was accepted']
+  ];
+  i int;
+  v_state text;
+  v_msg text;
+begin
+  for i in 1 .. array_length(cases, 1) loop
+    begin
+      perform public.save_day_solution(cases[i][1]::date, cases[i][2]::int, cases[i][3], cases[i][4]::int,
+        cases[i][5], cases[i][6]::jsonb);
+      raise exception 'solutions[%]: %', cases[i][7], cases[i][8];
+    exception
+      when others then
+        get stacked diagnostics v_state = returned_sqlstate, v_msg = message_text;
+        if v_state = 'P0001' then raise; end if;
+        if v_state <> cases[i][7] then
+          raise exception 'solutions[%]: % -- rejected with % ("%") instead', cases[i][7], cases[i][8], v_state, v_msg;
+        end if;
+    end;
+  end loop;
+end;
+$$;
+
 -- ---------------------------------------------------------------------------
 -- As user B: symmetric read check.
 -- ---------------------------------------------------------------------------
@@ -851,6 +976,36 @@ begin
   if n <> 0 then
     raise exception 'plans: user B sees % plan_meals rows of other households', n;
   end if;
+end;
+$$;
+
+-- As user B: A's day solution (S-04) is invisible, and B cannot write to A's plan through the RPC --
+-- the start date resolves against B's own household, which has no 2030-05-01 plan (KD014).
+do $$
+declare
+  n int;
+  v_state text;
+  v_msg text;
+begin
+  select count(*) into n from public.plan_day_solutions where id = current_setting('rls_test.a_solution')::uuid;
+  if n <> 0 then
+    raise exception 'solutions: user B can see A''s day solution';
+  end if;
+  select count(*) into n from public.plan_day_solutions;
+  if n <> 0 then
+    raise exception 'solutions: user B sees % plan_day_solutions rows, expected 0', n;
+  end if;
+
+  begin
+    perform public.save_day_solution('2030-05-01', 0, 'solved', 10, repeat('ab', 32), '{}'::jsonb);
+    raise exception 'solutions[KD014]: user B saved a solution for A''s 2030-05-01 plan date';
+  exception
+    when sqlstate 'KD014' then null;
+    when others then
+      get stacked diagnostics v_state = returned_sqlstate, v_msg = message_text;
+      if v_state = 'P0001' then raise; end if;
+      raise exception 'solutions[KD014]: rejected with % ("%") instead of KD014', v_state, v_msg;
+  end;
 end;
 $$;
 
@@ -955,13 +1110,27 @@ begin
 end;
 $$;
 
+-- As anon: the S-04 RPC, same reasoning and KD007 branch.
+do $$
+begin
+  begin
+    perform public.save_day_solution('2030-01-01', 0, 'solved', 10, repeat('ab', 32), '{}'::jsonb);
+    raise exception 'anon: could execute public.save_day_solution()';
+  exception
+    when insufficient_privilege then null;
+    when sqlstate 'KD007' then
+      raise exception 'anon: public.save_day_solution() is executable by anon (reached the body and raised KD007); the revoke execute … from public, anon is missing';
+  end;
+end;
+$$;
+
 do $$
 declare
   t text;
   n int;
 begin
   foreach t in array array['products', 'recipes', 'recipe_components', 'recipe_ingredients', 'recipe_steps',
-    'household_invites', 'macro_targets', 'meal_plans', 'plan_dishes', 'plan_meals'] loop
+    'household_invites', 'macro_targets', 'meal_plans', 'plan_dishes', 'plan_meals', 'plan_day_solutions'] loop
     begin
       execute format('select count(*) from public.%I', t) into n;
       if n <> 0 then
@@ -1185,6 +1354,46 @@ begin
   end if;
   if not has_function_privilege('authenticated', 'public.save_meal_plan(date, jsonb)', 'execute') then
     raise exception 'grants: authenticated cannot execute public.save_meal_plan(date, jsonb)';
+  end if;
+end;
+$$;
+
+-- Grants (as postgres), day solutions (S-04): the same write-revoked shape as the S-03 tables, and
+-- the RPC's execute grants (the catch-alls inspect tables only).
+do $$
+declare
+  t text;
+  p text;
+begin
+  foreach t in array array['plan_day_solutions'] loop
+    foreach p in array array['INSERT', 'UPDATE', 'DELETE', 'TRUNCATE', 'REFERENCES', 'TRIGGER', 'MAINTAIN'] loop
+      if has_table_privilege('authenticated', 'public.' || t, p) then
+        raise exception 'grants: authenticated holds % on public.%; writes must go through public.save_day_solution', p, t;
+      end if;
+    end loop;
+
+    foreach p in array array['INSERT', 'UPDATE', 'REFERENCES'] loop
+      if has_any_column_privilege('authenticated', 'public.' || t, p) then
+        raise exception 'grants: authenticated holds column-level % on public.%', p, t;
+      end if;
+    end loop;
+
+    if not has_table_privilege('authenticated', 'public.' || t, 'SELECT') then
+      raise exception 'grants: authenticated lacks SELECT on public.%', t;
+    end if;
+
+    foreach p in array array['SELECT', 'INSERT', 'UPDATE', 'DELETE', 'TRUNCATE', 'REFERENCES', 'TRIGGER', 'MAINTAIN'] loop
+      if has_table_privilege('anon', 'public.' || t, p) then
+        raise exception 'grants: anon holds % on public.%; the revoke all is missing', p, t;
+      end if;
+    end loop;
+  end loop;
+
+  if has_function_privilege('anon', 'public.save_day_solution(date, int, text, int, text, jsonb)', 'execute') then
+    raise exception 'grants: anon can execute public.save_day_solution(date, int, text, int, text, jsonb); the revoke execute … from public, anon is missing';
+  end if;
+  if not has_function_privilege('authenticated', 'public.save_day_solution(date, int, text, int, text, jsonb)', 'execute') then
+    raise exception 'grants: authenticated cannot execute public.save_day_solution(date, int, text, int, text, jsonb)';
   end if;
 end;
 $$;
@@ -1908,15 +2117,37 @@ begin
 end;
 $$;
 
+-- As postgres (S-04), very last because it destroys A's household: deleting a household cascades
+-- its plans and their day solutions (the whole transaction is rolled back).
+do $$
+declare
+  a_household uuid := current_setting('rls_test.a_household')::uuid;
+  sol uuid := current_setting('rls_test.a_solution')::uuid;
+  n int;
+begin
+  select count(*) into n from public.plan_day_solutions where id = sol;
+  if n <> 1 then
+    raise exception 'solutions: A''s day solution is missing before the household delete';
+  end if;
+
+  delete from public.households where id = a_household;
+
+  select count(*) into n from public.plan_day_solutions where id = sol or household_id = a_household;
+  if n <> 0 then
+    raise exception 'solutions: deleting A''s household left % plan_day_solutions rows behind', n;
+  end if;
+end;
+$$;
+
 -- ---------------------------------------------------------------------------
 -- Done.
 -- ---------------------------------------------------------------------------
 do $$
 begin
-  raise notice 'household_isolation: all assertions passed (trigger, sign-up creates no library rows, read isolation, write denial, public library visibility, library write denial and grants, seed mechanism removed, classification catch-all, anon denial, helper grants, household_id catch-all, invite read isolation, invite write denial, RPC grants, redemption with provenance and an unchanged library, macro targets isolation with owner-only writes and the redemption cascade, seven rejection SQLSTATEs, meal plans isolation, write denial, grants, RPC grants, slot diff, KD010-KD012 and plans left behind on redemption)';
+  raise notice 'household_isolation: all assertions passed (trigger, sign-up creates no library rows, read isolation, write denial, public library visibility, library write denial and grants, seed mechanism removed, classification catch-all, anon denial, helper grants, household_id catch-all, invite read isolation, invite write denial, RPC grants, redemption with provenance and an unchanged library, macro targets isolation with owner-only writes and the redemption cascade, seven rejection SQLSTATEs, meal plans isolation, write denial, grants, RPC grants, slot diff, KD010-KD012 and plans left behind on redemption, day solutions isolation, write denial, grants, RPC upsert, KD013/KD014 and the household cascade)';
 end;
 $$;
 
-select 'household_isolation: all assertions passed (incl. public library, classification catch-all, invite isolation, RPC grants, redemption, macro targets, seven rejection SQLSTATEs and meal plans)' as result;
+select 'household_isolation: all assertions passed (incl. public library, classification catch-all, invite isolation, RPC grants, redemption, macro targets, seven rejection SQLSTATEs, meal plans and day solutions)' as result;
 
 rollback;
