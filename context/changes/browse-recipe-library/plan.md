@@ -522,7 +522,7 @@ After the rebase and the re-verification, publish the rewritten branch with `git
 - [x] 2.7 Leczo shows "Whole dish only"; Zapiekanka shows "No suggested meal type" — b844d0f
 - [x] 2.8 Piece, min-amount, rounding-step and null-component/duration cases render correctly — b844d0f
 - [x] 2.9 Malformed and absent ids return 404 "Recipe not found" — b844d0f
-- [x] 2.10 Layout works at phone width
+- [x] 2.10 Layout works at phone width — 331e422
 
 > Implementation notes (Phase 2): 2.4–2.9 were checked over HTTP against the dev server with a throw-away `smoke-s05-…@example.com` account (all 8 detail pages read as text). 2.10 is left for a human: no browser was available in the session; the markup is mobile-first (`grid-cols-1` below `sm`, stacked ingredient rows) but was not looked at. Choices: the card and detail use `class:list={cn(…)}` (the repo's eslint rule `astro/prefer-class-list-directive`, as in `targets.astro`); `recipe-name` is a `<p role="heading" aria-level="1">` so the smoke `</p>` matcher works; per-component subtotals carry `data-testid="component-total"` and are shown only for divisible recipes; a read failure renders `data-testid="recipe-unavailable"`. Seed data has no half-piece amounts, so the `½` branch of `formatIngredientAmount()` is not exercised by any seed recipe.
 
@@ -550,17 +550,17 @@ After the rebase and the re-verification, publish the rewritten branch with `git
 
 #### Automated
 
-- [x] 4.1 S-03 is on main: `git log origin/main --oneline` shows the S-03 merge
-- [x] 4.2 Branch contributes no migrations: `git diff origin/main --stat -- supabase/migrations` is empty
-- [x] 4.3 Lint passes: `npm run lint`
-- [x] 4.4 Type check passes: `npx astro check`
-- [x] 4.5 Build passes: `npm run build`
-- [x] 4.6 Isolation test passes: `npm run test:rls`
-- [x] 4.7 Seed test passes: `npm run test:seed`
-- [x] 4.8 Smoke passes, S-03's and S-05's steps both: `npm run smoke`
-- [x] 4.9 Rebased branch published: `git status -sb` shows no divergence from origin
+- [x] 4.1 S-03 is on main: `git log origin/main --oneline` shows the S-03 merge — dd62b27
+- [x] 4.2 Branch contributes no migrations: `git diff origin/main --stat -- supabase/migrations` is empty — dd62b27
+- [x] 4.3 Lint passes: `npm run lint` — dd62b27
+- [x] 4.4 Type check passes: `npx astro check` — dd62b27
+- [x] 4.5 Build passes: `npm run build` — dd62b27
+- [x] 4.6 Isolation test passes: `npm run test:rls` — dd62b27
+- [x] 4.7 Seed test passes: `npm run test:seed` — dd62b27
+- [x] 4.8 Smoke passes, S-03's and S-05's steps both: `npm run smoke` — dd62b27
+- [x] 4.9 Rebased branch published: `git status -sb` shows no divergence from origin — dd62b27
 
 #### Manual
 
-- [x] 4.10 Dashboard shows both S-03's and S-05's navigation and both features work
-- [x] 4.11 Dedupe outcome recorded in the commit message and the CLAUDE.md bullet
+- [x] 4.10 Dashboard shows both S-03's and S-05's navigation and both features work — 331e422
+- [x] 4.11 Dedupe outcome recorded in the commit message and the CLAUDE.md bullet — dd62b27
