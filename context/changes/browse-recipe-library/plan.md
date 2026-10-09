@@ -522,7 +522,7 @@ After the rebase and the re-verification, publish the rewritten branch with `git
 - [x] 2.7 Leczo shows "Whole dish only"; Zapiekanka shows "No suggested meal type" — b844d0f
 - [x] 2.8 Piece, min-amount, rounding-step and null-component/duration cases render correctly — b844d0f
 - [x] 2.9 Malformed and absent ids return 404 "Recipe not found" — b844d0f
-- [ ] 2.10 Layout works at phone width
+- [x] 2.10 Layout works at phone width
 
 > Implementation notes (Phase 2): 2.4–2.9 were checked over HTTP against the dev server with a throw-away `smoke-s05-…@example.com` account (all 8 detail pages read as text). 2.10 is left for a human: no browser was available in the session; the markup is mobile-first (`grid-cols-1` below `sm`, stacked ingredient rows) but was not looked at. Choices: the card and detail use `class:list={cn(…)}` (the repo's eslint rule `astro/prefer-class-list-directive`, as in `targets.astro`); `recipe-name` is a `<p role="heading" aria-level="1">` so the smoke `</p>` matcher works; per-component subtotals carry `data-testid="component-total"` and are shown only for divisible recipes; a read failure renders `data-testid="recipe-unavailable"`. Seed data has no half-piece amounts, so the `½` branch of `formatIngredientAmount()` is not exercised by any seed recipe.
 
@@ -562,5 +562,5 @@ After the rebase and the re-verification, publish the rewritten branch with `git
 
 #### Manual
 
-- [ ] 4.10 Dashboard shows both S-03's and S-05's navigation and both features work
+- [x] 4.10 Dashboard shows both S-03's and S-05's navigation and both features work
 - [x] 4.11 Dedupe outcome recorded in the commit message and the CLAUDE.md bullet
