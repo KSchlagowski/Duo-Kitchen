@@ -677,14 +677,14 @@ Vitest, in `src/lib/services/macro-solver.test.ts`:
 
 #### Manual
 
-- [ ] 1.7 Full mixed day previews `Solved within ±10%` with whole eggs, per-person bread halves and small spice grams
-- [ ] 1.8 Reloading twice gives identical numbers
-- [ ] 1.9 Partner B sees the same numbers with You/Partner swapped
-- [ ] 1.10 All-whole-dish day previews no fit naming Leczo z kiełbasą
-- [ ] 1.11 4-meal whole-dish day previews `Best fit needs ±15%/±20%`
-- [ ] 1.12 Single-eater meal shows `All for you`
-- [ ] 1.13 Bad day/start gives 404; signed-out visit redirects to sign-in
-- [ ] 1.14 Account without targets sees "Set your daily targets first" and can still save the plan
+- [x] 1.7 Full mixed day previews `Solved within ±10%` with whole eggs, per-person bread halves and small spice grams — verified manually 2026-10-09
+- [x] 1.8 Reloading twice gives identical numbers — verified manually 2026-10-09
+- [x] 1.9 Partner B sees the same numbers with You/Partner swapped — verified manually 2026-10-09
+- [x] 1.10 All-whole-dish day previews no fit naming Leczo z kiełbasą — verified manually 2026-10-09
+- [x] 1.11 4-meal whole-dish day previews `Best fit needs ±15%/±20%` — verified manually 2026-10-09
+- [x] 1.12 Single-eater meal shows `All for you` — verified manually 2026-10-09
+- [x] 1.13 Bad day/start gives 404; signed-out visit redirects to sign-in — verified manually 2026-10-09
+- [x] 1.14 Account without targets sees "Set your daily targets first" and can still save the plan — verified manually 2026-10-09
 
 ### Phase 2: Persisted solutions, the solve/accept flow and stale detection
 
@@ -701,14 +701,14 @@ Vitest, in `src/lib/services/macro-solver.test.ts`:
 
 #### Manual
 
-- [ ] 2.9 Unsolved day shows Not solved; Solve macros stores and shows `Solved within ±10%` with a time
-- [ ] 2.10 Partner sees the stored result without solving
-- [ ] 2.11 Escalation day: Accept ±N% flips to solved with unchanged quantities
-- [ ] 2.12 No-fit day shows the explanation and Solve again
-- [ ] 2.13 Eater-only edit marks the day Out of date; Solve again clears it
-- [ ] 2.14 Partner's target change marks the day Out of date
-- [ ] 2.15 Plan saving is unaffected by solve state (FR-020)
-- [ ] 2.16 A date with no saved plan shows Day not found and offers no Solve button
+- [x] 2.9 Unsolved day shows Not solved; Solve macros stores and shows `Solved within ±10%` with a time — verified manually 2026-10-09
+- [x] 2.10 Partner sees the stored result without solving — verified manually 2026-10-09
+- [x] 2.11 Escalation day: Accept ±N% flips to solved with unchanged quantities — verified manually 2026-10-09
+- [x] 2.12 No-fit day shows the explanation and Solve again — verified manually 2026-10-09
+- [x] 2.13 Eater-only edit marks the day Out of date; Solve again clears it — verified manually 2026-10-09
+- [x] 2.14 Partner's target change marks the day Out of date — verified manually 2026-10-09
+- [x] 2.15 Plan saving is unaffected by solve state (FR-020) — verified manually 2026-10-09
+- [x] 2.16 A date with no saved plan shows Day not found and offers no Solve button — verified manually 2026-10-09
 
 ### Phase 3: Grid status and 5-meal prompt, smoke test and docs
 
@@ -724,9 +724,9 @@ Vitest, in `src/lib/services/macro-solver.test.ts`:
 
 #### Manual
 
-- [ ] 3.8 Full day shows the 5-meal prompt; partial day shows Not solved without prompt; empty day shows No meals
-- [ ] 3.9 Solving from the prompt clears it and updates the day status
-- [ ] 3.10 Changing a recipe marks the day Out of date and brings the prompt back
-- [ ] 3.11 "Solves the saved plan — save your changes first" helper text is shown under the solve cards
-- [ ] 3.12 A failing solve-status read shows a notice while the grid still renders and saves
-- [ ] 3.13 `npm run smoke` against dev passes every step
+- [x] 3.8 Full day shows the 5-meal prompt; partial day shows Not solved without prompt; empty day shows No meals — verified manually 2026-10-09
+- [x] 3.9 Solving from the prompt clears it and updates the day status — verified manually 2026-10-09
+- [x] 3.10 Changing a recipe marks the day Out of date and brings the prompt back — verified manually 2026-10-09
+- [x] 3.11 "Solves the saved plan — save your changes first" helper text is shown under the solve cards — verified manually 2026-10-09
+- [x] 3.12 A failing solve-status read shows a notice while the grid still renders and saves — verified manually 2026-10-09
+- [x] 3.13 `npm run smoke` against dev passes every step — verified manually 2026-10-09
