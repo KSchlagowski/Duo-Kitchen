@@ -714,13 +714,13 @@ Vitest, in `src/lib/services/macro-solver.test.ts`:
 
 #### Automated
 
-- [x] 3.1 Unit tests pass: `npm test`
-- [x] 3.2 Isolation test still passes: `npm run test:rls`
-- [x] 3.3 Linting passes: `npm run lint`
-- [x] 3.4 Type checking passes: `npx astro check`
-- [x] 3.5 Build succeeds: `npm run build`
-- [x] 3.6 Full smoke including S-04 steps passes against the production preview
-- [x] 3.7 Prettier is clean for the edited markdown
+- [x] 3.1 Unit tests pass: `npm test` — 9620dab
+- [x] 3.2 Isolation test still passes: `npm run test:rls` — 9620dab
+- [x] 3.3 Linting passes: `npm run lint` — 9620dab
+- [x] 3.4 Type checking passes: `npx astro check` — 9620dab
+- [x] 3.5 Build succeeds: `npm run build` — 9620dab
+- [x] 3.6 Full smoke including S-04 steps passes against the production preview — 9620dab
+- [x] 3.7 Prettier is clean for the edited markdown — 9620dab
 
 #### Manual
 
