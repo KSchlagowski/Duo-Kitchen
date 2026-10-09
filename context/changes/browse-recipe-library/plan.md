@@ -550,17 +550,17 @@ After the rebase and the re-verification, publish the rewritten branch with `git
 
 #### Automated
 
-- [ ] 4.1 S-03 is on main: `git log origin/main --oneline` shows the S-03 merge
-- [ ] 4.2 Branch contributes no migrations: `git diff origin/main --stat -- supabase/migrations` is empty
-- [ ] 4.3 Lint passes: `npm run lint`
-- [ ] 4.4 Type check passes: `npx astro check`
-- [ ] 4.5 Build passes: `npm run build`
-- [ ] 4.6 Isolation test passes: `npm run test:rls`
-- [ ] 4.7 Seed test passes: `npm run test:seed`
-- [ ] 4.8 Smoke passes, S-03's and S-05's steps both: `npm run smoke`
-- [ ] 4.9 Rebased branch published: `git status -sb` shows no divergence from origin
+- [x] 4.1 S-03 is on main: `git log origin/main --oneline` shows the S-03 merge
+- [x] 4.2 Branch contributes no migrations: `git diff origin/main --stat -- supabase/migrations` is empty
+- [x] 4.3 Lint passes: `npm run lint`
+- [x] 4.4 Type check passes: `npx astro check`
+- [x] 4.5 Build passes: `npm run build`
+- [x] 4.6 Isolation test passes: `npm run test:rls`
+- [x] 4.7 Seed test passes: `npm run test:seed`
+- [x] 4.8 Smoke passes, S-03's and S-05's steps both: `npm run smoke`
+- [x] 4.9 Rebased branch published: `git status -sb` shows no divergence from origin
 
 #### Manual
 
 - [ ] 4.10 Dashboard shows both S-03's and S-05's navigation and both features work
-- [ ] 4.11 Dedupe outcome recorded in the commit message and the CLAUDE.md bullet
+- [x] 4.11 Dedupe outcome recorded in the commit message and the CLAUDE.md bullet

@@ -107,15 +107,6 @@ export type MacroTargetsInput = Omit<MacroTargets, "userId" | "updatedAt">;
 
 // Recipe picker and meal plan (S-03)
 
-// The minimum the plan picker needs from the public library. S-05 builds on this reader.
-export interface RecipeListItem {
-  id: string;
-  name: string;
-  cuisine: string;
-  prepMinutes: number;
-  mealTypes: MealType[];
-}
-
 // Form-level eater choice; stored as a user id, or null for "both".
 export type PlanEater = "both" | "me" | "partner";
 

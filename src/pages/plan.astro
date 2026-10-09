@@ -4,7 +4,6 @@ import { createClient } from "@/lib/supabase";
 import { getCurrentHousehold } from "@/lib/services/household";
 import {
   MEAL_TYPES,
-  MEAL_TYPE_LABELS,
   PLAN_DAYS,
   PLAN_UNAVAILABLE,
   addDays,
@@ -14,9 +13,10 @@ import {
   isIsoDate,
   weekdayLabel,
 } from "@/lib/services/meal-plans";
-import { listRecipes } from "@/lib/services/recipes";
+import { MEAL_TYPE_LABELS } from "@/lib/recipe-labels";
+import { getRecipeCards } from "@/lib/services/recipes";
 import { cn } from "@/lib/utils";
-import type { Household, MealPlan, PlanEater, PlanMeal, RecipeListItem } from "@/types";
+import type { Household, MealPlan, PlanEater, PlanMeal, RecipeCard } from "@/types";
 
 const { user } = Astro.locals;
 
@@ -25,17 +25,17 @@ const requestedStart = startParam && isIsoDate(startParam) ? startParam : undefi
 
 // Three independent reads. The form is rendered only when ALL of them succeed: a save from a blank
 // grid would overwrite the stored plan, and a missing household would remap partner meals to Both.
-let recipes: RecipeListItem[] | null = null;
+let recipes: RecipeCard[] | null = null;
 let household: Household | null = null;
 let plan: MealPlan | null = null;
 let planFailed = false;
 const supabase = createClient(Astro.request.headers, Astro.cookies);
 if (supabase) {
   try {
-    recipes = await listRecipes(supabase);
+    recipes = await getRecipeCards(supabase);
   } catch (error) {
     // eslint-disable-next-line no-console -- surfaced in Cloudflare Workers observability logs
-    console.error("listRecipes failed on /plan", error);
+    console.error("getRecipeCards failed on /plan", error);
   }
   try {
     household = await getCurrentHousehold(supabase);

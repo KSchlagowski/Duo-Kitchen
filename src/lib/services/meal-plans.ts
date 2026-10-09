@@ -8,14 +8,6 @@ import type { MealPlan, MealType, PlanDayIndex, PlanMeal } from "@/types";
 // Grid rows in `public.meal_type` enum order (FR-013).
 export const MEAL_TYPES: readonly MealType[] = ["breakfast", "second_breakfast", "lunch", "afternoon_snack", "dinner"];
 
-export const MEAL_TYPE_LABELS: Record<MealType, string> = {
-  breakfast: "Breakfast",
-  second_breakfast: "Second breakfast",
-  lunch: "Lunch",
-  afternoon_snack: "Afternoon snack",
-  dinner: "Dinner",
-};
-
 export const PLAN_DAYS: readonly PlanDayIndex[] = [0, 1, 2];
 
 export const PLAN_SLOT_COUNT = PLAN_DAYS.length * MEAL_TYPES.length;

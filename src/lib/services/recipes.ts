@@ -7,7 +7,6 @@ import type {
   RecipeDetailComponent,
   RecipeDetailIngredient,
   RecipeLibrarySummary,
-  RecipeListItem,
   StepTiming,
 } from "@/types";
 import { cookedWeight, ingredientMacros, sumMacros } from "@/lib/services/recipe-macros";
@@ -33,37 +32,8 @@ export async function getRecipeLibrarySummary(supabase: SupabaseClient): Promise
   };
 }
 
-// Recipe list for the plan picker (S-03). Deliberately minimal and unfiltered: browsing, filters
-// and sorting are S-05/S-06, which extend this reader.
-interface RecipeListRow {
-  id: string;
-  name: string;
-  cuisine: string;
-  prep_minutes: number;
-  meal_types: MealType[];
-}
-
-export async function listRecipes(supabase: SupabaseClient): Promise<RecipeListItem[]> {
-  const { data, error } = await supabase
-    .from("recipes")
-    .select("id, name, cuisine, prep_minutes, meal_types")
-    .order("name");
-
-  if (error) {
-    throw error;
-  }
-
-  return (data as RecipeListRow[]).map((row) => ({
-    id: row.id,
-    name: row.name,
-    cuisine: row.cuisine,
-    prepMinutes: row.prep_minutes,
-    mealTypes: row.meal_types,
-  }));
-}
-
 // --- S-05: browsing the library ----------------------------------------------------------------
-// Named apart from S-03's listRecipes(); see CLAUDE.md for how the two relate.
+// getRecipeCards() also feeds S-03's plan picker (it replaced S-03's narrower listRecipes()).
 
 interface RecipeRow {
   id: string;
