@@ -177,7 +177,7 @@ Foundations below assume these are present and do NOT re-scaffold them.
   - Can a deterministic solver that respects rounding steps, minimum amounts and half-piece rules run within the edge runtime's CPU budget in pure JS or WASM? — Owner: team. Block: no.
   - How is "the recipe that most hinders a fit" determined so the explanation is stable and reproducible? — Owner: team. Block: no.
 - **Risk:** This is the riskiest and most valuable slice, so it goes as early as its prerequisites allow; failure must never block saving the plan (FR-020), and output must be identical for identical input (NFR determinism).
-- **Status:** proposed
+- **Status:** done
 
 ### S-05: Browse the recipe library
 
