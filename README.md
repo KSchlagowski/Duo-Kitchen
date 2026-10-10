@@ -60,6 +60,7 @@ npm run dev
 - `npm run smoke` - Smoke test the auth flow against a running server (`BASE_URL`, defaults to `http://localhost:4321`)
 - `npm test` - Run the vitest unit tests (`src/**/*.test.ts`), currently the macro solver suite; pure, no Supabase or secrets needed
 - `npm run test:rls` - Run the household isolation (RLS) test against the linked Supabase project (`supabase/tests/household_isolation.sql`); it runs in a rolled-back transaction, so it leaves no data behind
+- `npm run check:migrations` - Fail if any file in `supabase/migrations/` is not yet applied to the linked Supabase project (read-only; the deploy job's gate)
 - `npm run test:seed` - Run the seed integrity test against the linked Supabase project (`supabase/tests/seed_integrity.sql`): checks that the seed rows of the shared recipe/product library cover every solver rule and are internally consistent; also rolled back
 
 ## Project Structure
@@ -145,21 +146,42 @@ Route protection is handled in `src/middleware.ts`. Add paths to the `PROTECTED_
 
 ## Deployment
 
-This project deploys to [Cloudflare Workers](https://workers.cloudflare.com/). The production app is live at https://duo-kitchen.mediewilnp.workers.dev.
+This project deploys to [Cloudflare Workers](https://workers.cloudflare.com/). The production app is live at https://duo-kitchen.mediewilnp.workers.dev, backed by the one hosted Supabase project.
 
-1. Build the project:
+### Automatic deploys from `main`
+
+Every push to `main` (a merged PR) runs the `deploy` job in `.github/workflows/ci.yml` once the `ci` and `smoke` jobs pass. Pull requests never deploy. The job:
+
+1. fails at once, naming the secret, if `CLOUDFLARE_API_TOKEN` or `CLOUDFLARE_ACCOUNT_ID` is missing;
+2. runs `npm run check:migrations`, which fails if any file in `supabase/migrations/` is not yet applied to the hosted project. CI cannot apply migrations (it has no database password), so run `npx supabase db push` before merging, as before;
+3. builds and runs `npx wrangler deploy`. Its exit status is what proves the commit went live;
+4. probes the production home page and manifest. This only checks that the site is up, because the previous version would answer too.
+
+One-time setup, as repository secrets (Settings → Secrets and variables → Actions):
+
+| Secret                  | Where to get it                                                                                      |
+| ----------------------- | ---------------------------------------------------------------------------------------------------- |
+| `CLOUDFLARE_API_TOKEN`  | Cloudflare dashboard → My Profile → API Tokens → Create Token → template **Edit Cloudflare Workers** |
+| `CLOUDFLARE_ACCOUNT_ID` | Cloudflare dashboard → Workers & Pages → Account ID (right-hand sidebar)                             |
+
+The Worker's runtime `SUPABASE_URL` and `SUPABASE_KEY` secrets live on Cloudflare and survive every deploy. The deploy job does not upload them. Set them once in the Cloudflare dashboard or with `npx wrangler secret put`.
+
+If Cloudflare's own Git integration (Workers Builds) is ever connected to this repository, turn one of the two off, or every merge deploys twice.
+
+### Manual deploy (fallback)
 
 ```bash
 npm run build
-```
-
-2. Deploy with Wrangler:
-
-```bash
 npx wrangler deploy
 ```
 
-Set `SUPABASE_URL` and `SUPABASE_KEY` as secrets in your Cloudflare dashboard or via `npx wrangler secret put`.
+## Install on your phone or desktop
+
+The app is installable from the browser (F-03). The manifest is `public/manifest.webmanifest`, the icons are in `public/icons/`, and the `<head>` tags are in `src/layouts/Layout.astro`. It opens standalone on `/dashboard`. There is no service worker and no offline mode.
+
+- **Desktop (Chrome / Edge):** open the live URL → install icon in the address bar → Install.
+- **Android (Chrome):** menu ⋮ → **Install app** (or **Add to Home screen**).
+- **iOS / iPadOS (Safari):** Share → **Add to Home Screen**.
 
 ## Smoke test
 
@@ -189,10 +211,11 @@ For S-04 it solves days of a separate plan (`2031-01-13`) saved by the first acc
 
 ## CI
 
-GitHub Actions runs two jobs on every push and PR to `main`:
+GitHub Actions runs two jobs on every push and PR to `main`, and a third, **deploy**, on pushes to `main` only:
 
 - **ci** — lint, `astro check` and build. Configure `SUPABASE_URL` and `SUPABASE_KEY` as repository secrets for the build step.
-- **smoke** — links the Supabase CLI to the hosted project, runs the household isolation test and the seed integrity test, builds, serves the production preview on the Cloudflare runtime and runs `npm run smoke` against it (including a check that the new account's dashboard shows the shared recipe library, that an unlinked second account sees the same library, and that two accounts can be linked into one household). Requires the `SUPABASE_URL` and `SUPABASE_KEY` secrets plus `SUPABASE_ACCESS_TOKEN` (a Supabase personal access token) and `SUPABASE_PROJECT_REF`.
+- **smoke** — links the Supabase CLI to the hosted project, runs the household isolation test and the seed integrity test, builds, serves the production preview on the Cloudflare runtime and runs `npm run smoke` against it (including a check that the new account's dashboard shows the shared recipe library, that an unlinked second account sees the same library, and that two accounts can be linked into one household, plus the F-03 install checks: the manifest, its icons and the `<head>` links). Requires the `SUPABASE_URL` and `SUPABASE_KEY` secrets plus `SUPABASE_ACCESS_TOKEN` (a Supabase personal access token) and `SUPABASE_PROJECT_REF`.
+- **deploy** — only on pushes to `main`, after both jobs above pass: checks the migrations are applied, deploys with `wrangler deploy` and probes production (see [Deployment](#deployment)). Requires `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` plus the Supabase secrets above.
 
 ### Cleaning up after smoke runs
 

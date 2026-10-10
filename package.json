@@ -13,7 +13,8 @@
     "smoke": "node scripts/smoke.mjs",
     "test": "vitest run",
     "test:rls": "supabase db query --linked -f supabase/tests/household_isolation.sql",
-    "test:seed": "supabase db query --linked -f supabase/tests/seed_integrity.sql"
+    "test:seed": "supabase db query --linked -f supabase/tests/seed_integrity.sql",
+    "check:migrations": "node scripts/check-migrations.mjs"
   },
   "dependencies": {
     "@astrojs/check": "^0.9.10",

@@ -20,6 +20,7 @@ Scripts: @package.json. Project-specific notes:
 - `npm run smoke` — dependency-free auth-flow smoke test (`scripts/smoke.mjs`) against a running server, `BASE_URL` env (default `http://localhost:4321`). Run after dependency upgrades; CI runs it against the production preview backed by the hosted Supabase project.
 - `npm run test:rls` — household isolation test (`supabase/tests/household_isolation.sql`) against the hosted Supabase project (`--linked`); runs in a rolled-back transaction so it commits nothing, fails with a descriptive error on any broken assertion. CI runs it in the smoke job.
 - `npm run test:seed` — seed integrity test (`supabase/tests/seed_integrity.sql`) against the hosted project (`--linked`), rolled back: seed content covers every solver rule (rounding steps, pieces, raw/cooked, division modes, step timings, meal types, aisles, macro levers) and the seed rows of the public library (the `5eed000N-…` ids) are internally consistent, depend only on other seed rows and match pinned per-table counts. Run it after every seed content migration (which updates those counts); CI runs it in the smoke job.
+- `npm run check:migrations` — read-only deploy gate (`scripts/check-migrations.mjs`, `--dry-run` prints the SQL): fails if any `supabase/migrations/*.sql` version is missing from the hosted project's `supabase_migrations.schema_migrations` (`--linked`, Management API — CI has no DB password, so it cannot `db push`). The `deploy` job runs it before `wrangler deploy`.
 - Pre-commit hooks: husky + lint-staged runs `eslint --fix` on `*.{ts,tsx,astro}` and `prettier --write` on `*.{json,css,md}`.
 
 ## Architecture
@@ -62,3 +63,8 @@ Setup and deploy: @README.md
 
 - **ci** — lint, `astro check`, build. Requires `SUPABASE_URL` and `SUPABASE_KEY` repository secrets.
 - **smoke** — household isolation test + production preview + `npm run smoke`, all against the hosted Supabase project. Requires `SUPABASE_URL`, `SUPABASE_KEY`, `SUPABASE_ACCESS_TOKEN` and `SUPABASE_PROJECT_REF` repository secrets.
+- **deploy** (F-03) — pushes to `main` only, `needs: [ci, smoke]`, non-cancelling `deploy-production` concurrency: secret preflight, `npm run check:migrations`, build, `npx wrangler deploy`, then a liveness probe of production. Additionally requires `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`. It never uploads the Worker's runtime Supabase secrets (they persist on Cloudflare) and never runs `db push`.
+
+### Installability (F-03)
+
+`public/manifest.webmanifest` (start `/dashboard`, standalone), icons in `public/icons/` (192/512 `any`, 512 `maskable` with the glyph in the 80 % safe zone, opaque 180 px `apple-touch-icon`) and the head tags in `src/layouts/Layout.astro`. **No service worker**: offline is parked, and a caching worker could serve one user's authenticated SSR HTML to another session. The iOS status bar style is `black` (opaque), not `black-translucent`, because no page pads for safe-area insets. Smoke asserts the manifest, the icons and the head links.
