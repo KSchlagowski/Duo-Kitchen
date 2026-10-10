@@ -210,10 +210,10 @@ Manifest and icons are static assets served by Cloudflare's asset layer; no Work
 
 #### Automated
 
-- [ ] 1.1 Lint passes: `npm run lint`
-- [ ] 1.2 Type check passes: `npx astro check`
-- [ ] 1.3 Build succeeds: `npm run build`
-- [ ] 1.4 Manifest and icon smoke steps pass against `npm run preview`
+- [x] 1.1 Lint passes: `npm run lint` — d15594c
+- [x] 1.2 Type check passes: `npx astro check` — d15594c
+- [x] 1.3 Build succeeds: `npm run build` — d15594c
+- [x] 1.4 Manifest and icon smoke steps pass against `npm run preview` — d15594c
 
 #### Manual
 
@@ -221,16 +221,30 @@ Manifest and icons are static assets served by Cloudflare's asset layer; no Work
 - [ ] 1.6 Android Chrome installs with the maskable icon
 - [ ] 1.7 iOS Safari Add to Home Screen shows icon and title and opens standalone
 
+> Implementation note (Phase 1, 2026-10-10): 1.4 was run against `npm run preview` without Supabase
+> secrets, so only the anonymous steps could run; the 7 F-03 steps passed. Breaking `display` in the
+> built manifest makes the manifest step fail, so it is not vacuous. 1.5–1.7 need real devices
+> against production, so they wait for the first deploy.
+>
+> Assumption (Phase 1): icons were drawn once with Pillow (two overlapping plate rings on `#0f172a`).
+> Only the PNGs are committed. The generator was a throwaway script, so no dependency was added.
+
 ### Phase 2: Auto-deploy from main
 
 #### Automated
 
-- [ ] 2.1 Lint passes: `npm run lint`
-- [ ] 2.2 Workflow YAML parses and the deploy job is gated
-- [ ] 2.3 Migration gate dry-run prints a version for every migration file
+- [x] 2.1 Lint passes: `npm run lint` — fb389dc
+- [x] 2.2 Workflow YAML parses and the deploy job is gated — fb389dc
+- [x] 2.3 Migration gate dry-run prints a version for every migration file — fb389dc
 
 #### Manual
 
 - [ ] 2.4 Owner adds `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` secrets
 - [ ] 2.5 `npm run check:migrations` passes against the hosted project
 - [ ] 2.6 First merge to `main`: deploy job green, production serves the manifest
+
+> Implementation note (Phase 2, 2026-10-10): this environment has no `SUPABASE_ACCESS_TOKEN` and no
+> Cloudflare credentials, so 2.4–2.6 remain for the owner. `check:migrations` fails closed when the
+> project is not linked. The script reads `supabase/migrations` relative to the working directory (npm
+> scripts run from the repo root) rather than through `import.meta.url`, because the repo's ESLint config
+> has no `URL` global for scripts.
