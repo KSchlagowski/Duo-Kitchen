@@ -3,6 +3,7 @@
 // person's daily macro targets are saved, validated and visible to the partner -- including targets
 // set before the redemption, which must arrive in the shared household with their owner (S-02, FR-004).
 // S-05: the recipe library renders as cards and a recipe's detail shows macros pinned from SQL.
+// F-03: the app is installable -- the manifest, its icons and the <head> links are served anonymously.
 // Zero dependencies on purpose. Run against a live server: BASE_URL=http://localhost:4321 node scripts/smoke.mjs
 
 // Trailing slash stripped deliberately: BASE_URL is sent verbatim as the Origin header, and Astro's
@@ -56,6 +57,7 @@ function makeClient() {
     return {
       status: response.status,
       location: response.headers.get("location") ?? "",
+      contentType: response.headers.get("content-type") ?? "",
       body: await response.text(),
     };
   }
@@ -220,8 +222,60 @@ function linkedHouseholdBody() {
   );
 }
 
+// F-03 install criteria (Chromium): name, start_url, a standalone display and 192/512 "any" icons;
+// plus the maskable icon Android needs to avoid a white-square launcher icon. Returns an error string
+// or null, for the runner's `check` hook.
+function manifestProblem(body) {
+  let manifest;
+  try {
+    manifest = JSON.parse(body);
+  } catch {
+    return "manifest is not JSON";
+  }
+  const icons = Array.isArray(manifest.icons) ? manifest.icons : [];
+  const has = (sizes, purpose) =>
+    icons.some((i) => i.sizes === sizes && (i.purpose ?? "any").split(" ").includes(purpose));
+  if (manifest.name !== "Duo Kitchen") return `name is ${JSON.stringify(manifest.name)}`;
+  if (manifest.start_url !== "/dashboard") return `start_url is ${JSON.stringify(manifest.start_url)}`;
+  if (manifest.display !== "standalone") return `display is ${JSON.stringify(manifest.display)}`;
+  if (!has("192x192", "any") || !has("512x512", "any")) return "missing a 192x192 or 512x512 any icon";
+  if (!has("512x512", "maskable")) return "missing a 512x512 maskable icon";
+  return null;
+}
+
+// Icon paths are pinned here rather than read from the manifest, so a manifest that drops one fails above.
+const iconPaths = [
+  "/icons/icon-192.png",
+  "/icons/icon-512.png",
+  "/icons/icon-maskable-512.png",
+  "/icons/apple-touch-icon.png",
+];
+
+function pngCheck(actual) {
+  return actual.contentType.startsWith("image/png") ? null : `content-type is ${actual.contentType}`;
+}
+
 const steps = [
   ["home renders", () => a.request("/"), { status: 200 }],
+  // --- F-03: installability, all anonymous and served by the asset layer ---------------------
+  [
+    "home links the manifest and the touch icon",
+    () => a.request("/"),
+    {
+      status: 200,
+      body: /<link rel="manifest" href="\/manifest\.webmanifest"[\s\S]*<link rel="apple-touch-icon" href="\/icons\/apple-touch-icon\.png"/,
+    },
+  ],
+  [
+    "manifest meets the install criteria",
+    () => a.request("/manifest.webmanifest"),
+    { status: 200, check: (actual) => manifestProblem(actual.body) },
+  ],
+  ...iconPaths.map((path) => [
+    `icon ${path} is served as PNG`,
+    () => a.request(path),
+    { status: 200, check: pngCheck },
+  ]),
   ["dashboard redirects anonymous user", () => a.request("/dashboard"), { status: 302, location: "/auth/signin" }],
   ["targets page redirects anonymous user", () => b.request("/targets"), { status: 302, location: /^\/auth\/signin$/ }],
   [
@@ -707,12 +761,18 @@ for (const [name, run, rawExpected] of steps) {
     (expected.location instanceof RegExp
       ? expected.location.test(actual.location)
       : actual.location.startsWith(expected.location));
+  // `check` (F-03) covers what a status/location/body regex cannot: parsed JSON and response headers.
+  const problem = expected.check ? expected.check(actual) : null;
   const ok =
-    actual.status === expected.status && locationOk && (expected.body === undefined || expected.body.test(actual.body));
+    actual.status === expected.status &&
+    locationOk &&
+    (expected.body === undefined || expected.body.test(actual.body)) &&
+    problem === null;
   console.log(`${ok ? "PASS" : "FAIL"}  ${name}  -> ${actual.status} ${actual.location}`);
   if (!ok) {
     failed++;
     console.log(`      expected ${expected.status} ${expected.location ?? ""}`);
+    if (problem !== null) console.log(`      check failed: ${problem}`);
     if (expected.body !== undefined) {
       console.log(`      expected body ${expected.body}`);
       for (const id of [
