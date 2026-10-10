@@ -3,7 +3,7 @@ project: "Duo Kitchen"
 version: 1
 status: draft
 created: 2026-10-06
-updated: 2026-10-09
+updated: 2026-10-11
 prd_version: 1
 main_goal: market-feedback
 top_blocker: time
@@ -36,13 +36,13 @@ A couple who cook together in bulk, but have different daily macro targets, impr
 | S-01 | link-partner-household        | invite their partner and share one household                                              | F-01             | US-01, FR-001, FR-002, FR-003                 | done     |
 | S-02 | set-daily-macro-targets       | enter their own daily calorie/protein/fat/carb targets                                    | F-01             | US-01, FR-004                                 | done     |
 | S-03 | plan-three-day-grid           | fill a 3-day × 5-meal plan, marking each meal for A, B or both, and save it unsolved      | F-01, F-04       | US-01, FR-013, FR-014, FR-015, FR-016, FR-020 | done     |
-| S-04 | solve-daily-macros            | solve a day and see per-ingredient quantities and the A/B split within tolerance          | S-01, S-02, S-03 | US-01, FR-018, FR-019, FR-020                 | done |
+| S-04 | solve-daily-macros            | solve a day and see per-ingredient quantities and the A/B split within tolerance          | S-01, S-02, S-03 | US-01, FR-018, FR-019, FR-020                 | done     |
 | S-05 | browse-recipe-library         | browse recipe cards and open full recipe details                                          | F-04             | FR-005, FR-009, FR-010, FR-012                | done     |
-| S-06 | rate-and-filter-recipes       | rate recipes, see the partner's rating, and filter/sort the library                       | S-05, S-01, F-04 | FR-006, FR-007, FR-008                        | proposed |
-| S-07 | add-missing-product           | add a product with nutrition values and store aisle                                       | F-04             | FR-010, FR-011                                | proposed |
-| S-08 | shared-dish-across-days       | make one cooked dish cover meals on several days and still solve                          | S-04             | US-01, FR-017                                 | proposed |
-| S-09 | shopping-list-from-plan       | open a combined, aisle-grouped shopping list and check items off                          | S-03             | US-02, FR-021                                 | proposed |
-| S-10 | cooking-session-schedule      | see the plan arranged into evening/morning cooking sessions with merged steps             | S-03             | US-03, FR-022                                 | proposed |
+| S-06 | rate-and-filter-recipes       | rate recipes, see the partner's rating, and filter/sort the library                       | S-05, S-01, F-04 | FR-006, FR-007, FR-008                        | ready    |
+| S-07 | add-missing-product           | add a product with nutrition values and store aisle                                       | F-04             | FR-010, FR-011                                | ready    |
+| S-08 | shared-dish-across-days       | make one cooked dish cover meals on several days and still solve                          | S-04             | US-01, FR-017                                 | ready    |
+| S-09 | shopping-list-from-plan       | open a combined, aisle-grouped shopping list and check items off                          | S-03             | US-02, FR-021                                 | ready    |
+| S-10 | cooking-session-schedule      | see the plan arranged into evening/morning cooking sessions with merged steps             | S-03             | US-03, FR-022                                 | ready    |
 | S-11 | step-by-step-cook-mode        | follow a session step by step with A and B portions                                       | S-10, S-04       | US-03, FR-023                                 | proposed |
 | S-12 | agent-recipe-import           | import a recipe by talking to the AI agent (photo + description → accepted recipe)        | S-05, F-03       | US-04, FR-024, FR-011                         | proposed |
 | S-13 | agent-edits-recipes-and-plans | ask the AI agent to edit a recipe or build a plan                                         | S-12, S-03       | US-04, FR-025                                 | proposed |
@@ -202,7 +202,7 @@ Foundations below assume these are present and do NOT re-scaffold them.
 - **Unknowns:**
   - How is "minimum sensible calories" for a recipe derived (smallest solvable portion vs. a stored value)? — Owner: user. Block: no.
 - **Risk:** Pure convenience on top of the library; the first candidate to slip if time runs short (see Open Roadmap Questions).
-- **Status:** proposed
+- **Status:** ready
 
 ### S-07: Add a missing product
 
@@ -214,7 +214,7 @@ Foundations below assume these are present and do NOT re-scaffold them.
 - **Blockers:** —
 - **Unknowns:** —
 - **Risk:** Same write path the agent will use in S-12; doing it first for the person keeps the agent slice focused on the conversation.
-- **Status:** proposed
+- **Status:** ready
 
 ### S-08: One dish across several days
 
@@ -227,7 +227,7 @@ Foundations below assume these are present and do NOT re-scaffold them.
 - **Unknowns:**
   - Does a shared dish couple the days into one solve, or are days solved in order with the batch already fixed? — Owner: team. Block: no.
 - **Risk:** Separated from S-04 so the north star proves the single-day split first; extending to cross-day batches changes the solver's scope, which is safer once the single-day case works.
-- **Status:** proposed
+- **Status:** ready
 
 ### S-09: Shop from the plan
 
@@ -240,7 +240,7 @@ Foundations below assume these are present and do NOT re-scaffold them.
 - **Unknowns:**
   - Which quantities feed the list for an unsolved plan (recipe base quantities?) and how does it update after solving? — Owner: user. Block: no.
 - **Risk:** Works on unsolved plans, so it doesn't wait for the solver; it is needed for the full "plan, shop, cook one cycle" Success Criterion.
-- **Status:** proposed
+- **Status:** ready
 
 ### S-10: Cooking-session schedule
 
@@ -253,7 +253,7 @@ Foundations below assume these are present and do NOT re-scaffold them.
 - **Unknowns:**
   - How are merged steps ordered within a session (by recipe, by equipment, by duration)? — Owner: user. Block: no.
 - **Risk:** Second deterministic engine after the solver; it depends only on the plan and step metadata, so it can be built in parallel with S-04.
-- **Status:** proposed
+- **Status:** ready
 
 ### S-11: Step-by-step cook mode
 
@@ -315,13 +315,13 @@ Foundations below assume these are present and do NOT re-scaffold them.
 | S-01       | link-partner-household        | Invite partner and link accounts into one household   | done                  | Archived 2026-10-08 (old household preserved memberless, not merged or discarded) |
 | S-02       | set-daily-macro-targets       | Enter daily macro targets per person                  | done                  | Archived 2026-10-08                                                               |
 | S-03       | plan-three-day-grid           | Build and save a 3-day meal plan for A/B              | done                  | Archived 2026-10-09                                                               |
-| S-04       | solve-daily-macros            | Solve a day's macros and split quantities for A and B | no                    | North star; waits on S-02, S-03                                                   |
+| S-04       | solve-daily-macros            | Solve a day's macros and split quantities for A and B | done                  | Archived 2026-10-09                                                               |
 | S-05       | browse-recipe-library         | Browse recipe cards and view recipe details           | done                  | Archived 2026-10-09                                                               |
-| S-06       | rate-and-filter-recipes       | Rate, filter and sort recipes                         | no                    | Waits on S-05, F-04                                                               |
-| S-07       | add-missing-product           | Add a product with nutrition and store aisle          | no                    | Waits on F-04                                                                     |
-| S-08       | shared-dish-across-days       | Cover meals on several days with one cooked dish      | no                    | Waits on S-04                                                                     |
-| S-09       | shopping-list-from-plan       | Aisle-grouped shopping list with check-off            | no                    | Waits on S-03                                                                     |
-| S-10       | cooking-session-schedule      | Arrange plan into evening/morning cooking sessions    | no                    | Waits on S-03                                                                     |
+| S-06       | rate-and-filter-recipes       | Rate, filter and sort recipes                         | yes                   | Run `/10x-plan rate-and-filter-recipes`                                           |
+| S-07       | add-missing-product           | Add a product with nutrition and store aisle          | yes                   | Run `/10x-plan add-missing-product`                                               |
+| S-08       | shared-dish-across-days       | Cover meals on several days with one cooked dish      | yes                   | Run `/10x-plan shared-dish-across-days`                                           |
+| S-09       | shopping-list-from-plan       | Aisle-grouped shopping list with check-off            | yes                   | Run `/10x-plan shopping-list-from-plan`                                           |
+| S-10       | cooking-session-schedule      | Arrange plan into evening/morning cooking sessions    | yes                   | Run `/10x-plan cooking-session-schedule`                                          |
 | S-11       | step-by-step-cook-mode        | Step-by-step cook mode with A/B portions              | no                    | Waits on S-10, S-04                                                               |
 | S-12       | agent-recipe-import           | Import recipes through the AI agent conversation      | no                    | Waits on S-05, F-03                                                               |
 | S-13       | agent-edits-recipes-and-plans | Let the AI agent edit recipes and build plans         | no                    | Waits on S-12, S-03                                                               |
