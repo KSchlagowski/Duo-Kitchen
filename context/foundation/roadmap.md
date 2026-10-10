@@ -31,7 +31,7 @@ A couple who cook together in bulk, but have different daily macro targets, impr
 | ---- | ----------------------------- | ----------------------------------------------------------------------------------------- | ---------------- | --------------------------------------------- | -------- |
 | F-01 | household-data-scope          | (foundation) every account belongs to a household; data access is household-scoped        | —                | Access Control, NFR (household privacy)       | done     |
 | F-02 | seed-products-and-recipes     | (foundation) product database and 5–10 seed recipes with solver-relevant attributes exist | F-01             | FR-010, FR-012                                | done     |
-| F-03 | deploy-and-install-skeleton   | (foundation) merges to main auto-deploy; the app installs on desktop, Android, iOS        | —                | NFR (installable), FR-024 (public endpoint)   | ready    |
+| F-03 | deploy-and-install-skeleton   | (foundation) merges to main auto-deploy; the app installs on desktop, Android, iOS        | —                | NFR (installable), FR-024 (public endpoint)   | done     |
 | F-04 | shared-recipe-library         | (foundation) recipes and products are one public library, not owned by any household      | F-02             | Access Control, FR-010, FR-011, FR-012        | done     |
 | S-01 | link-partner-household        | invite their partner and share one household                                              | F-01             | US-01, FR-001, FR-002, FR-003                 | done     |
 | S-02 | set-daily-macro-targets       | enter their own daily calorie/protein/fat/carb targets                                    | F-01             | US-01, FR-004                                 | done     |
@@ -111,7 +111,7 @@ Foundations below assume these are present and do NOT re-scaffold them.
 - **Blockers:** —
 - **Unknowns:** —
 - **Risk:** Cheap to do early and essential to market-feedback — a solver only tested on localhost doesn't validate anything in the kitchen. Scope is adding auto-deploy from `main` and installability (PWA manifest); CI already triggers on `main` and the worker is already named `duo-kitchen`. No offline support (parked).
-- **Status:** ready
+- **Status:** done
 
 ### F-04: Shared public recipe library
 
@@ -310,7 +310,7 @@ Foundations below assume these are present and do NOT re-scaffold them.
 | ---------- | ----------------------------- | ----------------------------------------------------- | --------------------- | --------------------------------------------------------------------------------- |
 | F-01       | household-data-scope          | Household-scoped data access for all accounts         | done                  | Archived 2026-10-07                                                               |
 | F-02       | seed-products-and-recipes     | Seed product database and 5–10 test recipes           | done                  | Archived 2026-10-07                                                               |
-| F-03       | deploy-and-install-skeleton   | Auto-deploy from main and make the app installable    | yes                   | Run `/10x-plan deploy-and-install-skeleton`                                       |
+| F-03       | deploy-and-install-skeleton   | Auto-deploy from main and make the app installable    | done                  | Archived 2026-10-10 (deploy needs the Cloudflare secrets; device checks pending)  |
 | F-04       | shared-recipe-library         | Make recipes and products one public library          | done                  | Archived 2026-10-08                                                               |
 | S-01       | link-partner-household        | Invite partner and link accounts into one household   | done                  | Archived 2026-10-08 (old household preserved memberless, not merged or discarded) |
 | S-02       | set-daily-macro-targets       | Enter daily macro targets per person                  | done                  | Archived 2026-10-08                                                               |
