@@ -248,3 +248,15 @@ Manifest and icons are static assets served by Cloudflare's asset layer; no Work
 > project is not linked. The script reads `supabase/migrations` relative to the working directory (npm
 > scripts run from the repo root) rather than through `import.meta.url`, because the repo's ESLint config
 > has no `URL` global for scripts.
+>
+> Local verification (2026-10-11, `main` @ c8f6228, Windows): lint, `astro check`, `npm test` (51), build,
+> `wrangler deploy --dry-run` and the workflow gating all pass; smoke passes all 78 steps against
+> `npm run preview`, including the 7 F-03 steps. 2.5 stays open: on Windows `npm run check:migrations`
+> exits 1 silently, because `execFileSync("npx", …)` throws ENOENT (`npx` is `npx.cmd`), and passing the
+> multi-line SQL through `npx.cmd` truncates it at the first newline. The gate's SQL itself, run on one
+> line via `npx supabase db query --linked`, passes (9 of 9 applied), and a fake missing version makes it
+> raise. On Linux CI the script is unaffected. 2.4 is still open: the repo has no `CLOUDFLARE_*` secrets,
+> and run 38096636201's `deploy` job failed in its preflight for that reason. Production was deployed
+> manually instead with `npx wrangler deploy` (version c8db76a6-26a2-4efc-a3d9-53c2807ac929). It serves
+> `/`, the manifest (`application/manifest+json`), the four icons and the head links. 2.6 stays open
+> until a CI `deploy` job is green.
