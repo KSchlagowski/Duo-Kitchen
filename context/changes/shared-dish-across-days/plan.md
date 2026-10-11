@@ -87,10 +87,12 @@ grants), and `npm run smoke` (a new S-08 section at `2031-01-20`).
 - **A `discriminatedUnion` fails on an unknown discriminator**, unlike an unknown key, which is
   stripped (`src/lib/services/day-solutions.ts:140-151`). A third `explanation.kind` would impose
   reader-before-writer deploy ordering; an optional defaulted *flag* would not.
-- **`plan_meals_slot_key unique (plan_id, day_index, meal_type)` survives**, so the isolation test's
-  write-revoke probe at `supabase/tests/household_isolation.sql:596-604` — which deliberately leans
-  on `plan_meals_dish_id_key` to prove the revoke — must be re-reasoned, or a regressed revoke would
-  make that insert **succeed silently**.
+- **The isolation test's `plan_meals` write-revoke probe needs no restructuring.** It ends with an
+  explicit `raise exception` after the insert and catches only `insufficient_privilege`
+  (`supabase/tests/household_isolation.sql:596-604`), so a regressed revoke fails **loudly** as
+  `P0001` — dropping `plan_meals_dish_id_key` cannot make it pass silently. It also already uses a
+  free slot plus an existing dish (A's fixture meals are `(0, breakfast)` and `(1, dinner)` at
+  `:168-175`; the probe uses `(2, dinner)`), so only its **comment** goes stale.
 - **F3's test already uses `expect([15, 20]).toContain(...)`**
   (`src/lib/services/macro-solver.test.ts:95-99`). That is the repo's established way to pin a tier
   whose exact value is a property of the LP, and the new cross-day fixture reuses it.
@@ -119,7 +121,7 @@ dish id — the app has no dish ids to render, and the grid posts one atomic sna
 slot-level diff, so a slot reference stays valid even for a dish created in the same save. *Rejected:*
 auto-sharing identical recipes in identical slots.
 
-**D4 — Keep `version: 1`; grow `meals[]` additively with an optional `batch`.** (research §3.2.)
+**D4 — Keep `version: 1`; grow `meals[]` additively with a nullable, defaulted `batch`.** (research §3.2.)
 `DaySolutionIngredient.amountG` keeps meaning exactly what it means today — the **batch** cook amount
 (`src/types.ts:207-208`). Both days of a shared dish carry its full component data, so every row
 stays self-describing; downstream consumers (S-09 shopping list, S-11 cook mode) **deduplicate by
@@ -226,12 +228,6 @@ resets Supabase's default `execute to public` for its replacement — so the new
 isolation test's grant block (`:1392-1397`) and anon probe (`:1113-1125`) must move in the same
 change or they *error* rather than fail cleanly.
 
-**The write-revoke probe loses its backstop.** `supabase/tests/household_isolation.sql:596-604`
-deliberately uses an already-eaten-from dish so that a regressed revoke fails loudly on
-`plan_meals_dish_id_key`. After the drop that insert would **succeed silently**. `plan_meals_slot_key`
-survives, but reusing an occupied slot is not a substitute (it would mask the revoke the same way) —
-the probe must use a **free slot plus an existing dish** and rely purely on the revoke.
-
 ---
 
 ## Phase 1: The coupled solver (pure)
@@ -252,13 +248,27 @@ fits the CPU budget.
 additively so pre-S-08 rows keep parsing (D4).
 
 **Contract**:
-- `PlanMeal` gains `shareWith: { dayIndex: PlanDayIndex; mealType: MealType } | null` — the slot this
-  slot's batch is cooked with, or null for a fresh batch.
-- `PlanMealRecord` gains `dishId: string` (the `plan_dishes.id` the meal eats from).
+- **`shareWith` is write-side only.** New `PlanMealInput = PlanMeal & { shareWith: { dayIndex:
+  PlanDayIndex; mealType: MealType } | null }`, used by `/api/plan`'s build loop and `saveMealPlan()`.
+  It must **not** go on `PlanMeal`: `PlanMealRecord extends PlanMeal` (`src/types.ts:124`), and
+  `getMealPlan()` has no `share_with` column to read (`src/lib/services/meal-plans.ts:117-129`), so a
+  `shareWith` on the read type would be either always-`null` or a second source of truth for a fact
+  `dishId` already carries — and every solver fixture record would have to carry a field the solver
+  never reads. One source of truth per direction: `dishId` for reads, `shareWith` for writes. This
+  mirrors `PlanEater`, which already exists only as a form-level type (`src/types.ts:111`).
+- `PlanMealRecord` gains `dishId: string` (the `plan_dishes.id` the meal eats from) — and nothing else.
 - New `DaySolutionBatch { dishId: string; cookDayIndex: PlanDayIndex; mealIds: string[] }`;
   `DaySolutionMeal` gains `batch: DaySolutionBatch | null` (null ⇒ cooked for this day alone).
-- `DaySplitShare` gains `mealId: string` and `dayIndex: PlanDayIndex` — a batch feeding 2 days ×
-  2 people has four shares, and `userId` alone no longer identifies one.
+- `DaySplitShare` gains `mealId: string | null` and `dayIndex: PlanDayIndex | null` — a batch feeding
+  2 days × 2 people has four shares, and `userId` alone no longer identifies one.
+- **The three new fields are nullable, never optional.** `daySolutionSchema` is annotated
+  `z.ZodType<DaySolution>` (`src/lib/services/day-solutions.ts:94`), so a `.optional()` would yield
+  `mealId?: string | undefined`, which is not assignable to a required field and fails `astro check`.
+  Follow the repo's own precedent, `boundsViolated: z.boolean().default(false)` (`:152-153`): model
+  each as `.nullable().default(null)`, which keeps the parsed output **required** and nullable. This is
+  load-bearing beyond types — `SOLVER_VERSION` 2 → 3 makes every pre-S-08 row stale, and stale rows
+  are still rendered (`src/pages/plan/day.astro:161`), so readers genuinely receive legacy shares with
+  no `mealId`. The writer always populates all three; `null` means "legacy row".
 - `DaySolveExplanation`'s `"recipe"` variant gains `sharedAcrossDays: boolean` (D7).
 - `DaySolution` keeps `version: 1`. Document on `requiredTier` that it is the **group's** tier while
   `maxDeviationPct` is **this day's** worst (D5).
@@ -320,12 +330,12 @@ from `tot_{pi}_{m}` to `tot_{day}_{pi}_{m}` (and `tu_`/`tv_`, `u_`/`v_` likewise
 bound `{ min: lowerScale, max: MAX_SCALE }` and the ratio bound keep their current form. One `t` for
 the whole group. A singleton group produces a constraint set isomorphic to today's.
 
-#### 5. Repair and its move set
+#### 5. Repair, its move set and the scorer
 
 **File**: `src/lib/services/macro-solver.ts`
 
 **Intent**: Extend the split moves from "±1 unit on a scalar" to "move one unit between two servings",
-and scale the budget with the group (D9).
+scale the budget with the group (D9), and re-key the scorer so it judges **daily** totals.
 
 **Contract**: `candidateMoves()` keeps its fixed P8 order (batch ingredient amounts, then splits, then
 per-person amounts). The split block enumerates ordered pairs `(i, j)`, `i ≠ j`, in lexicographic
@@ -335,6 +345,26 @@ deterministic — and for two servings it reduces to today's ±1. `repair()`'s c
 `MAX_REPAIR_MOVES * dayCount`. `roundingWindow()` is untouched, so repair still cannot rewrite a
 recipe's proportions to beat the LP.
 
+**The scorer must be keyed by `(day, person)`, not by person.** `evaluate()` (`:450-506`) accumulates
+into `totals: Map<string, MacroTotals>` keyed by **userId only** and scores
+`deviationsFor(totals[person], targets[person])`. Left that way, a 2-day group sums both days' intake
+for one person against a **single** day's target: `max` lands near 1.0, `tierFor()` returns null and
+**every** shared group reports "no fit". So:
+
+- `Evaluation.totals` is keyed by `(dayIndex, userId)`. No new input is needed — `CompState.servings`
+  carries the meal index and `DayMeal` already carries `meal.dayIndex`.
+- `deviationsFor()` is applied per (day, person): that day's totals against that person's targets.
+- `max` and `sum` are taken over **every** (day, person) pair. `sum` stays the plain, un-normalised
+  sum of absolute deviations — the L1 tie-break in `improves()` keeps its current meaning, just over
+  more entries — and `violation` stays global.
+- `improves()` (`:508-517`) and `repair()` (`:562-586`) therefore minimise the same minimax objective
+  the LP optimises, which is what makes the Testing Strategy's "rounded worst deviation not
+  meaningfully below the LP optimum" a like-for-like comparison against the group's single `t`.
+- `solveDayWithDiagnostics` (`:740-757`) reads `evaluation.totals` per `(dayIndex, userId)` to build
+  each day's `people[]`, and its `worstDeviation` diagnostic becomes the worst over (day, person).
+- **Singleton reduction**: one day ⇒ the map holds exactly one entry per person ⇒ byte-identical to
+  today.
+
 #### 6. Result building
 
 **File**: `src/lib/services/macro-solver.ts`
@@ -342,7 +372,12 @@ recipe's proportions to beat the LP.
 **Intent**: Emit one `DaySolution` per day of the group, each self-describing.
 
 **Contract**: `buildSplit()` emits one share per serving, each carrying `userId`, `mealId` and
-`dayIndex`; `kind: "all"` now means `servings.length === 1`. For each day of the group, `meals[]`
+`dayIndex`; `kind: "all"` now means `servings.length === 1`. The two-share concepts generalise
+explicitly: `evenSplit` (`:624`, today `Math.abs(values[0] - values[1]) < splitUnit`) becomes "the
+spread between the largest and smallest serving is below `splitUnit`", and the
+`SPLIT_LABELS.splitInHalf` label is emitted **only when `servings.length === 2`** — a 4-serving batch
+must never render "· split in half". For more than two even servings the label names the count
+(a new entry in `src/lib/recipe-labels.ts`, the map S-14 localises). For each day of the group, `meals[]`
 contains that day's meal rows, each with the **full** component data of its dish (so both days'
 rows are consistent by construction) and `batch` set when the dish has meals on more than one day.
 `people[]` holds that day's own totals and deviations; `maxDeviationPct` is that day's worst;
@@ -395,10 +430,14 @@ it now runs over the group's meals.
 `dayIndex: 0 as const` and derives `mealId` from the slot alone, so two days' breakfasts would
 **collide on meal id**.
 
-**Contract**: `day(recipes, eaters?, dayIndex: PlanDayIndex = 0, shareWith?)` folds `dayIndex` into
-the generated `mealId` and sets it on every record; defaulting to 0 keeps F1–F4's expansions
-byte-identical. Every record gains a `dishId`: distinct per meal by default, and equal for meals a
-fixture declares shared. Add:
+**Contract**: `day(recipes, eaters?, dayIndex: PlanDayIndex = 0)` folds `dayIndex` into the generated
+`mealId` and sets it on every record; defaulting to 0 keeps F1–F4's expansions byte-identical. Every
+record gains a `dishId`, distinct per meal. Sharing is expressed as a **post-step over the
+concatenated days**, not a `day()` parameter — `day()` is per-day and therefore cannot name a slot on
+another day at all: `shareDish(meals, slotA, slotB)` rewrites both records' `dishId` to one value
+(each slot given as `(dayIndex, mealType)`). That keeps F5/F6 buildable from unmodified `day()` calls
+and leaves `shareWith` — a write-side concept the solver never reads (§1) — out of the fixtures
+entirely. Add:
 - `F5` — F1 on day 0 and F1 on day 1 with **lunch (curry) shared**: the canonical A3 case.
 - `F6` — the all-whole-dish F2 on days 0, 1 and 2 with **two dishes shared** (so all three days are
   one group), as the worst-case no-fit group for the performance budget.
@@ -432,9 +471,16 @@ New assertions:
 - The fingerprint **changes** when only the grouping changes (F5 vs. the same meals unshared) and is
   **equal** for both days of a group; it stays `/^[0-9a-f]{64}$/`.
 - A new, separate `performance` test for F6, with its own budget — do **not** loosen the existing
-  1-second budget at `:412`. Budget: a coupled 3-day no-fit solve costs at most **25×** a single-day
-  F2 solve measured in the same run, and at most **250 ms** absolute. A relative budget is the
-  primary gate because CI hardware varies; the absolute one catches a blow-up the ratio would hide.
+  1-second budget at `:412`. This test is a **regression guard on dev/CI hardware, not the edge CPU
+  gate**: the real constraint is a Cloudflare Workers CPU limit, which only workerd can measure, so
+  that measurement moves to Phase 4 §3. Budget, derived from the plan's own arithmetic in
+  **Performance Considerations** (~3× LP × ~3× states × ~3× move budget for the repair search, plus
+  several-fold `explain()` growth): a coupled 3-day no-fit solve costs at most **60×** a single-day
+  F2 solve measured in the same run. The relative budget is the gate; record the first measured
+  absolute value in this bullet as a comment and set the absolute assertion to **3× that recorded
+  value**, so it catches a blow-up without being a second copy of the ratio (at today's ~10 ms per F2
+  solve, a 250 ms absolute budget and 25× are the *same* number, which is why the original pairing
+  was vacuous as well as too tight).
 
 ### Success Criteria
 
@@ -443,17 +489,19 @@ New assertions:
 - Type check passes: `npx astro check`
 - Lint passes: `npm run lint`
 - Unit tests pass, F1–F4 expectations unchanged: `npm test`
-- The F6 coupled-worst-case performance test passes both its relative (≤ 25×) and absolute
-  (≤ 250 ms) budgets: `npm test`
+- The F6 coupled-worst-case regression guard passes its relative (≤ 60×) budget and the absolute
+  budget pinned from its first measured value: `npm test`
 
 #### Manual Verification
 
 - Read the F5 diff: confirm the shared lunch's `amountG` values are identical in both days'
   `meals[]` and that `split.shares` has four entries with distinct `(mealId, userId)` pairs.
-- If the F6 budget fails, apply the pre-committed mitigation **before** continuing: memoise
-  `componentBatchMacros()` / `baseMass()` per component for the whole solve and make `evaluate()`
-  incremental (recompute only the changed state's contribution). Both are pure performance changes
-  with no effect on output, so F1–F4's `toStrictEqual` assertions prove they are behaviour-neutral.
+- If the F6 budget fails, climb the pre-committed ladder in **Performance Considerations** in order
+  and stop at the first rung that passes: (3) memoise `componentBatchMacros()` / `baseMass()` per
+  component for the whole solve and make `evaluate()` incremental (recompute only the changed state's
+  contribution) — both pure performance changes, proven behaviour-neutral by F1–F4's `toStrictEqual`
+  assertions; then (4) skip `explain()` for multi-day groups and store `explanation: null`, adjusting
+  the F5/F6 explanation assertions accordingly. No rung caps group size or changes a quantity.
 
 **Implementation Note**: after this phase and all automated verification passes, pause for manual
 confirmation before Phase 2. This phase is the one that can still change the design.
@@ -575,11 +623,15 @@ distinct-`day_index` check is what makes that conflict target safe.
 
 **File**: `supabase/tests/household_isolation.sql`
 
-**Intent**: Keep the `plan_meals` revoke probe meaningful after its backstop is dropped.
+**Intent**: Refresh a stale comment — the probe itself stays exactly as it is.
 
-**Contract**: the probe at `:596-604` must use a **free slot plus an existing dish** and rely purely
-on `insufficient_privilege`; update its comment, since the dropped constraint can no longer catch a
-regressed revoke and `plan_meals_slot_key` is not a substitute.
+**Contract**: keep the probe at `:596-604` unchanged. It already inserts into a free slot `(2, dinner)`
+with an existing dish, and its trailing `raise exception` is uncaught by the
+`when insufficient_privilege` handler, so a regressed revoke still fails loudly as `P0001`. Replace
+only the comment at `:597-598`: the dropped constraint no longer precedes the privilege check, so the
+probe now rests on the revoke alone. While re-pinning the §5 fixtures, confirm the new shared-dish
+fixture does **not** occupy `(2, dinner)` on A's plan — that is the slot this probe relies on being
+free.
 
 #### 7. Isolation test: the RPC blocks
 
@@ -593,6 +645,10 @@ droppable (the payload validator only checks key *presence*).
   path: **create** a shared dish (2 meals, 1 dish), **regroup** (split a shared dish apart → 2 dishes,
   meal ids replaced), **merge** two separate dishes into one (→ 1 dish), and **orphan cleanup** after
   regrouping.
+- The **create** case doubles as the `share_with` **round-trip** pin: a payload whose `share_with`
+  names the *other* slot yields exactly one `plan_dishes` row shared by both `plan_meals` rows. The
+  route's regex cannot catch a correctly-formatted wrong slot, so this is the only assertion that
+  proves the target slot — not the element's own slot — reaches the RPC (Phase 3 §1).
 - The rejection table at `:735-786` gains one row each for **KD015**, **KD016** and **KD017**.
 - The anon-executability probe at `:1113-1125` and the grant block at `:1361-1399` move from
   `save_day_solution(date, int, text, int, text, jsonb)` to
@@ -621,9 +677,13 @@ droppable (the payload validator only checks key *presence*).
 - A hand-built `save_meal_plan` call with a `share_with` naming a slot of a different recipe is
   rejected with KD017, not with a generic KD010.
 
-**Implementation Note**: pause for manual confirmation before Phase 3. The app is broken between
-phases 2 and 3 (`day-solutions.ts` still calls the dropped `save_day_solution`), so these two phases
-land in one branch and are not deployed separately.
+**Implementation Note**: **phases 2–4 are completed and merged in one working block** — do not leave
+Phase 2 overnight for review. Criterion 2.1 applies this migration to the **hosted** project (there is
+no other), so from that moment the already-deployed Worker — which still calls the dropped
+`save_day_solution` (`src/lib/services/day-solutions.ts:211`) — fails every solve, caught by
+`/api/plan/solve` as the "Macros could not be solved right now" redirect
+(`src/pages/api/plan/solve.ts:130-133`). Plan reads and the `/plan` grid are unaffected; the window
+closes when `main` deploys. See **Migration Notes → Deploy order**.
 
 ---
 
@@ -647,9 +707,19 @@ give the user the affordance and the explanation.
 `:117-129` sets `dishId`. **Re-verify the embed's shape after the unique constraint is dropped**:
 PostgREST infers to-one vs to-many partly from uniqueness on the FK columns, and without a generated
 `Database` type the client guesses every embed is an array (the caveat is already noted at
-`:110-111`). `saveMealPlan()`'s payload at `:143-148` gains
-`share_with: meal.shareWith ? \`${dayIndex}_${mealType}\` : null`. `PLAN_ERRORS` gains KD015, KD016
-and KD017 with their own messages, so the UI can say which rule was broken.
+`:110-111`). `saveMealPlan()` takes `PlanMealInput[]` (Phase 1 §1) and its payload at `:143-148` gains
+the **target** slot's coordinates, not the current slot's:
+
+```ts
+share_with: meal.shareWith ? `${meal.shareWith.dayIndex}_${meal.shareWith.mealType}` : null,
+```
+
+Inside that map there is no bare `dayIndex` / `mealType` in scope, and the current element's own
+coordinates would make every shared slot self-reference — which KD015 is specified to reject, so no
+share could ever be saved. Because a correctly-formatted *wrong* slot is invisible to the route's
+regex, Phase 2 §7 adds a round-trip case (two meals, one dish) that pins the saved share.
+`PLAN_ERRORS` gains KD015, KD016 and KD017 with their own messages, so the UI can say which rule was
+broken.
 
 #### 2. Group-aware solve service
 
@@ -670,16 +740,28 @@ a solve single-day.
   new RPC once.
 - `getPlanSolveStatuses()` partitions `plan.meals` with `solveGroups()` (replacing the filter at
   `:279`), fingerprints **once per group**, and gives every day of a group the group's status.
-  `PlanDaySolveStatus` gains `groupDayIndexes: PlanDayIndex[]`, `isGroupLead: boolean` and
-  `groupMaxMealCount: number`.
+  `PlanDaySolveStatus` gains `groupDayIndexes: PlanDayIndex[]`, `isGroupLead: boolean` (the group's
+  **lowest** day) and `groupMaxMealCount: number` — **the most meals any single day of the group
+  holds**.
 - `needsSolvePrompt()` becomes `status.isGroupLead && status.groupMaxMealCount === MEAL_TYPES.length
   && (status.kind === "unsolved" || status.kind === "stale")`, so a group prompts **once**, on its
   lowest day, instead of two or three times for one solve. For a singleton group
   `groupMaxMealCount === mealCount` and `isGroupLead` is true, so this is exactly today's rule.
-- `daySolutionSchema` grows: `meals[].batch` optional, `split.shares[].mealId` / `.dayIndex`
-  optional, `explanation.sharedAcrossDays: z.boolean().default(false)`. `version` stays
-  `z.literal(1)`, so pre-S-08 rows keep parsing and read as *"Out of date"* rather than *"Not
-  solved"*.
+- **The prompt sentence must be group-aware.** `formatSolvePrompt(weekday)` →
+  `` `${weekday} has all 5 meals. Solve its macros?` `` (`:332-334`) is false for a group whose lead
+  day holds 3 meals and whose partner day holds 5 — which the `groupMaxMealCount` rule deliberately
+  still prompts for — and "its macros" is wrong for any group. Add
+  `formatGroupSolvePrompt(weekdays)` beside it (e.g. *"Monday and Tuesday share a batch and have all
+  5 meals. Solve them together?"*) and use it when `groupDayIndexes.length > 1`. Leave
+  `formatSolvePrompt()` **untouched** for singletons, so the existing smoke assertion stays
+  byte-identical. *Rejected:* requiring every day of the group to be full — FR-018's prompt would
+  then vanish for exactly the mixed plans a cook-ahead batch produces.
+- `daySolutionSchema` grows **nullable-with-default, never optional** (Phase 1 §1): `meals[].batch`
+  as `.nullable().default(null)`, `split.shares[].mealId` / `.dayIndex` likewise, and
+  `explanation.sharedAcrossDays: z.boolean().default(false)`. `.optional()` would break the
+  `z.ZodType<DaySolution>` annotation at `:94`; `.default()` keeps the output required, exactly as
+  `boundsViolated` does at `:152-153`. `version` stays `z.literal(1)`, so pre-S-08 rows keep parsing
+  and read as *"Out of date"* rather than *"Not solved"*.
 - `DAY_SOLVE_STALE` is widened — it currently names only "the plan, targets or recipes", which does
   not cover "the day that shares this batch changed".
 - New sentences, all here (never in a page): the cook-day note (*"Cook the whole batch today — set
@@ -689,8 +771,9 @@ a solve single-day.
   `explanation.sharedAcrossDays` is true; the unshared sentence pinned at `scripts/smoke.mjs:689` is
   unchanged.
 - `formatSplitLine()` takes an optional `(dayIndex) => weekday` resolver and the viewed day, and
-  suffixes a share's label with its weekday when the share belongs to another day. For a singleton
-  group every share is on the viewed day, so the existing strings are byte-identical.
+  suffixes a share's label with its weekday **only when `share.dayIndex !== null && share.dayIndex
+  !== viewedDay`**. For a singleton group every share is on the viewed day, and for a legacy
+  (pre-S-08) row every `dayIndex` is `null`, so both render byte-identically to today.
 - Any new enum-keyed label goes in `src/lib/recipe-labels.ts` — the single map S-14 localises.
 
 #### 3. The plan save route
@@ -705,7 +788,8 @@ message.
 with `.default("")`. The regex alternation is built from `MEAL_TYPES`, so it cannot drift. Because the
 route reads only known keys (`form.get(key) ?? undefined`, `:63`), a field absent from `slotFields`
 never arrives — and because a missing recipe field already means "empty slot", *adding* fields is
-backward compatible. The build loop at `:90-111` sets `shareWith` and rejects, with its own message
+backward compatible. The build loop at `:90-111` now builds `PlanMealInput` (Phase 1 §1) rather than
+`PlanMeal`, sets `shareWith` and rejects, with its own message
 in the `PARTNER_NOT_LINKED` style: a self-reference, a reference to an empty slot, or a reference to a
 slot holding a different recipe. These are UX; the RPC's KD015–KD017 remain the guarantee.
 
@@ -750,7 +834,18 @@ grid — FR-020, `src/pages/plan.astro:244-245`).
 
 **Contract**: inside the flat meal loop at `:214-246`, a meal with `batch` renders
 `<p data-testid="day-batch-{mealType}">` — on the cook day, the batch amounts plus *"set aside … for
-\<weekday\>"*; on the other day, *"from \<weekday\>'s batch"*. `formatSplitLine()` is called with the
+\<weekday\>"*; on the other day, *"from \<weekday\>'s batch"*.
+
+**The non-cook day must not repeat the batch ingredient list.** D4 stores the dish's full component
+data on *both* days with the batch `amountG`, so the loop as it stands would render the whole batch
+again on a day the user cooks nothing — "Ryż 900 g" on Wednesday. So the loop gains one branch: when
+`batch !== null && batch.cookDayIndex !== viewedDay`, render the batch note and the viewer's **own
+portion** and **skip the batch ingredient list**; the full list renders on the cook day only. This is
+what delivers the Intent and FR-017's cook-ahead story — amounts appear on the day they are cooked.
+(Whether the non-cook day should also show reheating grams is left to S-11; it shows the portion and
+the note.) The stored jsonb is unchanged either way, so every downstream consumer is unaffected.
+
+`formatSplitLine()` is called with the
 weekday resolver so cross-day shares are labelled. The "Solve again" / "Accept" block renders the
 group-solve note when `groupDayIndexes.length > 1`, so the user knows the button moves more than one
 day. All rendering stays inline in the page — there is no `src/components/plan/`.
@@ -771,8 +866,9 @@ day. All rendering stays inline in the page — there is no `src/components/plan
 - Confirm only **one** solve prompt appears for the group, on day 0.
 - Solve from day 1 and confirm both days show the same status, the same tier and the same solved-at.
 - Change day 1's eater and confirm **both** days flip to "Out of date".
-- Confirm the day pages show the set-aside note on day 0 and the from-batch note on day 1, and that
-  the shared lunch's ingredient amounts are identical on both pages.
+- Confirm the day pages show the set-aside note on day 0 and the from-batch note on day 1, that the
+  batch ingredient list appears on day 0 **only**, and that day 1 shows the from-batch note plus the
+  viewer's own portion and no batch amounts.
 - Break the share deliberately (share with a slot holding another recipe via a hand-built POST) and
   confirm the KD017 message, not a generic failure.
 
@@ -803,12 +899,19 @@ consume them.
 1. A saves a plan mirroring Phase 1's F5 — the F1 mix on days 0 and 1 — with
    `d1_lunch_batch = "0_lunch"`; the new field name is thereby pinned.
 2. `/plan` shows the batch note (`batch-1_lunch`) and **one** prompt for the group
-   (`day-prompt-0` present, `day-prompt-1` absent).
+   (`day-prompt-0` present, `day-prompt-1` absent), carrying the group sentence from
+   `formatGroupSolvePrompt()` rather than the singleton one. Because both days of this fixture hold
+   5 meals, add the **mixed group** case too: drop one of day 0's meals and re-check that the prompt
+   still appears on day 0 and still reads as a group sentence — the case where the old
+   `formatSolvePrompt()` would have claimed "all 5 meals" about a 4-meal day (Phase 3 §2).
 3. A solves day 0; `day-status-0` and `day-status-1` are **byte-identical** and match
    `/^Solved within ±(10|15|20)%$/` — the slice's actual claim, asserted the way F5's unit test
    asserts it, since the exact tier is a property of the LP.
-4. The day pages show `day-batch-lunch` on both days, and the shared lunch's ingredient lines are
-   identical on day 0 and day 1.
+4. The day pages show `day-batch-lunch` on both days, and the batch's ingredient lines appear on
+   **day 0 only** — day 1 carries the from-batch note and the viewer's portion, no batch amounts
+   (Phase 3 §6). The "one batch, not two" proof is re-pointed at that asymmetry plus the batch note's
+   amounts appearing on exactly one day; the equality of the stored amounts across both days is
+   proven by F5's unit assertions, which read the jsonb directly.
 5. B marks day 1's lunch for A only; **both** `day-status-0` and `day-status-1` read "Out of date" —
    the direct regression test for the fingerprint hole.
 6. A re-saves with `d1_lunch_batch = ""`; the day 1 batch note is gone and both days are stale again.
@@ -850,7 +953,23 @@ household.
 
 **Contract**: `status: planned`, `updated: 2026-10-11`.
 
-#### 3. The full verification chain
+#### 3. The edge CPU measurement
+
+**Intent**: Measure the constraint that actually exists — a Cloudflare Workers CPU limit — on the
+runtime that enforces it, and close research Open Question 1 instead of restating it. Phase 1's vitest
+budget is a regression guard on dev hardware and cannot see this (see **Performance Considerations**).
+
+**Contract**: on `npm run preview`, which already serves the Cloudflare `workerd` runtime, save an
+F6-shaped group (three days joined by two shared dishes, the all-whole-dish no-fit mix) and time one
+`POST /api/plan/solve` against it. Record the elapsed figure in this section of the plan, noting that
+it is an **upper bound** — it includes the Supabase round-trips — and that cold-isolate cost stays
+unmeasured, as S-04 deferred it. Also record which Workers plan the account is on
+(`npx wrangler whoami`, or the Cloudflare dashboard → Workers & Pages → the Worker's settings), since
+the Free plan's limit is 10 ms CPU and the paid plans' is far higher: the recorded plan is what makes
+the recorded figure interpretable. If the figure exceeds the account's limit, climb the mitigation
+ladder in **Performance Considerations** from rung 3.
+
+#### 4. The full verification chain
 
 **Intent**: Run the mandated order, which CI cannot substitute for — `npm run test:rls` and
 `npm run test:seed` run against the **already-deployed** schema, not the branch's migrations
@@ -881,6 +1000,10 @@ household.
   0 rows.
 - Read the CLAUDE.md diff and confirm the `batch.dishId` deduplication invariant is stated plainly
   enough that S-09 cannot miss it.
+- The F6-shaped group's `POST /api/plan/solve` time on `npm run preview` (workerd) and the account's
+  Workers plan are both recorded in Phase 4 §3.
+- After the `main` deploy, a real solve on production succeeds — this is what closes the window the
+  Phase 2 `db push` opens (see **Migration Notes → Deploy order**).
 
 ---
 
@@ -906,8 +1029,9 @@ household.
 ### Integration tests (`npm run test:rls`, hosted project, rolled back)
 
 Shared-dish fixtures and counts; same-plan different-day sharing allowed while cross-plan sharing
-stays rejected; the four diff cases (create, regroup, merge, orphan cleanup); the re-reasoned
-write-revoke probe; KD015/KD016/KD017; the new RPC's grants by exact signature plus its anon probe;
+stays rejected; the four diff cases (create, regroup, merge, orphan cleanup), the first of which
+doubles as the `share_with` round-trip pin; the write-revoke probe's refreshed comment (the probe
+itself is unchanged); KD015/KD016/KD017; the new RPC's grants by exact signature plus its anon probe;
 the household cascade.
 
 ### End-to-end (`npm run smoke`, against the production preview)
@@ -937,6 +1061,13 @@ Workers **Free** plan's 10 ms CPU limit; `wrangler.jsonc` sets no limits block a
 not record which plan the account is on. S-04 explicitly deferred measuring this on workerd
 (`context/archive/2026-10-09-solve-daily-macros/reviews/impl-review.md:182`).
 
+**Measurement is split from gating.** The vitest F6 test (Phase 1 §11) is a regression guard on
+dev/CI hardware, budgeted at ≤ 60× an F2 solve to match the multiplication above. The decisive
+measurement is Phase 4 §3: one timed POST to `/api/plan/solve` for an F6-shaped 3-day group on
+`npm run preview` (which already serves the Cloudflare runtime), plus recording which Workers plan
+the account is on — closing research Open Question 1 instead of restating it. That figure is an upper
+bound (it includes Supabase round-trips), and cold-isolate cost stays unmeasured, as in S-04.
+
 The design's mitigations, in the order they apply:
 
 1. **Groups, not plans.** An unshared day keeps today's cost exactly, and A3's realistic case
@@ -945,9 +1076,20 @@ The design's mitigations, in the order they apply:
 3. If the F6 budget still fails: memoise `componentBatchMacros()` / `baseMass()` per component and
    make `evaluate()` incremental. Both are behaviour-neutral, which F1–F4's `toStrictEqual`
    assertions prove.
+4. If rung 3 is applied and the budget **still** fails: skip `explain()` for multi-day groups and
+   store `explanation: null`. `explain()` is the dominant cost (13 leave-one-dish-out LP re-solves for
+   F6) and already runs only on the no-fit path (`src/lib/services/macro-solver.ts:766`);
+   `explanation: null` is an existing supported state that `formatDaySolveSummary()` already handles
+   by falling back to "No fit within ±20%" (`src/lib/services/day-solutions.ts:411-420`), so no reader
+   changes and no deploy ordering. The cost: an unsolvable multi-day group loses the "Most obstructive
+   recipe" sentence, and D7's `sharedAcrossDays` flag then only ever fires on a blamed single-day dish.
+   This rung is pre-committed here so the implementer never has to improvise a scope decision
+   mid-phase; nothing beyond it is in scope for this slice.
 
-This ladder is deliberately behaviour-neutral throughout: no fallback caps group size or degrades the
-result, so the measurement cannot change what the app computes — only how fast.
+Rungs 1–3 are behaviour-neutral: they cannot change a single computed quantity, only the speed. Rung 4
+degrades **only** the no-fit explanation text for multi-day groups — never an amount, a split, a tier
+or a group size. Capping a group's day count (research's own fourth option) is **not** adopted: it
+would cut the 3-day case the Desired End State and F6 are written around and make the user hit a wall.
 
 ## Migration Notes
 
@@ -963,9 +1105,16 @@ result, so the measurement cannot change what the app computes — only how fast
   `dish_id` is shared (or re-point each to a fresh dish) before
   `alter table public.plan_meals add constraint plan_meals_dish_id_key unique (dish_id);` — the
   constraint cannot be restored while a shared dish exists.
-- **Deploy order**: phases 2 and 3 land together. Between them the app calls a dropped function, so
-  they are never deployed separately. `npx supabase db push` must run before merging, as always — CI
-  cannot apply migrations.
+- **Deploy order**: this is the first slice whose `db push` is a **breaking production change** — every
+  prior migration was additive. There is one hosted Supabase project and CI cannot `db push`
+  (no database password), so the migration necessarily reaches production before the branch merges.
+  Between `npx supabase db push` (criterion 2.1) and the `main` deploy, production's **Solve** and
+  **Accept** buttons fail gracefully with "Macros could not be solved right now"
+  (`DAY_SOLVE_FAILED`); plan reads, the `/plan` grid, targets and recipe pages are unaffected. Keep
+  the window short by completing and merging phases 2–4 in one working block, and verify a real solve
+  against production after the deploy (Progress 4.11). *Rejected:* keeping `save_day_solution` as a
+  deprecated wrapper — it would put two client-callable write paths into a write-revoked table,
+  contradicting D2 and CLAUDE.md's one-write-path rule, plus a deferred cleanup that can be forgotten.
 
 ## References
 
@@ -993,12 +1142,12 @@ result, so the measurement cannot change what the app computes — only how fast
 - [ ] 1.1 Type check passes: `npx astro check`
 - [ ] 1.2 Lint passes: `npm run lint`
 - [ ] 1.3 Unit tests pass, F1–F4 expectations unchanged: `npm test`
-- [ ] 1.4 The F6 coupled-worst-case performance test passes both its relative (≤ 25×) and absolute (≤ 250 ms) budgets
+- [ ] 1.4 The F6 coupled-worst-case regression guard passes its relative (≤ 60×) budget and the absolute budget pinned from its first measured value
 
 #### Manual
 
 - [ ] 1.5 F5's shared lunch has identical `amountG` on both days and four distinct `(mealId, userId)` shares
-- [ ] 1.6 If the F6 budget failed, the pre-committed behaviour-neutral mitigation was applied and F1–F4 still pass
+- [ ] 1.6 If the F6 budget failed, the pre-committed mitigation ladder was climbed in order (rung 3, then rung 4) and F1–F4 still pass
 
 ### Phase 2: Schema and the two RPCs
 
@@ -1030,7 +1179,7 @@ result, so the measurement cannot change what the app computes — only how fast
 - [ ] 3.6 A group shows exactly one solve prompt, on its lowest day
 - [ ] 3.7 Solving from either day gives both days the same status, tier and solved-at
 - [ ] 3.8 Editing one sharing day flips both days to "Out of date"
-- [ ] 3.9 The set-aside and from-batch notes render, with identical shared amounts on both day pages
+- [ ] 3.9 The set-aside and from-batch notes render, with the batch ingredient list on the cook day only
 - [ ] 3.10 A share naming a slot of a different recipe shows the KD017 message
 
 ### Phase 4: Smoke, documentation and the full chain
@@ -1050,3 +1199,5 @@ result, so the measurement cannot change what the app computes — only how fast
 
 - [ ] 4.9 Smoke accounts and households cleaned up with the README's two queries
 - [ ] 4.10 CLAUDE.md states the `batch.dishId` deduplication invariant for S-09 / S-11
+- [ ] 4.11 Production solve verified after the `main` deploy, closing the Phase 2 `db push` window
+- [ ] 4.12 The workerd solve time for an F6-shaped group and the account's Workers plan are recorded in Phase 4 §3

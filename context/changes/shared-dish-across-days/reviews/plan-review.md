@@ -87,7 +87,7 @@ is at `smoke.mjs:695`, not `:689`) — not worth findings.
     "both days carry the dish's full component data" is meant to avoid.
   - Confidence: MEDIUM — plausible but it fights the `CompState`-per-dish decision in §3.
   - Blind spot: Not evaluated against `cookAmounts()` / `buildComponent()`'s batch-amount contract.
-- **Decision**: PENDING
+- **Decision**: FIXED via Fix A — Phase 1 §5 retitled "Repair, its move set and the scorer" and given an explicit contract: `Evaluation.totals` keyed by `(dayIndex, userId)`, `deviationsFor()` per (day, person), `max`/`sum` over every (day, person) pair with `sum` left un-normalised, `violation` global, `solveDayWithDiagnostics` reading per-(day, person) slices, plus the stated singleton reduction.
 
 ### F2 — Phase 2's `db push` drops `save_day_solution` in production while the deployed Worker still calls it
 
@@ -131,7 +131,7 @@ is at `smoke.mjs:695`, not `:689`) — not worth findings.
   - Confidence: HIGH — mechanically straightforward.
   - Blind spot: Whether the isolation test's "one write path" narrative can express a shim without
     weakening the assertion it exists to make.
-- **Decision**: PENDING
+- **Decision**: FIXED via Fix A — **Migration Notes → Deploy order** now names the production window (Solve/Accept return `DAY_SOLVE_FAILED` between `db push` and the `main` deploy; reads unaffected) and records the rejected wrapper alternative; Phase 2's Implementation Note changed from "pause before Phase 3" to "complete and merge phases 2–4 in one working block"; new Progress row 4.11 plus its Phase 4 manual criterion for a verified production solve.
 
 ### F3 — The CPU gate does not measure the runtime the risk lives on, and its number contradicts the plan's own estimate
 
@@ -175,7 +175,7 @@ is at `smoke.mjs:695`, not `:689`) — not worth findings.
   - Confidence: HIGH that it is cheap, LOW that it manages the risk.
   - Blind spot: The failure mode on exceeding a Workers CPU limit (error vs. throttle) is not
     established in the plan.
-- **Decision**: PENDING
+- **Decision**: FIXED via Fix A — Phase 1 §11 recast as a dev/CI regression guard at ≤ 60× (derived from the plan's own multiplication) with the absolute assertion pinned at 3× the first measured value, and the vacuous 25× / 250 ms pairing explained; new Phase 4 §3 "The edge CPU measurement" times a POST to `/api/plan/solve` for an F6-shaped group on workerd and records the account's Workers plan (old §3 renumbered to §4); Performance Considerations gained a "measurement is split from gating" paragraph; criterion 1.4, Progress 1.4 and new Progress 4.12 follow.
 
 ### F4 — If the pre-committed mitigation is not enough, the plan has no next step
 
@@ -217,7 +217,7 @@ is at `smoke.mjs:695`, not `:689`) — not worth findings.
   - Confidence: HIGH that it works and is cheap; MEDIUM that it is sufficient on its own.
   - Blind spot: The repair search's own 27× growth is untouched by this, so it may not be enough
     alone — which is why it belongs in the plan as a *stated* rung rather than an improvisation.
-- **Decision**: PENDING
+- **Decision**: FIXED via Fix B — Performance Considerations gained rung 4: for a multi-day group, skip `explain()` and store `explanation: null` (an already-supported state `formatDaySolveSummary()` handles), with its cost stated; the closing "behaviour-neutral throughout" sentence corrected to scope rungs 1–3, and the group cap explicitly recorded as not adopted. Phase 1's manual bullet and Progress 1.6 now say "climb the ladder in order (rung 3, then rung 4)".
 
 ### F5 — Optional zod fields will not satisfy `daySolutionSchema: z.ZodType<DaySolution>`
 
@@ -246,7 +246,7 @@ is at `smoke.mjs:695`, not `:689`) — not worth findings.
     allowance in the type.
   - Confidence: HIGH — `day-solutions.ts:94` and `:152-153` are explicit.
   - Blind spot: None significant.
-- **Decision**: PENDING
+- **Decision**: FIXED via the single Fix — Phase 1 §1 now specifies the three new fields as nullable-with-default (`.nullable().default(null)`) rather than optional, citing the `z.ZodType<DaySolution>` annotation and the `boundsViolated` precedent; `DaySplitShare` typed `mealId: string | null` / `dayIndex: PlanDayIndex | null`; Phase 3 §2's schema bullet matches, and `formatSplitLine()` suffixes a weekday only when `share.dayIndex !== null && share.dayIndex !== viewedDay`. D4's wording changed from "optional" to "nullable, defaulted".
 
 ### F6 — `shareWith` on `PlanMeal` leaks a write-only concept into `PlanMealRecord`, `getMealPlan()` and every solver fixture
 
@@ -277,7 +277,7 @@ is at `smoke.mjs:695`, not `:689`) — not worth findings.
   - Confidence: HIGH — `types.ts:116-126`, `meal-plans.ts:117-129` and `fixtures.ts:276-295` are
     explicit.
   - Blind spot: None significant.
-- **Decision**: PENDING
+- **Decision**: FIXED via the single Fix — Phase 1 §1 replaces `PlanMeal.shareWith` with a write-side `PlanMealInput = PlanMeal & { shareWith … }` (reasoning from `PlanMealRecord extends PlanMeal` and `getMealPlan()`'s missing column, with `PlanEater` as precedent); `PlanMealRecord` gains `dishId` and nothing else; Phase 1 §10 drops the `shareWith?` parameter from `day()` in favour of a `shareDish(meals, slotA, slotB)` post-step; Phase 3 §1 and §3 take/build `PlanMealInput`.
 
 ### F7 — The day page's stated intent (no two identical ingredient lists) is not delivered by its contract, and smoke step 4 pins the duplication
 
@@ -314,7 +314,7 @@ is at `smoke.mjs:695`, not `:689`) — not worth findings.
     the misreading the Intent names.
   - Confidence: HIGH — it is the plan as written.
   - Blind spot: None significant.
-- **Decision**: PENDING
+- **Decision**: FIXED via Fix A — Phase 3 §6 gained a "The non-cook day must not repeat the batch ingredient list" contract (branch on `batch.cookDayIndex !== viewedDay`: note plus the viewer's own portion, no batch list), smoke step 4 re-points the "one batch, not two" proof at that asymmetry while leaving stored-amount equality to F5's unit assertions, Progress 3.9 and the Phase 3 manual bullet follow, and Phase 1 §6 now states what `evenSplit` means beyond two servings (`splitInHalf` only when `servings.length === 2`).
 
 ### F8 — The `share_with` payload snippet names the slot's own identity, so every shared slot self-references (KD015)
 
@@ -333,7 +333,7 @@ is at `smoke.mjs:695`, not `:689`) — not worth findings.
   ``share_with: meal.shareWith ? `${meal.shareWith.dayIndex}_${meal.shareWith.mealType}` : null`` and
   add one unit-level or isolation-level case that a saved share round-trips (two meals, one dish),
   since the route-side regex alone cannot catch a correctly-formatted wrong slot.
-- **Decision**: PENDING
+- **Decision**: FIXED via the single Fix — Phase 3 §1 now gives the snippet as a fenced line using the **target** slot (`meal.shareWith.dayIndex` / `.mealType`), explains why the element's own coordinates would self-reference into KD015, and points at Phase 2 §7, where the **create** diff case was extended to double as the `share_with` round-trip pin (two meals, one dish); the Testing Strategy line mentions it too.
 
 ### F9 — The group solve prompt can render "<Weekday> has all 5 meals" on a day that does not have 5 meals
 
@@ -368,7 +368,7 @@ is at `smoke.mjs:695`, not `:689`) — not worth findings.
     still shows, so the day is not unreachable).
   - Confidence: HIGH.
   - Blind spot: None significant.
-- **Decision**: PENDING
+- **Decision**: FIXED via Fix A — Phase 3 §2 defines `groupMaxMealCount` as "the most meals any single day of the group holds" and `isGroupLead` as the group's lowest day, and adds `formatGroupSolvePrompt(weekdays)` used when `groupDayIndexes.length > 1` while `formatSolvePrompt()` stays untouched for singletons (with the all-days-full alternative recorded as rejected); smoke step 2 gained the mixed-group case the blind spot asked for.
 
 ### F10 — The write-revoke probe does not "succeed silently" after the constraint is dropped; the premise of a Critical Implementation Detail is wrong
 
@@ -393,4 +393,4 @@ is at `smoke.mjs:695`, not `:689`) — not worth findings.
   demote the item from "Critical Implementation Details" to a one-line note under Phase 2 §6. While
   re-pinning the fixtures, check that the new shared-dish fixture does not occupy `(2, dinner)` on A's
   plan, which is the slot this probe relies on being free.
-- **Decision**: PENDING
+- **Decision**: FIXED via the single Fix — the "write-revoke probe loses its backstop" item was deleted from **Critical Implementation Details** and the Key Discoveries bullet rewritten to the true behaviour (the trailing `raise exception` is uncaught, so a regressed revoke fails loudly as `P0001`; the probe already uses the free `(2, dinner)` slot with an existing dish); Phase 2 §6 now keeps the probe unchanged, replaces only the comment at `:597-598`, and adds the check that the new fixture leaves `(2, dinner)` free. The plan-brief was left untouched, per the plan.md-only scope.
