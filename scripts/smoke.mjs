@@ -3,6 +3,7 @@
 // person's daily macro targets are saved, validated and visible to the partner -- including targets
 // set before the redemption, which must arrive in the shared household with their owner (S-02, FR-004).
 // S-05: the recipe library renders as cards and a recipe's detail shows macros pinned from SQL.
+// S-08: one batch shared across two days solves both together, and editing one day stales both.
 // F-03: the app is installable -- the manifest, its icons and the <head> links are served anonymously.
 // Zero dependencies on purpose. Run against a live server: BASE_URL=http://localhost:4321 node scripts/smoke.mjs
 
@@ -196,6 +197,56 @@ async function solveThenOpen(client, day, extra = {}) {
     form: { start_date: solveStart, day_index: String(day), ...extra },
   });
   return solvedLocation(day).test(res.location) ? client.request(res.location) : res;
+}
+
+// S-08 fixtures: one batch shared across two days. A start date of its own, so the S-03 and S-04 plans
+// and their literal meal counts are untouched. Both days are the F1 mix (Phase 1's F5 unit fixture)
+// with day 1's lunch eating from day 0's curry batch. 2031-01-20 is a Monday, so day 0 is Monday and
+// day 1 Tuesday. The sentences mirror formatGroupSolvePrompt() / formatCookDayNote() /
+// formatFromBatchNote() and formatUnsharedNotice() in src/lib/services/{day-solutions,meal-plans}.ts.
+const shareStart = "2031-01-20";
+const S08_GROUP_PROMPT = "Monday and Tuesday share a batch. Solve their macros together?";
+const S08_COOK_NOTE = "Cook the whole batch today — set aside the portions for Tuesday.";
+// As rendered: Astro escapes the apostrophe in text content.
+const S08_FROM_NOTE = "From Monday&#39;s batch — nothing to cook today.";
+const S08_UNSHARED_NOTICE =
+  "Tuesday Lunch no longer shares a batch: the slot it shared with is empty or holds another recipe.";
+const S08_TEST_IDS = [
+  "batch-0_lunch",
+  "batch-1_lunch",
+  "day-group-0",
+  "day-group-1",
+  "day-batch-lunch",
+  "day-group-note",
+];
+const shareSaved = new RegExp(`^${escapeRe(`/plan?start=${shareStart}&saved=1`)}$`);
+
+function shareForm(extra = {}) {
+  const form = { start_date: shareStart, d1_lunch_batch: "0_lunch" };
+  for (const day of [0, 1]) {
+    S04_DAYS[0].forEach((recipeId, slot) => {
+      form[`d${day}_${S04_SLOTS[slot]}_recipe`] = recipeId;
+    });
+  }
+  // A key set to undefined is dropped, so a step can empty a slot.
+  return Object.fromEntries(Object.entries({ ...form, ...extra }).filter(([, value]) => value !== undefined));
+}
+
+function shareDayPath(day) {
+  return `/plan/day?start=${shareStart}&day=${day}`;
+}
+
+// The day page's lunch <section>: from its batch note to the section's end (meal sections never nest).
+function lunchSection(body) {
+  const at = body.indexOf('data-testid="day-batch-lunch"');
+  return at < 0 ? "" : body.slice(at, body.indexOf("</section>", at));
+}
+
+// Both days of a group must read the SAME status, byte for byte.
+function groupStatusProblem(body, pattern) {
+  const [day0, day1] = [testIdText(body, "day-status-0"), testIdText(body, "day-status-1")];
+  if (day0 !== day1) return `day 0 reads "${day0}" but day 1 reads "${day1}"`;
+  return pattern.test(day0) ? null : `status "${day0}" does not match ${pattern}`;
 }
 
 const anon = makeClient();
@@ -738,6 +789,167 @@ const steps = [
     { status: 404, body: testIdBody("day-not-found", "Day not found") },
   ],
 
+  // --- S-08: one batch shared across two days ----------------------------------------------------
+  [
+    // Also exercises the "whole day for" shortcut, which no other step does: day1_eater overrides
+    // d1_breakfast_eater, so Tuesday's breakfast is stored for both.
+    "A saves two days sharing one lunch batch",
+    () =>
+      a.request("/api/plan", {
+        method: "POST",
+        form: shareForm({ day1_eater: "both", d1_breakfast_eater: "me" }),
+      }),
+    { status: 302, location: shareSaved },
+  ],
+  [
+    "A plan page renders the share in star form, with its batch notes and the day override applied",
+    () => a.request(`/plan?start=${shareStart}`),
+    {
+      status: 200,
+      body: new RegExp(
+        `^(?=[\\s\\S]*name="d1_lunch_batch"[^>]*>(?:(?!</select>)[\\s\\S])*<option value="0_lunch" selected)` +
+          `(?![\\s\\S]*name="d0_lunch_batch"[^>]*>(?:(?!</select>)[\\s\\S])*selected)` +
+          `(?=[\\s\\S]*name="d1_breakfast_eater"[^>]*>(?:(?!</select>)[\\s\\S])*<option value="both" selected)` +
+          `(?=[\\s\\S]*${testIdBody("batch-0_lunch", S08_COOK_NOTE).source})` +
+          `[\\s\\S]*${testIdBody("batch-1_lunch", S08_FROM_NOTE).source}`,
+      ),
+    },
+  ],
+  [
+    // FR-018 once per group: on its lowest day, as a group sentence.
+    "A plan page prompts the group once, on its lowest day",
+    () => a.request(`/plan?start=${shareStart}`),
+    {
+      status: 200,
+      body: new RegExp(
+        `^(?![\\s\\S]*data-testid="day-prompt-1")(?=[\\s\\S]*data-testid="day-group-1")` +
+          `[\\s\\S]*${testIdBody("day-prompt-0", S08_GROUP_PROMPT).source}`,
+      ),
+    },
+  ],
+  [
+    "A drops Monday's dinner: a mixed group",
+    () => a.request("/api/plan", { method: "POST", form: shareForm({ d0_dinner_recipe: undefined }) }),
+    { status: 302, location: shareSaved },
+  ],
+  [
+    // The 4-meal lead day still prompts because Tuesday is full -- and the sentence must not claim
+    // Monday "has all 5 meals", which the singleton formatSolvePrompt() would.
+    "the mixed group still prompts on its lowest day, as a group",
+    () => a.request(`/plan?start=${shareStart}`),
+    {
+      status: 200,
+      body: new RegExp(
+        `^(?![\\s\\S]*data-testid="day-prompt-1")(?![\\s\\S]*has all 5 meals)` +
+          `[\\s\\S]*${testIdBody("day-prompt-0", S08_GROUP_PROMPT).source}`,
+      ),
+    },
+  ],
+  [
+    "A restores Monday's dinner",
+    () => a.request("/api/plan", { method: "POST", form: shareForm() }),
+    { status: 302, location: shareSaved },
+  ],
+  [
+    // The slice's claim: one coupled solve lands BOTH days in tolerance. The exact tier is a property
+    // of the LP (F5's unit test pins it to 10 or 15), so a looser tier is accepted for the result seen.
+    "A solves Monday: the group is solved, accepting a looser tier if needed",
+    async () => {
+      const res = await a.request("/api/plan/solve", {
+        method: "POST",
+        form: { start_date: shareStart, day_index: "0" },
+      });
+      const page = res.location ? await a.request(res.location) : res;
+      const tier = /Best fit needs ±(15|20)% — accept to use it/.exec(testIdText(page.body, "day-solve-summary"));
+      const fingerprint = /name="fingerprint" value="([0-9a-f]{64})"/.exec(page.body)?.[1];
+      if (tier && fingerprint) {
+        const accepted = await a.request("/api/plan/solve", {
+          method: "POST",
+          form: { start_date: shareStart, day_index: "0", accept_tolerance: tier[1], fingerprint },
+        });
+        return accepted.location ? a.request(accepted.location) : accepted;
+      }
+      return page;
+    },
+    { status: 200, body: /data-testid="day-solve-summary"[^>]*>\s*Solved within ±(10|15|20)%\s*</ },
+  ],
+  [
+    "A plan page shows both days of the group with one identical status",
+    () => a.request(`/plan?start=${shareStart}`),
+    { status: 200, check: (actual) => groupStatusProblem(actual.body, /^Solved within ±(10|15|20)%$/) },
+  ],
+  [
+    // One batch, not two: its ingredient amounts appear on the cook day only.
+    "Monday's day page cooks the whole batch and lists its amounts",
+    () => a.request(shareDayPath(0)),
+    {
+      status: 200,
+      body: testIdBody("day-batch-lunch", S08_COOK_NOTE),
+      check: (actual) => (/<li[\s>]/.test(lunchSection(actual.body)) ? null : "no batch ingredient list on Monday"),
+    },
+  ],
+  [
+    "Tuesday's day page eats from Monday's batch, with no batch amounts",
+    () => a.request(shareDayPath(1)),
+    {
+      status: 200,
+      body: testIdBody("day-batch-lunch", S08_FROM_NOTE),
+      check: (actual) => {
+        const lunch = lunchSection(actual.body);
+        if (lunch === "") return "no lunch section on Tuesday";
+        return /<li[\s>]/.test(lunch) ? "Tuesday repeats the batch ingredient list" : null;
+      },
+    },
+  ],
+  [
+    // An eater-only edit on ONE day keeps every meal id; the group fingerprint must still notice it.
+    "B marks Tuesday's lunch for A only",
+    () => b.request("/api/plan", { method: "POST", form: shareForm({ d1_lunch_eater: "partner" }) }),
+    { status: 302, location: shareSaved },
+  ],
+  [
+    "both days of the group are out of date",
+    () => a.request(`/plan?start=${shareStart}`),
+    { status: 200, check: (actual) => groupStatusProblem(actual.body, /^Out of date$/) },
+  ],
+  [
+    "A un-shares Tuesday's lunch",
+    () => a.request("/api/plan", { method: "POST", form: shareForm({ d1_lunch_batch: "" }) }),
+    { status: 302, location: shareSaved },
+  ],
+  [
+    "the batch notes are gone and both days are out of date",
+    () => a.request(`/plan?start=${shareStart}`),
+    {
+      status: 200,
+      body: /^(?![\s\S]*data-testid="batch-[01]_lunch")(?![\s\S]*data-testid="day-group-)/,
+      check: (actual) => groupStatusProblem(actual.body, /^Out of date$/),
+    },
+  ],
+  [
+    "A re-shares Tuesday's lunch",
+    () => a.request("/api/plan", { method: "POST", form: shareForm() }),
+    { status: 302, location: shareSaved },
+  ],
+  [
+    // The grid posts Tuesday's star-form share unchanged, so swapping the batch's lead slot must save
+    // with a fresh batch for Tuesday and a soft notice, not reject the whole grid. KD017 itself stays
+    // pinned by npm run test:rls.
+    "A swaps Monday's lunch, the batch's lead slot: Tuesday's share is dropped, not rejected",
+    () => a.request("/api/plan", { method: "POST", form: shareForm({ d0_lunch_recipe: seedRecipe6 }) }),
+    {
+      status: 302,
+      location: new RegExp(
+        `^${escapeRe(`/plan?start=${shareStart}&saved=1&notice=${encodeURIComponent(S08_UNSHARED_NOTICE)}`)}$`,
+      ),
+    },
+  ],
+  [
+    "the dropped share has no batch note",
+    () => a.request(`/plan?start=${shareStart}`),
+    { status: 200, body: /^(?![\s\S]*data-testid="batch-[01]_lunch")/ },
+  ],
+
   [
     "signout clears session",
     () => a.request("/api/auth/signout", { method: "POST" }),
@@ -805,6 +1017,16 @@ for (const [name, run, rawExpected] of steps) {
       }
       // S-04: likewise its own loop.
       for (const id of S04_TEST_IDS) {
+        if (actual.body.includes(`data-testid="${id}"`)) {
+          console.log(`      got ${id}: ${testIdText(actual.body, id)}`);
+        }
+      }
+    }
+    // S-08: likewise its own loop, and also for `check`-only steps (which carry no body regex, so the
+    // S-04 ids they compare were not printed above).
+    if (expected.body !== undefined || problem !== null) {
+      const ids = expected.body === undefined ? [...S04_TEST_IDS, ...S08_TEST_IDS] : S08_TEST_IDS;
+      for (const id of ids) {
         if (actual.body.includes(`data-testid="${id}"`)) {
           console.log(`      got ${id}: ${testIdText(actual.body, id)}`);
         }

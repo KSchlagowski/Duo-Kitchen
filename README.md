@@ -127,18 +127,18 @@ Users can then sign in immediately after sign-up without clicking a confirmation
 
 ### Auth routes
 
-| Route                 | Description                                                             |
-| --------------------- | ----------------------------------------------------------------------- |
-| `/auth/signin`        | Email/password sign-in form                                             |
-| `/auth/signup`        | Email/password sign-up form                                             |
-| `/auth/confirm-email` | Post-signup "check your inbox" page                                     |
-| `/join`               | Invite redemption — intentionally **unprotected** (see below)           |
-| `/dashboard`          | Example protected page (redirects to `/auth/signin` if unauthenticated) |
-| `/targets`            | Your own daily macro targets (editable) and your partner's (read-only)  |
-| `/plan`               | Household 3-day meal plan (shared with your partner)                    |
-| `/plan/day`           | One plan day's macro solve (`?start=<date>&day=<0-2>`); 404 if no plan  |
-| `/recipes`            | The shared recipe library as a grid of cards                            |
-| `/recipes/[id]`       | One recipe's full detail; 404 for a malformed or unknown id             |
+| Route                 | Description                                                                                      |
+| --------------------- | ------------------------------------------------------------------------------------------------ |
+| `/auth/signin`        | Email/password sign-in form                                                                      |
+| `/auth/signup`        | Email/password sign-up form                                                                      |
+| `/auth/confirm-email` | Post-signup "check your inbox" page                                                              |
+| `/join`               | Invite redemption — intentionally **unprotected** (see below)                                    |
+| `/dashboard`          | Example protected page (redirects to `/auth/signin` if unauthenticated)                          |
+| `/targets`            | Your own daily macro targets (editable) and your partner's (read-only)                           |
+| `/plan`               | Household 3-day meal plan (shared with your partner); a slot can share a batch with another slot |
+| `/plan/day`           | One plan day's macro solve (`?start=<date>&day=<0-2>`); 404 if no plan                           |
+| `/recipes`            | The shared recipe library as a grid of cards                                                     |
+| `/recipes/[id]`       | One recipe's full detail; 404 for a malformed or unknown id                                      |
 
 Route protection is handled in `src/middleware.ts`. Add paths to the `PROTECTED_ROUTES` array there to require authentication.
 
@@ -206,6 +206,8 @@ For S-03 it also covers the meal plan. `/plan` and `/api/plan` turn away anonymo
 It also covers S-05: both recipe routes redirect a signed-out visitor, `/recipes` lists at least the 8 seed recipes as cards, the `Kurczak curry z ryżem` detail shows its meal types, division mode, make-ahead/fresh step split and a whole-batch macro total and cooked weights pinned from an independent SQL query (see the comment above the S-05 fixtures in `scripts/smoke.mjs`), the whole-dish and no-meal-type cases render, and a malformed or unknown recipe id returns 404.
 
 For S-04 it solves days of a separate plan (`2031-01-13`) saved by the first account. Signed-out visitors are sent to sign-in from `/plan/day` and `/api/plan/solve`. Only the two full days get the solve prompt on `/plan`. The fitting day solves `Solved within ±10%`, and solving it again gives identical numbers. The partner sees the same numbers with "You" and "Partner" swapped. The all-whole-dish day names _Leczo z kiełbasą_ as the most obstructive recipe. The 4-meal day needs ±15 % or ±20 % and is accepted at that tier. An eater-only edit by the partner then marks the first day **Out of date**, and an unknown day index returns 404. The solve numbers are not pinned from an SQL oracle, because there is no LP in SQL: determinism and partner symmetry are asserted instead, and the exact quantities are covered by `npm test`.
+
+For S-08 it shares one batch across two days of a third plan (`2031-01-20`): the F1 mix on Monday and Tuesday, with Tuesday's lunch set to share Monday's curry batch (the save also exercises the "whole day for" shortcut). `/plan` re-renders the share in canonical form with a batch note on both slots and prompts the group **once**, on Monday, with a group sentence — also after Monday drops a meal, when only Tuesday is full. One solve of Monday stores both days, which then read the same `Solved within ±…%` status (a looser tier is accepted when the LP needs it). Monday's day page lists the batch amounts and Tuesday's shows only the from-batch note and the portions. An eater-only edit by the partner on Tuesday marks **both** days out of date, un-sharing removes the batch notes, and swapping the recipe of a batch's lead slot saves Tuesday as a fresh batch with a notice instead of rejecting the grid (the RPC's own KD017 rejection is covered by `npm run test:rls`).
 
 > **Note:** this script exists primarily to guard the development of the starter itself — it is a fast sanity check that dependency upgrades did not break the build, the Cloudflare adapter or the Supabase auth flow. It is **not** a substitute for a real test suite. Once you build your own product on top of this starter, add proper tests (unit, integration, end-to-end) suited to your application.
 

@@ -8,9 +8,13 @@ import {
   DAY_UNAVAILABLE,
   FULL_TARGETS_NOTE,
   NOT_SOLVED_YET,
+  formatCookDayNote,
   formatDaySolveSummary,
   formatEaters,
+  formatFromBatchNote,
+  formatGroupSolveNote,
   formatPersonLine,
+  formatSameDayBatchNote,
   formatSolvedAt,
   formatSplitLine,
   formatTargetLine,
@@ -22,7 +26,7 @@ import { addDays, isIsoDate, weekdayLabel } from "@/lib/services/meal-plans";
 import { formatIngredientAmount } from "@/lib/services/recipe-macros";
 import { MEAL_TYPE_LABELS } from "@/lib/recipe-labels";
 import { cn } from "@/lib/utils";
-import type { DayView, PlanDayIndex } from "@/types";
+import type { DaySolutionMeal, DayView, PlanDayIndex } from "@/types";
 
 // S-04: one plan day's STORED macro solve, and the forms that solve or accept it. The page never
 // computes a result it does not store; staleness is a fingerprint comparison (getDayView).
@@ -73,6 +77,24 @@ const missingOwnTargets =
 // Accepting is offered only for the exact result on screen, and never for an out-of-date one.
 const acceptTier =
   stored !== null && !stale && stored.status === "needs_confirmation" ? stored.solution.requiredTier : null;
+
+// S-08: a day that shares a batch with another day solves, stores and goes stale with it.
+const weekdayOf = (day: PlanDayIndex) => (isIsoDate(startParam) ? weekdayLabel(addDays(startParam, day)) : "");
+const otherGroupDays = view && dayIndex !== null ? view.groupDayIndexes.filter((day) => day !== dayIndex) : [];
+const groupSolveNote = otherGroupDays.length > 0 ? formatGroupSolveNote(otherGroupDays.map(weekdayOf)) : null;
+const mealTypeOf = (mealId: string) => solution?.meals.find((meal) => meal.mealId === mealId)?.mealType;
+
+// A shared batch's note: on its cook day the days its other portions are for; on any other day
+// the day it was cooked on. Null for a batch cooked for this meal alone.
+function batchNoteOf(meal: DaySolutionMeal): string | null {
+  if (meal.batch === null || dayIndex === null) return null;
+  if (meal.batch.cookDayIndex !== dayIndex) return formatFromBatchNote(weekdayOf(meal.batch.cookDayIndex));
+  const days = new Set(meal.components.flatMap((c) => c.split.shares.map((share) => share.dayIndex)));
+  const otherDays = ([0, 1, 2] as const).filter((day) => day !== dayIndex && days.has(day));
+  if (otherDays.length > 0) return formatCookDayNote(otherDays.map(weekdayOf));
+  const otherMeals = meal.batch.mealIds.filter((id) => id !== meal.mealId).map(mealTypeOf);
+  return formatSameDayBatchNote(otherMeals.flatMap((type) => (type ? [MEAL_TYPE_LABELS[type]] : [])));
+}
 
 const solved = Astro.url.searchParams.get("solved") === "1";
 const notice = Astro.url.searchParams.get("error");
@@ -130,6 +152,7 @@ const buttonClass =
           <p class="text-sm text-amber-100" data-testid="day-solve-stale">
             {DAY_SOLVE_STALE}
           </p>
+          {groupSolveNote && !unsolvable && <p class="text-xs text-amber-100/80">{groupSolveNote}</p>}
           {!unsolvable && (
             <form method="POST" action="/api/plan/solve">
               <input type="hidden" name="start_date" value={startParam} />
@@ -147,6 +170,11 @@ const buttonClass =
           <p class="text-lg font-semibold" data-testid="day-solve-summary">
             {NOT_SOLVED_YET}
           </p>
+          {groupSolveNote && (
+            <p class="text-xs text-blue-100/60" data-testid="day-group-note">
+              {groupSolveNote}
+            </p>
+          )}
           <form method="POST" action="/api/plan/solve">
             <input type="hidden" name="start_date" value={startParam} />
             <input type="hidden" name="day_index" value={dayParam} />
@@ -172,6 +200,11 @@ const buttonClass =
             </p>
           )}
 
+          {!stale && groupSolveNote && (
+            <p class="mt-3 text-xs text-blue-100/60" data-testid="day-group-note">
+              {groupSolveNote}
+            </p>
+          )}
           {!stale && (
             <div class="mt-3 flex flex-wrap gap-2">
               {acceptTier !== null && (
@@ -211,39 +244,66 @@ const buttonClass =
             <p class="text-xs text-blue-100/60">{FULL_TARGETS_NOTE}</p>
           </section>
 
-          {solution.meals.map((meal) => (
-            <section class="mt-4 rounded-xl border border-white/10 bg-white/5 p-4">
-              <h2 class="font-semibold">
-                <a href={`/recipes/${meal.recipeId}`} class="hover:underline">
-                  {meal.recipeName}
-                </a>
-              </h2>
-              <p class="mb-2 text-xs text-blue-100/70">
-                {MEAL_TYPE_LABELS[meal.mealType]} · {formatEaters(meal, viewerId)}
-              </p>
-              {meal.components.map((component) => (
-                <div class="mt-2 border-t border-white/10 pt-2">
-                  {meal.divisionMode === "per_component" && <h3 class="text-sm font-medium">{component.name}</h3>}
-                  <ul class="mt-1 space-y-0.5 text-sm">
-                    {component.ingredients.map((ingredient) => (
-                      <li>
-                        <span class="text-white">{ingredient.productName}</span>
-                        <span class="text-blue-100/80">
-                          {" "}
-                          {formatIngredientAmount(
-                            ingredient.amountG,
-                            ingredient.gramsPerPiece,
-                            ingredient.allowHalfPieces,
-                          )}
-                        </span>
-                      </li>
-                    ))}
-                  </ul>
-                  <p class="mt-1 text-sm text-purple-200">{formatSplitLine(component, viewerId)}</p>
-                </div>
-              ))}
-            </section>
-          ))}
+          {solution.meals.map((meal) => {
+            const batchNote = batchNoteOf(meal);
+            // A batch cooked on another day: its amounts belong to that day's page. Here only the
+            // note and the portions (the stored jsonb still carries the full batch on both days).
+            const cookedElsewhere = meal.batch !== null && meal.batch.cookDayIndex !== dayIndex;
+            return (
+              <section class="mt-4 rounded-xl border border-white/10 bg-white/5 p-4">
+                <h2 class="font-semibold">
+                  <a href={`/recipes/${meal.recipeId}`} class="hover:underline">
+                    {meal.recipeName}
+                  </a>
+                </h2>
+                <p class="mb-2 text-xs text-blue-100/70">
+                  {MEAL_TYPE_LABELS[meal.mealType]} · {formatEaters(meal, viewerId)}
+                </p>
+                {batchNote && (
+                  <p class="mb-2 text-sm text-amber-100" data-testid={`day-batch-${meal.mealType}`}>
+                    {batchNote}
+                  </p>
+                )}
+                {meal.components.map((component) => (
+                  <div class="mt-2 border-t border-white/10 pt-2">
+                    {meal.divisionMode === "per_component" && <h3 class="text-sm font-medium">{component.name}</h3>}
+                    {!cookedElsewhere && (
+                      <ul class="mt-1 space-y-0.5 text-sm">
+                        {component.ingredients.map((ingredient) => (
+                          <li>
+                            <span class="text-white">{ingredient.productName}</span>
+                            <span class="text-blue-100/80">
+                              {" "}
+                              {formatIngredientAmount(
+                                ingredient.amountG,
+                                ingredient.gramsPerPiece,
+                                ingredient.allowHalfPieces,
+                              )}
+                            </span>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                    <p class="mt-1 text-sm text-purple-200">
+                      {formatSplitLine(
+                        component,
+                        viewerId,
+                        dayIndex === null
+                          ? undefined
+                          : {
+                              mealId: meal.mealId,
+                              viewedDay: dayIndex,
+                              weekdayOf,
+                              mealTypeOf,
+                              ownOnly: cookedElsewhere,
+                            },
+                      )}
+                    </p>
+                  </div>
+                ))}
+              </section>
+            );
+          })}
         </div>
       )}
 
