@@ -217,9 +217,9 @@ Manifest and icons are static assets served by Cloudflare's asset layer; no Work
 
 #### Manual
 
-- [ ] 1.5 Chrome desktop installs a standalone Duo Kitchen window
-- [ ] 1.6 Android Chrome installs with the maskable icon
-- [ ] 1.7 iOS Safari Add to Home Screen shows icon and title and opens standalone
+- [x] 1.5 Chrome desktop installs a standalone Duo Kitchen window — 9550c58
+- [x] 1.6 Android Chrome installs with the maskable icon — 9550c58
+- [x] 1.7 iOS Safari Add to Home Screen shows icon and title and opens standalone — 9550c58
 
 > Implementation note (Phase 1, 2026-10-10): 1.4 was run against `npm run preview` without Supabase
 > secrets, so only the anonymous steps could run; the 7 F-03 steps passed. Breaking `display` in the
@@ -266,3 +266,7 @@ Manifest and icons are static assets served by Cloudflare's asset layer; no Work
 > 38134942516 failed the preflight. After they were re-entered in the GitHub UI, run 38136092437 on
 > bc8bc50 was green end to end: `All 9 migrations are applied to the hosted project.`, `wrangler deploy`
 > version e440e76a-733f-4058-a0ac-e178c561ae95, and the production probe passed.
+>
+> Manual install checks (2026-10-12): the owner confirmed 1.5–1.7 against production: Chrome desktop
+> installs a standalone window, Android Chrome installs with the maskable icon, and iOS Safari's Add to
+> Home Screen shows the Duo Kitchen icon and title and opens standalone.
