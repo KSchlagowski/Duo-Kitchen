@@ -44,6 +44,8 @@ export const SPLIT_LABELS = {
   cooked: "cooked",
   ofTheDish: "of the dish",
   splitInHalf: "split in half",
+  // An even split of a batch with more than two servings (S-08: one batch eaten on several days).
+  splitEvenly: (count: number) => `split evenly ${count} ways`,
   allForYou: "All for you",
   allForPartner: "All for your partner",
 } as const;

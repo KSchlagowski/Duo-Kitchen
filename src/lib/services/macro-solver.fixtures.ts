@@ -1,4 +1,12 @@
-import type { MacroTargetsInput, PlanMealRecord, SolverComponent, SolverIngredient, SolverRecipe } from "@/types";
+import type {
+  MacroTargetsInput,
+  MealType,
+  PlanDayIndex,
+  PlanMealRecord,
+  SolverComponent,
+  SolverIngredient,
+  SolverRecipe,
+} from "@/types";
 
 // The 8 seed recipes as solver input, transcribed from
 // supabase/migrations/20261007120100_seed_products_and_recipes.sql (moved unchanged into the public
@@ -272,15 +280,21 @@ export const TARGET_B: MacroTargetsInput = { kcal: 1800, proteinG: 120, fatG: 60
 
 const SLOTS = ["breakfast", "second_breakfast", "lunch", "afternoon_snack", "dinner"] as const;
 
-// One day of meals, slot by slot; `null` leaves the slot empty. Eater null = both.
-export function day(recipes: (string | null)[], eaters: (string | null)[] = []): PlanMealRecord[] {
+// One day of meals, slot by slot; `null` leaves the slot empty. Eater null = both. Every meal eats
+// from its own dish; shareDish() joins two.
+export function day(
+  recipes: (string | null)[],
+  eaters: (string | null)[] = [],
+  dayIndex: PlanDayIndex = 0,
+): PlanMealRecord[] {
   return recipes.flatMap((recipeIdValue, slot) =>
     recipeIdValue === null
       ? []
       : [
           {
-            mealId: `00000000-0000-4000-8000-0000000001${pad(slot)}`,
-            dayIndex: 0 as const,
+            mealId: `00000000-0000-4000-8000-0000000${dayIndex}01${pad(slot)}`,
+            dishId: `00000000-0000-4000-8000-0000000${dayIndex}02${pad(slot)}`,
+            dayIndex,
             mealType: SLOTS[slot],
             recipeId: recipeIdValue,
             eaterUserId: eaters[slot] ?? null,
@@ -289,7 +303,38 @@ export function day(recipes: (string | null)[], eaters: (string | null)[] = []):
   );
 }
 
-export const F1 = day([JAJECZNICA, OWSIANKA, CURRY, TWAROZEK, LECZO]);
-export const F2 = day([CIASTKA, LECZO, ZAPIEKANKA, CIASTKA, LECZO]);
+type Slot = [PlanDayIndex, MealType];
+
+// The meals of `b` eat from the dish of `a` (one batch across both slots).
+export function shareDish(meals: PlanMealRecord[], a: Slot, b: Slot): PlanMealRecord[] {
+  const at = ([dayIndex, mealType]: Slot) =>
+    meals.find((meal) => meal.dayIndex === dayIndex && meal.mealType === mealType);
+  const first = at(a);
+  const second = at(b);
+  if (!first || !second) throw new Error("shareDish: empty slot");
+  return meals.map((meal) =>
+    meal.dishId === first.dishId || meal.dishId === second.dishId ? { ...meal, dishId: first.dishId } : meal,
+  );
+}
+
+const F1_RECIPES = [JAJECZNICA, OWSIANKA, CURRY, TWAROZEK, LECZO];
+const F2_RECIPES = [CIASTKA, LECZO, ZAPIEKANKA, CIASTKA, LECZO];
+
+export const F1 = day(F1_RECIPES);
+export const F2 = day(F2_RECIPES);
 export const F3 = day([CIASTKA, LECZO, ZAPIEKANKA, CIASTKA, null]);
 export const F4 = day([JAJECZNICA, OWSIANKA, CURRY, TWAROZEK, LECZO], [null, USER_A, null, USER_B, null]);
+
+// S-08: F1 on two days with the curry lunch cooked once on day 0 and eaten on both.
+export const F5_UNSHARED = [...day(F1_RECIPES, [], 0), ...day(F1_RECIPES, [], 1)];
+export const F5 = shareDish(F5_UNSHARED, [0, "lunch"], [1, "lunch"]);
+// The worst-case group: the all-whole-dish F2 on three days, joined by two shared dishes.
+export const F6 = shareDish(
+  shareDish(
+    [...day(F2_RECIPES, [], 0), ...day(F2_RECIPES, [], 1), ...day(F2_RECIPES, [], 2)],
+    [0, "lunch"],
+    [1, "lunch"],
+  ),
+  [1, "dinner"],
+  [2, "dinner"],
+);

@@ -18,7 +18,7 @@ import type {
   UnsolvableReason,
 } from "@/types";
 import { getCurrentHousehold } from "@/lib/services/household";
-import { checkSolvable, dayFingerprint } from "@/lib/services/macro-solver";
+import { checkSolvable, solveFingerprint } from "@/lib/services/macro-solver";
 import { formatMacroTargets, getHouseholdMacroTargets } from "@/lib/services/macro-targets";
 import { MEAL_TYPES, PLAN_DAYS, errorCode, getMealPlan, type RpcResult } from "@/lib/services/meal-plans";
 import { roundHalfUp } from "@/lib/services/recipe-macros";
@@ -91,6 +91,8 @@ const macroTotalsSchema = z.object({
 
 const solveTierSchema = z.union([z.literal(10), z.literal(15), z.literal(20)]);
 
+const dayIndexSchema = z.union([z.literal(0), z.literal(1), z.literal(2)]);
+
 const daySolutionSchema: z.ZodType<DaySolution> = z.object({
   version: z.literal(1),
   people: z.array(
@@ -128,11 +130,25 @@ const daySolutionSchema: z.ZodType<DaySolution> = z.object({
             kind: z.enum(["grams_cooked", "percent", "pieces", "per_ingredient", "all"]),
             evenSplit: z.boolean(),
             shares: z
-              .array(z.object({ userId: z.string(), value: z.number().nullable(), fraction: z.number() }))
+              .array(
+                z.object({
+                  userId: z.string(),
+                  // Absent in rows stored before S-08 (SOLVER_VERSION 3).
+                  mealId: z.string().nullable().default(null),
+                  dayIndex: dayIndexSchema.nullable().default(null),
+                  value: z.number().nullable(),
+                  fraction: z.number(),
+                }),
+              )
               .min(1),
           }),
         }),
       ),
+      // Absent in rows stored before S-08: a batch cooked for that meal alone.
+      batch: z
+        .object({ dishId: z.string(), cookDayIndex: dayIndexSchema, mealIds: z.array(z.string()).min(1) })
+        .nullable()
+        .default(null),
     }),
   ),
   maxDeviationPct: z.number(),
@@ -145,6 +161,7 @@ const daySolutionSchema: z.ZodType<DaySolution> = z.object({
         recipeName: z.string(),
         macro: z.enum(["kcal", "proteinG", "fatG", "carbsG"]),
         direction: z.enum(["over", "under"]),
+        sharedAcrossDays: z.boolean().default(false),
       }),
       z.object({ kind: z.literal("targets"), userId: z.string() }),
     ])
@@ -239,7 +256,7 @@ export async function getDayView(
   }
   const [stored, fingerprint] = await Promise.all([
     getDaySolution(supabase, loaded.plan.id, dayIndex),
-    dayFingerprint(loaded.input),
+    solveFingerprint(loaded.input),
   ]);
   const unsolvable = checkSolvable(loaded.input);
   return {
@@ -289,7 +306,7 @@ export async function getPlanSolveStatuses(
       if (!stored || !solution) {
         return [day, { kind: "unsolved", mealCount }];
       }
-      if (stored.input_fingerprint !== (await dayFingerprint(input))) {
+      if (stored.input_fingerprint !== (await solveFingerprint(input))) {
         return [day, { kind: "stale", mealCount }];
       }
       return [day, { kind: stored.status, mealCount, requiredTier: solution.requiredTier }];
@@ -495,6 +512,8 @@ export function formatSplitLine(component: DaySolutionComponent, viewerId: strin
   });
   let line = parts.join(" · ");
   if (kind === "percent") line += ` ${SPLIT_LABELS.ofTheDish}`;
-  if (evenSplit) line += ` · ${SPLIT_LABELS.splitInHalf}`;
+  if (evenSplit) {
+    line += ` · ${shares.length === 2 ? SPLIT_LABELS.splitInHalf : SPLIT_LABELS.splitEvenly(shares.length)}`;
+  }
   return line;
 }

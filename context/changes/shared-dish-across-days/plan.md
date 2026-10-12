@@ -1139,10 +1139,10 @@ would cut the 3-day case the Desired End State and F6 are written around and mak
 
 #### Automated
 
-- [ ] 1.1 Type check passes: `npx astro check`
-- [ ] 1.2 Lint passes: `npm run lint`
-- [ ] 1.3 Unit tests pass, F1–F4 expectations unchanged: `npm test`
-- [ ] 1.4 The F6 coupled-worst-case regression guard passes its relative (≤ 60×) budget and the absolute budget pinned from its first measured value
+- [x] 1.1 Type check passes: `npx astro check`
+- [x] 1.2 Lint passes: `npm run lint`
+- [x] 1.3 Unit tests pass, F1–F4 expectations unchanged: `npm test`
+- [x] 1.4 The F6 coupled-worst-case regression guard passes its relative (≤ 60×) budget and the absolute budget pinned from its first measured value
 
 #### Manual
 

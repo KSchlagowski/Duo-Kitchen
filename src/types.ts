@@ -120,9 +120,15 @@ export interface PlanMeal {
   eaterUserId: string | null;
 }
 
-// A stored meal, with the id S-04 fingerprints (save_meal_plan keeps it across eater-only edits).
+// A slot the form saves, plus the slot it shares a batch with (S-08). Write-side only: a read
+// carries the shared batch as PlanMealRecord.dishId instead.
+export type PlanMealInput = PlanMeal & { shareWith: { dayIndex: PlanDayIndex; mealType: MealType } | null };
+
+// A stored meal, with the id S-04 fingerprints (save_meal_plan keeps it across eater-only edits) and
+// the plan_dishes row it eats from (S-08: several meals, possibly on several days, may share one).
 export interface PlanMealRecord extends PlanMeal {
   mealId: string;
+  dishId: string;
 }
 
 export interface MealPlan {
@@ -164,7 +170,8 @@ export interface SolverRecipe {
   components: SolverComponent[];
 }
 
-// One day's meals plus everything needed to solve them. `memberIds` resolves "both" (null eater).
+// One solve group's meals (one day, or the days a shared dish joins — S-08) plus everything needed
+// to solve them. `memberIds` resolves "both" (null eater).
 export interface SolveDayInput {
   memberIds: string[];
   meals: PlanMealRecord[];
@@ -187,11 +194,15 @@ export interface UnsolvableReason {
 
 // How one component is shared between its eaters. `value` is per kind: cooked grams, a whole
 // percentage, a piece count, or null ("per_ingredient" reads each ingredient's perPerson; "all" is
-// a single eater). `fraction` is the share the totals were computed from.
+// a single eater). `fraction` is the share the totals were computed from. One share per serving —
+// a (meal, eater) pair — so a batch eaten on two days by two people has four (S-08).
 export type DaySplitKind = "grams_cooked" | "percent" | "pieces" | "per_ingredient" | "all";
 
 export interface DaySplitShare {
   userId: string;
+  // The meal and day this serving is eaten at; null only in rows stored before S-08.
+  mealId: string | null;
+  dayIndex: PlanDayIndex | null;
   value: number | null;
   fraction: number;
 }
@@ -209,6 +220,8 @@ export interface DaySolutionIngredient {
   amountG: number;
   gramsPerPiece: number | null;
   allowHalfPieces: boolean;
+  // Per-person components only: the grams each eater of THIS meal gets, keyed by user id. A shared
+  // batch's other meals carry their own eaters' amounts in their own rows.
   perPerson: Record<string, number> | null;
 }
 
@@ -220,6 +233,15 @@ export interface DaySolutionComponent {
   split: DaySplit;
 }
 
+// A batch several meals eat from (S-08). Every meal of it carries the full batch amounts, so a
+// consumer that sums amounts (shopping list, cooking) must count each dishId once.
+export interface DaySolutionBatch {
+  dishId: string;
+  // The lowest day any meal of the batch is on: the day it is cooked.
+  cookDayIndex: PlanDayIndex;
+  mealIds: string[];
+}
+
 export interface DaySolutionMeal {
   mealId: string;
   mealType: MealType;
@@ -228,6 +250,8 @@ export interface DaySolutionMeal {
   divisionMode: DivisionMode;
   eaterUserIds: string[];
   components: DaySolutionComponent[];
+  // Null when the meal's batch is cooked for this meal alone.
+  batch: DaySolutionBatch | null;
 }
 
 export interface DaySolutionPerson {
@@ -239,15 +263,25 @@ export interface DaySolutionPerson {
 }
 
 export type DaySolveExplanation =
-  | { kind: "recipe"; mealId: string; recipeName: string; macro: MacroKey; direction: "over" | "under" }
+  | {
+      kind: "recipe";
+      mealId: string;
+      recipeName: string;
+      macro: MacroKey;
+      direction: "over" | "under";
+      // The blamed batch is eaten on more than one day (S-08).
+      sharedAcrossDays: boolean;
+    }
   | { kind: "targets"; userId: string };
 
-// Also the persisted jsonb shape (S-04 phase 2).
+// Also the persisted jsonb shape (S-04 phase 2; grown additively by S-08, still version 1).
 export interface DaySolution {
   version: 1;
   people: DaySolutionPerson[];
   meals: DaySolutionMeal[];
+  // This day's own worst |deviation|.
   maxDeviationPct: number;
+  // The solve group's tier (the worst over its days), identical on every day of the group.
   requiredTier: SolveTier | null;
   explanation: DaySolveExplanation | null;
   // True when the repaired rounding still breaks a hard bound (an ingredient minimum, 0.2×–1.5× of
@@ -256,6 +290,11 @@ export interface DaySolution {
 }
 
 export type SolveDayResult = { kind: "solution"; solution: DaySolution } | ({ kind: "unsolvable" } & UnsolvableReason);
+
+// A whole solve group: one solution per day of the group, in day order.
+export type SolveGroupResult =
+  | { kind: "solution"; days: { dayIndex: PlanDayIndex; solution: DaySolution }[] }
+  | ({ kind: "unsolvable" } & UnsolvableReason);
 
 // One row of public.plan_day_solutions, as the app reads it.
 export interface StoredDaySolution {

@@ -85,7 +85,7 @@ interface MealPlanRow {
     day_index: PlanDayIndex;
     meal_type: MealType;
     eater_user_id: string | null;
-    plan_dishes: { recipe_id: string } | null;
+    plan_dishes: { id: string; recipe_id: string } | null;
   }[];
 }
 
@@ -94,7 +94,7 @@ interface MealPlanRow {
 // The embeds name their FKs because plan_meals references both meal_plans and plan_dishes.
 export async function getMealPlan(supabase: SupabaseClient, startDate?: string): Promise<MealPlan | null> {
   const select =
-    "id, start_date, updated_at, plan_meals!plan_meals_plan_fkey(id, day_index, meal_type, eater_user_id, plan_dishes!plan_meals_dish_fkey(recipe_id))";
+    "id, start_date, updated_at, plan_meals!plan_meals_plan_fkey(id, day_index, meal_type, eater_user_id, plan_dishes!plan_meals_dish_fkey(id, recipe_id))";
   const query = supabase.from("meal_plans").select(select);
   const { data, error } = await (startDate
     ? query.eq("start_date", startDate).maybeSingle()
@@ -119,6 +119,7 @@ export async function getMealPlan(supabase: SupabaseClient, startDate?: string):
         ? [
             {
               mealId: meal.id,
+              dishId: meal.plan_dishes.id,
               dayIndex: meal.day_index,
               mealType: meal.meal_type,
               recipeId: meal.plan_dishes.recipe_id,
