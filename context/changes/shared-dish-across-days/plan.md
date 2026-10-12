@@ -1186,14 +1186,14 @@ would cut the 3-day case the Desired End State and F6 are written around and mak
 
 #### Automated
 
-- [ ] 4.1 Lint passes: `npm run lint`
-- [ ] 4.2 Type check passes: `npx astro check`
-- [ ] 4.3 Unit tests pass: `npm test`
-- [ ] 4.4 Isolation test passes: `npm run test:rls`
-- [ ] 4.5 Seed integrity passes: `npm run test:seed`
-- [ ] 4.6 Migrations are all applied: `npm run check:migrations`
-- [ ] 4.7 Build succeeds: `npm run build`
-- [ ] 4.8 The full smoke run passes, including the new S-08 section: `npm run smoke`
+- [x] 4.1 Lint passes: `npm run lint`
+- [x] 4.2 Type check passes: `npx astro check`
+- [x] 4.3 Unit tests pass: `npm test`
+- [x] 4.4 Isolation test passes: `npm run test:rls`
+- [x] 4.5 Seed integrity passes: `npm run test:seed`
+- [x] 4.6 Migrations are all applied: `npm run check:migrations`
+- [x] 4.7 Build succeeds: `npm run build`
+- [x] 4.8 The full smoke run passes, including the new S-08 section: `npm run smoke`
 
 #### Manual
 
