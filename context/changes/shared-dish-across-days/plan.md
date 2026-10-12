@@ -1168,10 +1168,10 @@ would cut the 3-day case the Desired End State and F6 are written around and mak
 
 #### Automated
 
-- [x] 3.1 Type check passes: `npx astro check`
-- [x] 3.2 Lint passes: `npm run lint`
-- [x] 3.3 Unit tests still pass: `npm test`
-- [x] 3.4 Production build succeeds: `npm run build`
+- [x] 3.1 Type check passes: `npx astro check` — 5ec8b73
+- [x] 3.2 Lint passes: `npm run lint` — 5ec8b73
+- [x] 3.3 Unit tests still pass: `npm test` — 5ec8b73
+- [x] 3.4 Production build succeeds: `npm run build` — 5ec8b73
 
 #### Manual
 
