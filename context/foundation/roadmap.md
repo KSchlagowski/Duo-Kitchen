@@ -3,7 +3,7 @@ project: "Duo Kitchen"
 version: 1
 status: draft
 created: 2026-10-06
-updated: 2026-10-11
+updated: 2026-10-12
 prd_version: 1
 main_goal: market-feedback
 top_blocker: time
@@ -359,3 +359,4 @@ Foundations below assume these are present and do NOT re-scaffold them.
 - **S-03: user can fill 3 consecutive days with up to 5 meals each, place any recipe in any slot, mark each meal or day for A, B or both, leave slots empty, and save and use the plan without solving.** — Archived 2026-10-09 → `context/archive/2026-10-08-plan-three-day-grid/`. Lesson: —.
 - **S-05: user can browse recipe cards (photo, name, cuisine, both partners' ratings) and open a recipe's full details: ingredients with quantities, macros and rounding step, make-ahead vs. fresh steps, divisible components or whole-dish flag, raw/cooked weights, suggested meal types, cuisine and prep time.** — Archived 2026-10-09 → `context/archive/2026-10-08-browse-recipe-library/`. Lesson: —.
 - **S-04: user can solve a planned day (prompted when 5 meals are filled, or manually any time) and see per-ingredient / per-component / whole-dish quantities to cook and how to split them between A and B, with each person's daily totals within ±10%, escalating to ±15% and ±20% on confirmation and then naming the recipe that most hinders a fit.** — Archived 2026-10-09 → `context/archive/2026-10-09-solve-daily-macros/`. Lesson: —.
+- **F-03: (foundation) merging to `main` deploys the app to production with a production Supabase project, and the app installs to the home screen on desktop, Android and iOS.** — Archived 2026-10-12 → `context/archive/2026-10-10-deploy-and-install-skeleton/` (the unexecuted re-plan is `context/archive/2026-10-11-deploy-and-install-skeleton/`). Lesson: —.
