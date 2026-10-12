@@ -239,9 +239,9 @@ Manifest and icons are static assets served by Cloudflare's asset layer; no Work
 
 #### Manual
 
-- [ ] 2.4 Owner adds `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` secrets
-- [ ] 2.5 `npm run check:migrations` passes against the hosted project
-- [ ] 2.6 First merge to `main`: deploy job green, production serves the manifest
+- [x] 2.4 Owner adds `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` secrets — bc8bc50
+- [x] 2.5 `npm run check:migrations` passes against the hosted project — bc8bc50 (in CI; still fails locally on Windows)
+- [x] 2.6 First merge to `main`: deploy job green, production serves the manifest — bc8bc50
 
 > Implementation note (Phase 2, 2026-10-10): this environment has no `SUPABASE_ACCESS_TOKEN` and no
 > Cloudflare credentials, so 2.4–2.6 remain for the owner. `check:migrations` fails closed when the
@@ -260,3 +260,9 @@ Manifest and icons are static assets served by Cloudflare's asset layer; no Work
 > manually instead with `npx wrangler deploy` (version c8db76a6-26a2-4efc-a3d9-53c2807ac929). It serves
 > `/`, the manifest (`application/manifest+json`), the four icons and the head links. 2.6 stays open
 > until a CI `deploy` job is green.
+>
+> Deploy confirmed (2026-10-11): the `CLOUDFLARE_*` secrets were first saved empty (pasting into
+> `gh secret set`'s hidden prompt on Windows stored an empty string), so runs 38096636201 and
+> 38134942516 failed the preflight. After they were re-entered in the GitHub UI, run 38136092437 on
+> bc8bc50 was green end to end: `All 9 migrations are applied to the hosted project.`, `wrangler deploy`
+> version e440e76a-733f-4058-a0ac-e178c561ae95, and the production probe passed.
