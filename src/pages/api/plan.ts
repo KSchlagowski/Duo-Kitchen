@@ -6,26 +6,32 @@ import {
   MEAL_TYPES,
   PLAN_DAYS,
   PLAN_SAVE_FAILED,
+  SHARE_EMPTY_SLOT,
+  SHARE_INVALID_SLOT,
+  SHARE_OTHER_RECIPE,
   isIsoDate,
   mealPlanErrorMessage,
   saveMealPlan,
 } from "@/lib/services/meal-plans";
-import type { PlanEater, PlanMeal } from "@/types";
+import type { MealType, PlanDayIndex, PlanEater, PlanMealInput } from "@/types";
 
 const INVALID_PLAN = "That plan could not be read. Please check the start date and try again.";
 const PARTNER_NOT_LINKED = "You can mark meals for your partner once you're linked.";
 
 const eater = z.enum(["both", "me", "partner"]);
 
-// Field names: start_date, day{n}_eater, d{n}_{meal_type}_recipe, d{n}_{meal_type}_eater. An absent
-// slot eater defaults to "both"; an empty recipe means an empty slot (FR-015). Explicit enums and
-// no coercion, so a blank or junk value is rejected rather than silently mapped.
+// Field names: start_date, day{n}_eater, d{n}_{meal_type}_recipe, d{n}_{meal_type}_eater and
+// d{n}_{meal_type}_batch (S-08: "" for a fresh batch, or "<day>_<meal_type>" of the slot it shares
+// one with). An absent slot eater defaults to "both"; an empty recipe means an empty slot (FR-015).
+// Explicit enums and no coercion, so a blank or junk value is rejected rather than silently mapped.
+const slotRef = z.string().regex(new RegExp(`^[${PLAN_DAYS.join("")}]_(${MEAL_TYPES.join("|")})$`));
 const slotFields: Record<string, z.ZodType> = {};
 for (const day of PLAN_DAYS) {
   slotFields[`day${day}_eater`] = z.enum(["", "both", "me", "partner"]).default("");
   for (const mealType of MEAL_TYPES) {
     slotFields[`d${day}_${mealType}_recipe`] = z.union([z.literal(""), z.uuid()]).default("");
     slotFields[`d${day}_${mealType}_eater`] = eater.default("both");
+    slotFields[`d${day}_${mealType}_batch`] = z.union([z.literal(""), slotRef]).default("");
   }
 }
 const slotsSchema = z.object(slotFields);
@@ -87,7 +93,7 @@ export const POST: APIRoute = async (context) => {
     return context.redirect(errorUrl(startDate, PLAN_SAVE_FAILED));
   }
 
-  const meals: PlanMeal[] = [];
+  const meals: PlanMealInput[] = [];
   for (const day of PLAN_DAYS) {
     // The "whole day for" shortcut overrides every filled meal of that day; it is not stored.
     const dayEater = fields[`day${day}_eater`];
@@ -106,7 +112,24 @@ export const POST: APIRoute = async (context) => {
         }
         eaterUserId = partnerId;
       }
-      meals.push({ dayIndex: day, mealType, recipeId, eaterUserId });
+      const batch = fields[`d${day}_${mealType}_batch`];
+      let shareWith: PlanMealInput["shareWith"] = null;
+      // UX checks ahead of save_meal_plan's KD015-KD017, which remain the guarantee.
+      if (batch) {
+        const [targetDay, targetType] = [Number(batch.slice(0, 1)) as PlanDayIndex, batch.slice(2) as MealType];
+        if (targetDay === day && targetType === mealType) {
+          return context.redirect(errorUrl(startDate, SHARE_INVALID_SLOT));
+        }
+        const targetRecipe = fields[`d${targetDay}_${targetType}_recipe`];
+        if (!targetRecipe) {
+          return context.redirect(errorUrl(startDate, SHARE_EMPTY_SLOT));
+        }
+        if (targetRecipe !== recipeId) {
+          return context.redirect(errorUrl(startDate, SHARE_OTHER_RECIPE));
+        }
+        shareWith = { dayIndex: targetDay, mealType: targetType };
+      }
+      meals.push({ dayIndex: day, mealType, recipeId, eaterUserId, shareWith });
     }
   }
 

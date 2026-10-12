@@ -43,6 +43,8 @@ export const EATER_LABELS = { you: "You", partner: "Partner", both: "Both" } as 
 export const SPLIT_LABELS = {
   cooked: "cooked",
   ofTheDish: "of the dish",
+  // A per-ingredient serving eaten at another meal of a shared batch (S-08).
+  ofTheBatch: "of the batch",
   splitInHalf: "split in half",
   // An even split of a batch with more than two servings (S-08: one batch eaten on several days).
   splitEvenly: (count: number) => `split evenly ${count} ways`,

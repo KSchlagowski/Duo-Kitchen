@@ -305,9 +305,11 @@ export interface StoredDaySolution {
   solvedAt: string;
 }
 
-// The day page's model: the current inputs (or why they cannot be solved), the stored result, and
-// whether that result is out of date. `stale` is true when the stored fingerprint differs from the
-// current one, or when a stored result exists but the current inputs are unsolvable.
+// The day page's model: the current inputs of the day's solve group (or why they cannot be solved),
+// the stored result, and whether that result is out of date. `fingerprint` is the GROUP's (S-08), so
+// an edit to any day of the group makes every day of it stale. `stale` is true when the stored
+// fingerprint differs from the current one, or when a stored result exists but the current inputs
+// are unsolvable. `stored` is the viewed day's row; `groupStored` holds every group day's row.
 export interface DayView {
   plan: MealPlan;
   input: SolveDayInput;
@@ -315,12 +317,19 @@ export interface DayView {
   fingerprint: string;
   stored: StoredDaySolution | null;
   stale: boolean;
+  groupDayIndexes: PlanDayIndex[];
+  groupStored: Partial<Record<PlanDayIndex, StoredDaySolution>>;
 }
 
 // One day's standing on the /plan grid. `requiredTier` is set for a current stored solution only.
+// Every day of a solve group carries the group's status (S-08); only the group's lowest day
+// (`isGroupLead`) prompts, and `groupMaxMealCount` is the most meals any one day of the group holds.
 export interface PlanDaySolveStatus {
   kind: "empty" | "unsolved" | "stale" | "unsolvable" | DaySolveStatus;
   mealCount: number;
   requiredTier?: SolveTier | null;
+  groupDayIndexes: PlanDayIndex[];
+  isGroupLead: boolean;
+  groupMaxMealCount: number;
 }
 // --- end S-04 -------------------------------------------------------------------------------

@@ -6,45 +6,63 @@ import type {
   DaySolutionMeal,
   DaySolutionPerson,
   DaySolveStatus,
+  DaySplitShare,
   DayView,
   MacroKey,
   MacroTargetsInput,
   MealPlan,
+  MealType,
   PlanDayIndex,
   PlanDaySolveStatus,
   SolveDayInput,
+  PlanMealRecord,
   SolveTier,
   StoredDaySolution,
   UnsolvableReason,
 } from "@/types";
 import { getCurrentHousehold } from "@/lib/services/household";
-import { checkSolvable, solveFingerprint } from "@/lib/services/macro-solver";
+import { checkSolvable, groupDayIndexes, solveFingerprint, solveGroups } from "@/lib/services/macro-solver";
 import { formatMacroTargets, getHouseholdMacroTargets } from "@/lib/services/macro-targets";
-import { MEAL_TYPES, PLAN_DAYS, errorCode, getMealPlan, type RpcResult } from "@/lib/services/meal-plans";
+import { MEAL_TYPES, errorCode, getMealPlan, type RpcResult } from "@/lib/services/meal-plans";
 import { roundHalfUp } from "@/lib/services/recipe-macros";
 import { getSolverRecipes } from "@/lib/services/recipes";
-import { EATER_LABELS, MACRO_DIRECTION_LABELS, MACRO_SHORT_LABELS, SPLIT_LABELS } from "@/lib/recipe-labels";
+import {
+  EATER_LABELS,
+  MACRO_DIRECTION_LABELS,
+  MACRO_SHORT_LABELS,
+  MEAL_TYPE_LABELS,
+  SPLIT_LABELS,
+} from "@/lib/recipe-labels";
 
 // Solving one planned day (S-04): the reads that feed the pure solver (macro-solver.ts) and the
 // sentence templates the day page shows. Enum labels live in recipe-labels.ts (S-14 localises them).
+// Since S-08 the unit of work is the solve group: the days a shared dish joins solve, store and go
+// stale together. A day that shares nothing is a group of one and behaves exactly as before.
 
-// Everything solveDay() needs for one day, or null when no plan exists for that date. A failed
-// read throws: it must never degrade into "no targets" or "no meals".
-export async function loadDaySolveInputs(
+// The meals of the solve group containing `dayIndex` and the days it covers. A day with no meals is
+// a group of one with no meals (checkSolvable() reports it).
+function groupOf(plan: MealPlan, dayIndex: PlanDayIndex): { meals: PlanMealRecord[]; days: PlanDayIndex[] } {
+  const meals = solveGroups(plan.meals).find((group) => group.some((meal) => meal.dayIndex === dayIndex)) ?? [];
+  return { meals, days: meals.length > 0 ? groupDayIndexes(meals) : [dayIndex] };
+}
+
+// Everything solveGroup() needs for the group containing `dayIndex`, or null when no plan exists for
+// that date. A failed read throws: it must never degrade into "no targets" or "no meals".
+export async function loadGroupSolveInputs(
   supabase: SupabaseClient,
   startDate: string,
   dayIndex: PlanDayIndex,
-): Promise<{ plan: MealPlan; input: SolveDayInput } | null> {
+): Promise<{ plan: MealPlan; input: SolveDayInput; groupDayIndexes: PlanDayIndex[] } | null> {
   const plan = await getMealPlan(supabase, startDate);
   if (!plan) {
     return null;
   }
-  const meals = plan.meals.filter((meal) => meal.dayIndex === dayIndex);
+  const { meals, days } = groupOf(plan, dayIndex);
   const shared = await loadSharedInputs(
     supabase,
     meals.map((meal) => meal.recipeId),
   );
-  return { plan, input: { ...shared, meals } };
+  return { plan, input: { ...shared, meals }, groupDayIndexes: days };
 }
 
 // The day-independent part of a solve input: members, targets and the library rows of `recipeIds`.
@@ -79,7 +97,7 @@ interface DaySolutionRow {
   solved_at: string;
 }
 
-// The stored result is client-assertable: save_day_solution only checks that it is a jsonb object,
+// The stored result is client-assertable: save_plan_day_solutions only checks that it is a jsonb object,
 // and any household member can call it directly. Every reader goes through this schema, so a
 // malformed row reads as "not solved" (and can be solved again) instead of breaking the page.
 const macroTotalsSchema = z.object({
@@ -181,83 +199,92 @@ function parseStoredSolution(result: unknown): DaySolution | null {
   return parsed.data;
 }
 
-// The stored solution for one plan day, or null when the day has never been solved.
-export async function getDaySolution(
+// The stored solutions of `dayIndexes` of one plan, keyed by day. A day that was never solved, or
+// whose stored result fails the schema, is absent.
+export async function getDaySolutions(
   supabase: SupabaseClient,
   planId: string,
-  dayIndex: PlanDayIndex,
-): Promise<StoredDaySolution | null> {
+  dayIndexes: readonly PlanDayIndex[],
+): Promise<Partial<Record<PlanDayIndex, StoredDaySolution>>> {
   const { data, error } = await supabase
     .from("plan_day_solutions")
-    .select("status, accepted_tolerance_pct, input_fingerprint, result, solved_at")
+    .select("day_index, status, accepted_tolerance_pct, input_fingerprint, result, solved_at")
     .eq("plan_id", planId)
-    .eq("day_index", dayIndex)
-    .maybeSingle();
+    .in("day_index", [...dayIndexes]);
   if (error) {
     throw error;
   }
-  if (!data) {
-    return null;
-  }
-  // Without a generated Database type the row is untyped; the table's checks guarantee its scalar
+  // Without a generated Database type the rows are untyped; the table's checks guarantee their scalar
   // columns, and parseStoredSolution() the jsonb result.
-  const row: DaySolutionRow = data;
-  const solution = parseStoredSolution(row.result);
-  if (!solution) {
-    return null;
+  const rows: (DaySolutionRow & { day_index: PlanDayIndex })[] = data;
+  const stored: Partial<Record<PlanDayIndex, StoredDaySolution>> = {};
+  for (const row of rows) {
+    const solution = parseStoredSolution(row.result);
+    if (solution) {
+      stored[row.day_index] = {
+        status: row.status,
+        acceptedTolerancePct: row.accepted_tolerance_pct,
+        inputFingerprint: row.input_fingerprint,
+        solution,
+        solvedAt: row.solved_at,
+      };
+    }
   }
-  return {
-    status: row.status,
-    acceptedTolerancePct: row.accepted_tolerance_pct,
-    inputFingerprint: row.input_fingerprint,
-    solution,
-    solvedAt: row.solved_at,
-  };
+  return stored;
 }
 
-// Stores a solve through public.save_day_solution and returns the row id.
-export async function saveDaySolution(
+// One day of a solve group, as save_plan_day_solutions stores it.
+export interface DaySolutionWrite {
+  dayIndex: PlanDayIndex;
+  status: DaySolveStatus;
+  acceptedTolerance: SolveTier;
+  fingerprint: string;
+  solution: DaySolution;
+}
+
+// Stores every day of one solve group in one call (atomic: a group is never half-solved) and returns
+// the plan id.
+export async function savePlanDaySolutions(
   supabase: SupabaseClient,
   startDate: string,
-  dayIndex: PlanDayIndex,
-  status: DaySolveStatus,
-  acceptedTolerance: SolveTier,
-  fingerprint: string,
-  solution: DaySolution,
+  solutions: readonly DaySolutionWrite[],
 ): Promise<string> {
-  const { data, error } = (await supabase.rpc("save_day_solution", {
+  const { data, error } = (await supabase.rpc("save_plan_day_solutions", {
     p_start_date: startDate,
-    p_day_index: dayIndex,
-    p_status: status,
-    p_accepted_tolerance_pct: acceptedTolerance,
-    p_input_fingerprint: fingerprint,
-    p_result: solution,
+    p_solutions: solutions.map((day) => ({
+      day_index: day.dayIndex,
+      status: day.status,
+      accepted_tolerance_pct: day.acceptedTolerance,
+      input_fingerprint: day.fingerprint,
+      result: day.solution,
+    })),
   })) as RpcResult<string>;
 
   if (error) {
     throw error;
   }
   if (data === null) {
-    throw new Error("save_day_solution returned no id");
+    throw new Error("save_plan_day_solutions returned no plan id");
   }
   return data;
 }
 
 // Everything the day page and the solve route need, or null when no plan exists for that date. It
-// never solves: a stored result is compared to the current inputs by fingerprint only.
+// never solves: a stored result is compared to the current group inputs by fingerprint only.
 export async function getDayView(
   supabase: SupabaseClient,
   startDate: string,
   dayIndex: PlanDayIndex,
 ): Promise<DayView | null> {
-  const loaded = await loadDaySolveInputs(supabase, startDate, dayIndex);
+  const loaded = await loadGroupSolveInputs(supabase, startDate, dayIndex);
   if (!loaded) {
     return null;
   }
-  const [stored, fingerprint] = await Promise.all([
-    getDaySolution(supabase, loaded.plan.id, dayIndex),
+  const [groupStored, fingerprint] = await Promise.all([
+    getDaySolutions(supabase, loaded.plan.id, loaded.groupDayIndexes),
     solveFingerprint(loaded.input),
   ]);
+  const stored = groupStored[dayIndex] ?? null;
   const unsolvable = checkSolvable(loaded.input);
   return {
     plan: loaded.plan,
@@ -266,11 +293,14 @@ export async function getDayView(
     fingerprint,
     stored,
     stale: stored !== null && (unsolvable !== null || stored.inputFingerprint !== fingerprint),
+    groupDayIndexes: loaded.groupDayIndexes,
+    groupStored,
   };
 }
 
 // Where each of the plan's three days stands, for the /plan grid. One read of the plan's stored
-// solutions plus one shared input load; it fingerprints every day but never solves one.
+// solutions plus one shared input load; it fingerprints every solve group once but never solves one.
+// Every day of a group gets the group's status: it is current only when every day's stored row is.
 export async function getPlanSolveStatuses(
   supabase: SupabaseClient,
   plan: MealPlan,
@@ -291,34 +321,69 @@ export async function getPlanSolveStatuses(
   // Without a generated Database type the rows are untyped; the table's checks guarantee this shape.
   const storedRows: (DaySolutionRow & { day_index: PlanDayIndex })[] = rows.data;
 
-  const entries = await Promise.all(
-    PLAN_DAYS.map(async (day): Promise<[PlanDayIndex, PlanDaySolveStatus]> => {
-      const input: SolveDayInput = { ...shared, meals: plan.meals.filter((meal) => meal.dayIndex === day) };
-      if (input.meals.length === 0) {
-        return [day, { kind: "empty", mealCount: 0 }];
-      }
-      const mealCount = input.meals.length;
+  const statuses = emptyPlanSolveStatuses();
+  await Promise.all(
+    solveGroups(plan.meals).map(async (meals) => {
+      const days = groupDayIndexes(meals);
+      const counts = days.map((day) => meals.filter((meal) => meal.dayIndex === day).length);
+      const input: SolveDayInput = { ...shared, meals };
+
+      let group: Pick<PlanDaySolveStatus, "kind" | "requiredTier">;
       if (checkSolvable(input) !== null) {
-        return [day, { kind: "unsolvable", mealCount }];
+        group = { kind: "unsolvable" };
+      } else {
+        const stored = days.map((day) => {
+          const row = storedRows.find((candidate) => candidate.day_index === day);
+          const solution = row ? parseStoredSolution(row.result) : null;
+          return row && solution ? { row, solution } : null;
+        });
+        const fingerprint = await solveFingerprint(input);
+        const lead = stored[0];
+        if (stored.every((entry) => entry === null)) {
+          group = { kind: "unsolved" };
+        } else if (lead === null || stored.some((entry) => entry?.row.input_fingerprint !== fingerprint)) {
+          group = { kind: "stale" };
+        } else {
+          // Every day of a group is written in one call with one status and one tier.
+          group = { kind: lead.row.status, requiredTier: lead.solution.requiredTier };
+        }
       }
-      const stored = storedRows.find((row) => row.day_index === day);
-      const solution = stored ? parseStoredSolution(stored.result) : null;
-      if (!stored || !solution) {
-        return [day, { kind: "unsolved", mealCount }];
+
+      for (const [i, day] of days.entries()) {
+        statuses[day] = {
+          ...group,
+          mealCount: counts[i],
+          groupDayIndexes: days,
+          isGroupLead: i === 0,
+          groupMaxMealCount: Math.max(...counts),
+        };
       }
-      if (stored.input_fingerprint !== (await solveFingerprint(input))) {
-        return [day, { kind: "stale", mealCount }];
-      }
-      return [day, { kind: stored.status, mealCount, requiredTier: solution.requiredTier }];
     }),
   );
-  return Object.fromEntries(entries) as Record<PlanDayIndex, PlanDaySolveStatus>;
+  return statuses;
 }
 
-// A full day (all 5 meals) with no current solution gets the solve prompt (FR-018). An unsolvable
-// day gets "Can't solve yet" instead, since solving it would only bounce back.
+// Three empty days, each a group of one: the grid of a date with no saved plan.
+export function emptyPlanSolveStatuses(): Record<PlanDayIndex, PlanDaySolveStatus> {
+  const empty = (day: PlanDayIndex): PlanDaySolveStatus => ({
+    kind: "empty",
+    mealCount: 0,
+    groupDayIndexes: [day],
+    isGroupLead: true,
+    groupMaxMealCount: 0,
+  });
+  return { 0: empty(0), 1: empty(1), 2: empty(2) };
+}
+
+// A full day (all 5 meals) with no current solution gets the solve prompt (FR-018) — once per solve
+// group, on its lowest day, and when any one day of the group is full. An unsolvable day gets
+// "Can't solve yet" instead, since solving it would only bounce back.
 export function needsSolvePrompt(status: PlanDaySolveStatus): boolean {
-  return status.mealCount === MEAL_TYPES.length && (status.kind === "unsolved" || status.kind === "stale");
+  return (
+    status.isGroupLead &&
+    status.groupMaxMealCount === MEAL_TYPES.length &&
+    (status.kind === "unsolved" || status.kind === "stale")
+  );
 }
 
 // --- display text --------------------------------------------------------------------------------
@@ -346,19 +411,57 @@ export function formatPlanDayStatus(status: PlanDaySolveStatus): string {
   }
 }
 
+// A solve group of one day. The smoke test matches this exact string.
 export function formatSolvePrompt(weekday: string): string {
   return `${weekday} has all 5 meals. Solve its macros?`;
+}
+
+// "Monday and Tuesday", "Monday, Tuesday and Wednesday".
+export function joinList(weekdays: readonly string[]): string {
+  return weekdays.length <= 1 ? (weekdays[0] ?? "") : `${weekdays.slice(0, -1).join(", ")} and ${weekdays.at(-1)}`;
+}
+
+// A solve group of several days (S-08). It does not claim every day is full: a group prompts when
+// any one of its days is.
+export function formatGroupSolvePrompt(weekdays: readonly string[]): string {
+  return `${joinList(weekdays)} share a batch. Solve their macros together?`;
+}
+
+// The /plan card line of a day in a multi-day solve group, naming the other days.
+export function formatPlanGroupLine(otherWeekdays: readonly string[]): string {
+  return `Shares a batch with ${joinList(otherWeekdays)} — solved together.`;
+}
+
+// The day page's note above the Solve / Accept buttons of a multi-day solve group.
+export function formatGroupSolveNote(otherWeekdays: readonly string[]): string {
+  return `Solving this day also re-solves ${joinList(otherWeekdays)}.`;
+}
+
+// A shared batch's note on the day it is cooked, naming the days its other portions are eaten on.
+export function formatCookDayNote(otherWeekdays: readonly string[]): string {
+  return `Cook the whole batch today — set aside the portions for ${joinList(otherWeekdays)}.`;
+}
+
+// A batch shared only by meals of one day, on the /plan grid: "One batch with Dinner."
+export function formatSameDayBatchNote(otherMealLabels: readonly string[]): string {
+  return `One batch with ${joinList(otherMealLabels)}.`;
+}
+
+// A shared batch's note on a day it is only eaten.
+export function formatFromBatchNote(cookWeekday: string): string {
+  return `From ${cookWeekday}'s batch — nothing to cook today.`;
 }
 
 export const DAY_NOT_FOUND = "Day not found";
 export const DAY_UNAVAILABLE = "This day is unavailable right now.";
 export const FULL_TARGETS_NOTE = "Portions are scaled to each person's full daily targets.";
 export const NOT_SOLVED_YET = "Not solved yet";
-export const DAY_SOLVE_STALE = "Out of date — the plan, targets or recipes changed since this was solved.";
+export const DAY_SOLVE_STALE =
+  "Out of date — the plan, targets or recipes changed since this was solved (on this day or a day that shares a batch with it).";
 export const DAY_BOUNDS_WARNING =
   "Some portions break the solver's limits (an ingredient minimum, 0.2–1.5× of a batch, or one part over 3× another) — check them before cooking.";
 
-// Rejection SQLSTATEs raised by save_day_solution. KD007 is shared with S-01 but gets solve wording.
+// Rejection SQLSTATEs raised by save_plan_day_solutions. KD007 is shared with S-01 but gets solve wording.
 export const DAY_SOLVE_ERRORS = {
   KD007: "You need to be signed in to solve a day.",
   KD013: "That solve result could not be saved. Please try again.",
@@ -416,6 +519,9 @@ export function unsolvableMessage(reason: UnsolvableReason, viewerId: string): s
   }
 }
 
+// Appended to the no-fit sentence when the blamed recipe is a batch eaten on several days (S-08).
+export const SHARED_BATCH_BLAME = "its batch is shared across days";
+
 // The smoke test matches these exact strings.
 export function formatDaySolveSummary(solution: DaySolution, status: DaySolveStatus, viewerId?: string): string {
   const tier = solution.requiredTier;
@@ -432,7 +538,8 @@ export function formatDaySolveSummary(solution: DaySolution, status: DaySolveSta
   }
   if (explanation?.kind === "recipe") {
     const reason = MACRO_DIRECTION_LABELS[explanation.macro][explanation.direction];
-    return `No fit within ±20% · Most obstructive recipe: ${explanation.recipeName} (${reason})`;
+    const shared = explanation.sharedAcrossDays ? ` · ${SHARED_BATCH_BLAME}` : "";
+    return `No fit within ±20% · Most obstructive recipe: ${explanation.recipeName} (${reason})${shared}`;
   }
   return "No fit within ±20%";
 }
@@ -483,15 +590,41 @@ function formatGramsShort(grams: number): string {
   return `${Number.isInteger(grams) ? grams : grams.toFixed(1)} g`;
 }
 
-// One component's split between its eaters, e.g. "You: 320 g cooked · Partner: 260 g cooked".
-export function formatSplitLine(component: DaySolutionComponent, viewerId: string): string {
+// Where the split line is shown (S-08): the meal row it belongs to and the viewed day, so a share
+// eaten at another meal of a shared batch can be named. Without it every share reads as this meal's.
+export interface SplitLineContext {
+  mealId: string;
+  viewedDay: PlanDayIndex;
+  weekdayOf: (dayIndex: PlanDayIndex) => string;
+  mealTypeOf: (mealId: string) => MealType | undefined;
+}
+
+function isOwnShare(share: DaySplitShare, context: SplitLineContext | undefined): boolean {
+  return context === undefined || share.mealId === null || share.mealId === context.mealId;
+}
+
+// " (Tuesday)" for a share eaten on another day, " (Dinner)" for one eaten at another meal of the
+// viewed day, "" otherwise — always "" for a legacy (pre-S-08) share, whose mealId/dayIndex are null.
+function shareSuffix(share: DaySplitShare, context: SplitLineContext | undefined): string {
+  if (context === undefined || isOwnShare(share, context)) return "";
+  if (share.dayIndex !== null && share.dayIndex !== context.viewedDay) return ` (${context.weekdayOf(share.dayIndex)})`;
+  const mealType = share.mealId !== null ? context.mealTypeOf(share.mealId) : undefined;
+  return mealType ? ` (${MEAL_TYPE_LABELS[mealType]})` : "";
+}
+
+// One component's split between its servings, e.g. "You: 320 g cooked · Partner: 260 g cooked".
+// This meal's servings come first, the viewer first within each; a shared batch's other servings are
+// suffixed with their day (or meal).
+export function formatSplitLine(component: DaySolutionComponent, viewerId: string, context?: SplitLineContext): string {
   const { kind, evenSplit } = component.split;
-  const shares = viewerFirst(component.split.shares, viewerId);
+  const own = component.split.shares.filter((share) => isOwnShare(share, context));
+  const other = component.split.shares.filter((share) => !isOwnShare(share, context));
+  const shares = [...viewerFirst(own, viewerId), ...viewerFirst(other, viewerId)];
   if (kind === "all") {
     return shares[0].userId === viewerId ? SPLIT_LABELS.allForYou : SPLIT_LABELS.allForPartner;
   }
   const parts = shares.map((share) => {
-    const label = personLabel(share.userId, viewerId);
+    const label = `${personLabel(share.userId, viewerId)}${shareSuffix(share, context)}`;
     switch (kind) {
       case "grams_cooked":
         return `${label}: ${share.value ?? 0} g ${SPLIT_LABELS.cooked}`;
@@ -500,6 +633,10 @@ export function formatSplitLine(component: DaySolutionComponent, viewerId: strin
       case "pieces":
         return `${label}: ${formatPieces(share.value ?? 0)}`;
       case "per_ingredient":
+        // perPerson holds this meal's eaters only; another meal's serving is shown as its share.
+        if (!isOwnShare(share, context)) {
+          return `${label}: ${roundHalfUp(share.fraction * 100)}% ${SPLIT_LABELS.ofTheBatch}`;
+        }
         return `${label}: ${component.ingredients
           .map((ingredient) => {
             const grams = ingredient.perPerson?.[share.userId] ?? 0;

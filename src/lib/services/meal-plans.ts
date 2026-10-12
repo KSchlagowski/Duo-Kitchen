@@ -1,5 +1,5 @@
 import type { PostgrestError, SupabaseClient } from "@supabase/supabase-js";
-import type { MealPlan, MealType, PlanDayIndex, PlanMeal } from "@/types";
+import type { MealPlan, MealType, PlanDayIndex, PlanMealInput } from "@/types";
 
 // Household meal plans (S-03). RLS scopes reads to the caller's household, so no explicit household
 // filter is needed. Writes are revoked from `authenticated`: every save goes through the
@@ -51,18 +51,27 @@ export function formatPlanSummary(plan: MealPlan | null): string {
 
 export const PLAN_UNAVAILABLE = "Plan is unavailable right now.";
 
+// A shared batch that cannot be saved (S-08). /api/plan rejects these itself, with the same words as
+// save_meal_plan's KD015-KD017, so the message does not depend on which check caught it.
+export const SHARE_INVALID_SLOT = "A meal can only share a batch with another meal slot.";
+export const SHARE_EMPTY_SLOT = "A meal can only share a batch with a filled slot.";
+export const SHARE_OTHER_RECIPE = "A meal can only share a batch with a slot holding the same recipe.";
+
 // Rejection SQLSTATEs raised by save_meal_plan. KD007 is shared with S-01 but gets plan wording here.
 const PLAN_ERRORS: Record<string, string> = {
   KD007: "You need to be signed in to save a plan.",
   KD010: "That plan could not be read. Please try again.",
   KD011: "One of the chosen recipes no longer exists.",
   KD012: "A meal is marked for someone who isn't in your household.",
+  KD015: SHARE_INVALID_SLOT,
+  KD016: SHARE_EMPTY_SLOT,
+  KD017: SHARE_OTHER_RECIPE,
 };
 
 export const PLAN_SAVE_FAILED = "Your plan could not be saved. Please try again.";
 
 // PostgREST surfaces the SQLSTATE as the error's `code` field (see invites.ts). day-solutions.ts
-// reuses it for save_day_solution.
+// reuses it for save_plan_day_solutions.
 export function errorCode(error: unknown): string | null {
   if (typeof error !== "object" || error === null || !("code" in error)) {
     return null;
@@ -108,7 +117,8 @@ export async function getMealPlan(supabase: SupabaseClient, startDate?: string):
   }
 
   // Without a generated Database type the client guesses every embed is an array; plan_dishes is
-  // many-to-one (plan_meals.dish_id), which PostgREST returns as a single object.
+  // many-to-one (plan_meals.dish_id), which PostgREST returns as a single object. That follows the
+  // FK's direction, not uniqueness, so it holds since S-08 dropped plan_meals_dish_id_key.
   const row = data as unknown as MealPlanRow;
   return {
     id: row.id,
@@ -137,8 +147,13 @@ export interface RpcResult<T> {
   error: PostgrestError | null;
 }
 
-// Returns the saved plan's id.
-export async function saveMealPlan(supabase: SupabaseClient, startDate: string, meals: PlanMeal[]): Promise<string> {
+// Returns the saved plan's id. `share_with` names the TARGET slot ("<day>_<meal_type>"), never the
+// element's own: slots joined by it eat from one dish (S-08).
+export async function saveMealPlan(
+  supabase: SupabaseClient,
+  startDate: string,
+  meals: PlanMealInput[],
+): Promise<string> {
   const { data, error } = (await supabase.rpc("save_meal_plan", {
     p_start_date: startDate,
     p_meals: meals.map((meal) => ({
@@ -146,6 +161,7 @@ export async function saveMealPlan(supabase: SupabaseClient, startDate: string, 
       meal_type: meal.mealType,
       recipe_id: meal.recipeId,
       eater_user_id: meal.eaterUserId,
+      share_with: meal.shareWith ? `${meal.shareWith.dayIndex}_${meal.shareWith.mealType}` : null,
     })),
   })) as RpcResult<string>;
 

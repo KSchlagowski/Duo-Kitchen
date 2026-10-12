@@ -7,17 +7,18 @@ import {
   DAY_SOLVE_FAILED,
   daySolveErrorMessage,
   getDayView,
-  saveDaySolution,
+  savePlanDaySolutions,
   unsolvableMessage,
 } from "@/lib/services/day-solutions";
-import { solveDay, statusFor } from "@/lib/services/macro-solver";
+import { solveGroup, statusFor } from "@/lib/services/macro-solver";
 import { isIsoDate } from "@/lib/services/meal-plans";
 import type { DayView, PlanDayIndex, SolveTier } from "@/types";
 
 const INVALID_SOLVE = "That solve request could not be read. Please try again.";
 
 // Explicit enums and no coercion, so a blank or junk value is rejected rather than silently mapped.
-// An accept above ±10 % is bound to the fingerprint of the result the user saw (P2).
+// An accept above ±10 % is bound to the fingerprint of the result the user saw (P2). `day_index`
+// names any day of a solve group (S-08): the whole group is solved, stored and accepted together.
 const solveSchema = z
   .object({
     day_index: z.enum(["0", "1", "2"]),
@@ -102,34 +103,39 @@ export const POST: APIRoute = async (context) => {
     return context.redirect(dayErrorUrl(startDate, dayParam, unsolvableMessage(view.unsolvable, user.id)));
   }
   // An accept is only valid for the exact inputs the user reviewed: store nothing and show the change.
+  // view.fingerprint is the group's, so an edit to any day of the group invalidates the accept.
   if (accept > 10 && postedFingerprint !== view.fingerprint) {
     return context.redirect(dayErrorUrl(startDate, dayParam, DAY_CHANGED_BEFORE_ACCEPT));
   }
 
-  // A plain "Solve again" on unchanged inputs keeps an earlier acceptance.
+  // A plain "Solve again" on unchanged inputs keeps an earlier acceptance — only when every day of
+  // the group holds a current row, which a group write always stores with one tolerance.
+  const groupRows = view.groupDayIndexes.map((day) => view.groupStored[day]);
+  const current = groupRows.every((row) => row?.inputFingerprint === view.fingerprint);
   const tolerance: SolveTier =
-    accept === 10 && view.stored !== null && view.stored.inputFingerprint === view.fingerprint
-      ? view.stored.acceptedTolerancePct
-      : accept;
+    accept === 10 && current && view.stored !== null ? view.stored.acceptedTolerancePct : accept;
 
   try {
-    const result = solveDay(view.input);
+    const result = solveGroup(view.input);
     if (result.kind !== "solution") {
-      // checkSolvable() above already ruled this out; solveDay runs the same check.
-      throw new Error(`solveDay returned unsolvable (${result.reason}) after checkSolvable passed`);
+      // checkSolvable() above already ruled this out; solveGroup runs the same check.
+      throw new Error(`solveGroup returned unsolvable (${result.reason}) after checkSolvable passed`);
     }
-    await saveDaySolution(
+    // Every day carries the group's requiredTier (D5), so they share one status.
+    await savePlanDaySolutions(
       supabase,
       startDate,
-      dayIndex,
-      statusFor(result.solution, tolerance),
-      tolerance,
-      view.fingerprint,
-      result.solution,
+      result.days.map((day) => ({
+        dayIndex: day.dayIndex,
+        status: statusFor(day.solution, tolerance),
+        acceptedTolerance: tolerance,
+        fingerprint: view.fingerprint,
+        solution: day.solution,
+      })),
     );
   } catch (error) {
     // eslint-disable-next-line no-console -- surfaced in Cloudflare Workers observability logs
-    console.error("solving or saving the day failed on /api/plan/solve", error);
+    console.error("solving or saving the solve group failed on /api/plan/solve", error);
     return context.redirect(dayErrorUrl(startDate, dayParam, daySolveErrorMessage(error)));
   }
 

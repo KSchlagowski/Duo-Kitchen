@@ -16,7 +16,13 @@ import {
 import {
   SOLVE_SAVED_PLAN_HINT,
   SOLVE_STATUS_UNAVAILABLE,
+  emptyPlanSolveStatuses,
+  formatCookDayNote,
+  formatFromBatchNote,
+  formatGroupSolvePrompt,
   formatPlanDayStatus,
+  formatPlanGroupLine,
+  formatSameDayBatchNote,
   formatSolvePrompt,
   getPlanSolveStatuses,
   needsSolvePrompt,
@@ -24,7 +30,16 @@ import {
 import { MEAL_TYPE_LABELS } from "@/lib/recipe-labels";
 import { getRecipeCards } from "@/lib/services/recipes";
 import { cn } from "@/lib/utils";
-import type { Household, MealPlan, PlanDayIndex, PlanDaySolveStatus, PlanEater, PlanMeal, RecipeCard } from "@/types";
+import type {
+  Household,
+  MealPlan,
+  MealType,
+  PlanDayIndex,
+  PlanDaySolveStatus,
+  PlanEater,
+  PlanMealRecord,
+  RecipeCard,
+} from "@/types";
 
 const { user } = Astro.locals;
 
@@ -73,9 +88,7 @@ const canEdit = unavailable.length === 0;
 let solveStatuses: Record<PlanDayIndex, PlanDaySolveStatus> | null = null;
 if (supabase && canEdit) {
   try {
-    solveStatuses = plan
-      ? await getPlanSolveStatuses(supabase, plan)
-      : { 0: { kind: "empty", mealCount: 0 }, 1: { kind: "empty", mealCount: 0 }, 2: { kind: "empty", mealCount: 0 } };
+    solveStatuses = plan ? await getPlanSolveStatuses(supabase, plan) : emptyPlanSolveStatuses();
   } catch (error) {
     // eslint-disable-next-line no-console -- surfaced in Cloudflare Workers observability logs
     console.error("getPlanSolveStatuses failed on /plan", error);
@@ -86,12 +99,40 @@ const isLinked = (household?.members.length ?? 0) >= 2;
 const startDate = requestedStart ?? plan?.startDate ?? defaultPlanStart();
 const summary = planFailed ? PLAN_UNAVAILABLE : formatPlanSummary(plan);
 
-const mealsBySlot = new Map<string, PlanMeal>();
+const slotKey = (dayIndex: PlanDayIndex, mealType: MealType) => `${dayIndex}_${mealType}`;
+const slotRank = (meal: PlanMealRecord) => meal.dayIndex * MEAL_TYPES.length + MEAL_TYPES.indexOf(meal.mealType);
+const weekdayOf = (dayIndex: PlanDayIndex) => weekdayLabel(addDays(startDate, dayIndex));
+
+const mealsBySlot = new Map<string, PlanMealRecord>();
+// S-08: the meals eating from each dish, in slot order. A dish with more than one is a shared batch.
+const mealsByDish = new Map<string, PlanMealRecord[]>();
 for (const meal of plan?.meals ?? []) {
-  mealsBySlot.set(`${meal.dayIndex}_${meal.mealType}`, meal);
+  mealsBySlot.set(slotKey(meal.dayIndex, meal.mealType), meal);
+  mealsByDish.set(meal.dishId, [...(mealsByDish.get(meal.dishId) ?? []), meal]);
+}
+for (const members of mealsByDish.values()) {
+  members.sort((a, b) => slotRank(a) - slotRank(b));
 }
 
-function eaterOf(meal: PlanMeal | undefined): PlanEater {
+// A saved batch in canonical star form: every member but the lowest slot names the lowest slot, the
+// lowest names none. That round-trips through save_meal_plan's union-find and is stable across saves.
+function batchOf(meal: PlanMealRecord | undefined): string {
+  const lead = meal ? mealsByDish.get(meal.dishId)?.[0] : undefined;
+  return meal && lead && lead !== meal ? slotKey(lead.dayIndex, lead.mealType) : "";
+}
+
+// The cook-day / from-batch note of a slot of a shared batch, or null for a batch of its own.
+function batchNoteOf(meal: PlanMealRecord | undefined): string | null {
+  const members = meal ? (mealsByDish.get(meal.dishId) ?? []) : [];
+  if (!meal || members.length < 2) return null;
+  const cookDay = members[0].dayIndex;
+  const otherDays = [...new Set(members.map((m) => m.dayIndex))].filter((d) => d !== cookDay);
+  if (meal.dayIndex !== cookDay) return formatFromBatchNote(weekdayOf(cookDay));
+  if (otherDays.length > 0) return formatCookDayNote(otherDays.map(weekdayOf));
+  return formatSameDayBatchNote(members.filter((m) => m !== meal).map((m) => MEAL_TYPE_LABELS[m.mealType]));
+}
+
+function eaterOf(meal: PlanMealRecord | undefined): PlanEater {
   const eaterUserId = meal?.eaterUserId ?? null;
   if (eaterUserId === null) return "both";
   return eaterUserId === user?.id ? "me" : "partner";
@@ -183,6 +224,8 @@ const selectClass =
                     const suggested = recipes.filter((recipe) => recipe.mealTypes.includes(mealType));
                     const other = recipes.filter((recipe) => !recipe.mealTypes.includes(mealType));
                     const eater = eaterOf(meal);
+                    const batch = batchOf(meal);
+                    const batchNote = batchNoteOf(meal);
                     return (
                       <fieldset class="flex flex-col gap-1 border-t border-white/10 pt-3">
                         <legend class="text-sm font-medium text-blue-100/90">{MEAL_TYPE_LABELS[mealType]}</legend>
@@ -224,6 +267,31 @@ const selectClass =
                             ))}
                           </select>
                         </label>
+                        <label class="flex flex-col gap-1 text-xs text-blue-100/70">
+                          Share a batch with
+                          <select name={`d${day}_${mealType}_batch`} class:list={selectClass}>
+                            <option value="">Cook a fresh batch</option>
+                            {PLAN_DAYS.map((otherDay) => (
+                              <optgroup label={weekdayOf(otherDay)}>
+                                {MEAL_TYPES.filter((otherType) => otherDay !== day || otherType !== mealType).map(
+                                  (otherType) => (
+                                    <option
+                                      value={slotKey(otherDay, otherType)}
+                                      selected={batch === slotKey(otherDay, otherType)}
+                                    >
+                                      {weekdayOf(otherDay)} {MEAL_TYPE_LABELS[otherType]}
+                                    </option>
+                                  ),
+                                )}
+                              </optgroup>
+                            ))}
+                          </select>
+                        </label>
+                        {batchNote && (
+                          <p class="text-xs text-purple-200" data-testid={`batch-${day}_${mealType}`}>
+                            {batchNote}
+                          </p>
+                        )}
                       </fieldset>
                     );
                   })}
@@ -254,7 +322,8 @@ const selectClass =
           <div class="grid gap-4 md:grid-cols-3">
             {PLAN_DAYS.map((day) => {
               const status = solveStatuses[day];
-              const weekday = weekdayLabel(addDays(startDate, day));
+              const weekday = weekdayOf(day);
+              const isGroup = status.groupDayIndexes.length > 1;
               const solveForm = (
                 <form method="POST" action="/api/plan/solve">
                   <input type="hidden" name="start_date" value={startDate} />
@@ -276,10 +345,17 @@ const selectClass =
                   >
                     {formatPlanDayStatus(status)}
                   </p>
+                  {isGroup && (
+                    <p class="text-xs text-blue-100/70" data-testid={`day-group-${day}`}>
+                      {formatPlanGroupLine(status.groupDayIndexes.filter((d) => d !== day).map(weekdayOf))}
+                    </p>
+                  )}
                   {needsSolvePrompt(status) ? (
                     <div class="flex flex-col items-start gap-2 rounded-lg border border-purple-300/30 bg-purple-500/10 p-3">
                       <p class="text-sm text-purple-100" data-testid={`day-prompt-${day}`}>
-                        {formatSolvePrompt(weekday)}
+                        {isGroup
+                          ? formatGroupSolvePrompt(status.groupDayIndexes.map(weekdayOf))
+                          : formatSolvePrompt(weekday)}
                       </p>
                       {solveForm}
                     </div>
