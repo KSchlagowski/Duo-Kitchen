@@ -51,11 +51,20 @@ export function formatPlanSummary(plan: MealPlan | null): string {
 
 export const PLAN_UNAVAILABLE = "Plan is unavailable right now.";
 
-// A shared batch that cannot be saved (S-08). /api/plan rejects these itself, with the same words as
-// save_meal_plan's KD015-KD017, so the message does not depend on which check caught it.
+// A shared batch that cannot be saved (S-08): save_meal_plan's KD015-KD017. /api/plan rejects a
+// self-reference itself with the same words, but turns a share whose target slot is now empty or holds
+// another recipe into a fresh batch (formatUnsharedNotice), so editing a batch's lead slot just works.
 export const SHARE_INVALID_SLOT = "A meal can only share a batch with another meal slot.";
 export const SHARE_EMPTY_SLOT = "A meal can only share a batch with a filled slot.";
 export const SHARE_OTHER_RECIPE = "A meal can only share a batch with a slot holding the same recipe.";
+
+// The soft notice after a save that dropped such shares; slots are labelled as on the grid ("Tuesday Lunch").
+export function formatUnsharedNotice(slotLabels: readonly string[]): string {
+  const slots = new Intl.ListFormat("en-GB", { type: "conjunction" }).format(slotLabels);
+  return slotLabels.length === 1
+    ? `${slots} no longer shares a batch: the slot it shared with is empty or holds another recipe.`
+    : `${slots} no longer share a batch: the slots they shared with are empty or hold another recipe.`;
+}
 
 // Rejection SQLSTATEs raised by save_meal_plan. KD007 is shared with S-01 but gets plan wording here.
 const PLAN_ERRORS: Record<string, string> = {

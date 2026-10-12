@@ -481,6 +481,10 @@ New assertions:
   value**, so it catches a blow-up without being a second copy of the ratio (at today's ~10 ms per F2
   solve, a 250 ms absolute budget and 25× are the *same* number, which is why the original pairing
   was vacuous as well as too tight).
+  *Recorded (implementation review F6):* first measurement 157–165 ms (~63×, over budget) → rung 3
+  applied → 41 ms pinned as `F6_MEASURED_MS`, the post-mitigation value. The absolute assertion is
+  widened by a CI runner slowdown factor of 4 (3 × 41 × 4 ms), because it has no CI record yet; the
+  relative ≤ 60× budget remains the gate.
 
 ### Success Criteria
 
@@ -775,6 +779,19 @@ a solve single-day.
   !== viewedDay`**. For a singleton group every share is on the viewed day, and for a legacy
   (pre-S-08) row every `dayIndex` is `null`, so both render byte-identically to today.
 - Any new enum-keyed label goes in `src/lib/recipe-labels.ts` — the single map S-14 localises.
+- *Addendum (implementation review F8): same-day sharing.* `save_meal_plan` also lets two slots of
+  the **same** day share a batch, which the cross-day design above did not cover. The implementation
+  renders it as follows:
+  - `formatSameDayBatchNote()` gives the batch note on `/plan` and the day page (*"One batch with
+    Dinner."*);
+  - `formatSplitLine()` takes a `SplitLineContext` (`mealId`, `viewedDay`, `weekdayOf`,
+    `mealTypeOf`, and since review F3 `ownOnly`) rather than the `(resolver, viewedDay)` pair above;
+  - a share eaten at another meal of the viewed day is suffixed with its meal type, one on another
+    day with its weekday;
+  - the other servings of a `per_ingredient` split render as *"N% of the batch"*
+    (`SPLIT_LABELS.ofTheBatch`), and more than two even servings as `SPLIT_LABELS.splitEvenly(n)`.
+
+  `src/lib/services/day-solutions.test.ts` pins the same-day split line.
 
 #### 3. The plan save route
 

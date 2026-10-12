@@ -290,7 +290,13 @@ const buttonClass =
                         viewerId,
                         dayIndex === null
                           ? undefined
-                          : { mealId: meal.mealId, viewedDay: dayIndex, weekdayOf, mealTypeOf },
+                          : {
+                              mealId: meal.mealId,
+                              viewedDay: dayIndex,
+                              weekdayOf,
+                              mealTypeOf,
+                              ownOnly: cookedElsewhere,
+                            },
                       )}
                     </p>
                   </div>

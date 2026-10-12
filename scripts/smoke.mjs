@@ -203,13 +203,14 @@ async function solveThenOpen(client, day, extra = {}) {
 // and their literal meal counts are untouched. Both days are the F1 mix (Phase 1's F5 unit fixture)
 // with day 1's lunch eating from day 0's curry batch. 2031-01-20 is a Monday, so day 0 is Monday and
 // day 1 Tuesday. The sentences mirror formatGroupSolvePrompt() / formatCookDayNote() /
-// formatFromBatchNote() and the SHARE_* messages in src/lib/services/{day-solutions,meal-plans}.ts.
+// formatFromBatchNote() and formatUnsharedNotice() in src/lib/services/{day-solutions,meal-plans}.ts.
 const shareStart = "2031-01-20";
 const S08_GROUP_PROMPT = "Monday and Tuesday share a batch. Solve their macros together?";
 const S08_COOK_NOTE = "Cook the whole batch today — set aside the portions for Tuesday.";
 // As rendered: Astro escapes the apostrophe in text content.
 const S08_FROM_NOTE = "From Monday&#39;s batch — nothing to cook today.";
-const S08_OTHER_RECIPE = "A meal can only share a batch with a slot holding the same recipe.";
+const S08_UNSHARED_NOTICE =
+  "Tuesday Lunch no longer shares a batch: the slot it shared with is empty or holds another recipe.";
 const S08_TEST_IDS = [
   "batch-0_lunch",
   "batch-1_lunch",
@@ -926,12 +927,27 @@ const steps = [
     },
   ],
   [
-    "a share with a slot holding another recipe is rejected with its own message",
-    () => a.request("/api/plan", { method: "POST", form: shareForm({ d1_lunch_batch: "0_breakfast" }) }),
+    "A re-shares Tuesday's lunch",
+    () => a.request("/api/plan", { method: "POST", form: shareForm() }),
+    { status: 302, location: shareSaved },
+  ],
+  [
+    // The grid posts Tuesday's star-form share unchanged, so swapping the batch's lead slot must save
+    // with a fresh batch for Tuesday and a soft notice, not reject the whole grid. KD017 itself stays
+    // pinned by npm run test:rls.
+    "A swaps Monday's lunch, the batch's lead slot: Tuesday's share is dropped, not rejected",
+    () => a.request("/api/plan", { method: "POST", form: shareForm({ d0_lunch_recipe: seedRecipe6 }) }),
     {
       status: 302,
-      location: new RegExp(`^${escapeRe(`/plan?start=${shareStart}&error=${encodeURIComponent(S08_OTHER_RECIPE)}`)}$`),
+      location: new RegExp(
+        `^${escapeRe(`/plan?start=${shareStart}&saved=1&notice=${encodeURIComponent(S08_UNSHARED_NOTICE)}`)}$`,
+      ),
     },
+  ],
+  [
+    "the dropped share has no batch note",
+    () => a.request(`/plan?start=${shareStart}`),
+    { status: 200, body: /^(?![\s\S]*data-testid="batch-[01]_lunch")/ },
   ],
 
   [

@@ -3,8 +3,10 @@
 // app code against an older schema. CI has no database password, so it cannot push migrations
 // itself; `supabase db query --linked` goes through the Management API, like `npm run test:rls`.
 // Read-only. Run from the repo root: node scripts/check-migrations.mjs [--dry-run] (prints the SQL only)
-import { execFileSync } from "node:child_process";
-import { readdirSync } from "node:fs";
+import { execSync } from "node:child_process";
+import { mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 const files = readdirSync("supabase/migrations")
   .filter((name) => name.endsWith(".sql"))
@@ -34,9 +36,18 @@ if (process.argv.includes("--dry-run")) {
   process.exit(0);
 }
 
+// Through a shell, so `npx` resolves to npx.cmd on Windows too (a shell-less spawn cannot run it and
+// exits with no message). The SQL goes through a file, because a shell would split a multi-line
+// argument; only the quoted temp path reaches the command line.
+const dir = mkdtempSync(join(tmpdir(), "check-migrations-"));
+const file = join(dir, "check.sql");
+writeFileSync(file, sql);
 try {
-  execFileSync("npx", ["supabase", "db", "query", "--linked", sql], { stdio: "inherit" });
+  execSync(`npx supabase db query --linked -f ${JSON.stringify(file)}`, { stdio: "inherit" });
 } catch (error) {
+  console.error(error.message);
   process.exit(error.status || 1);
+} finally {
+  rmSync(dir, { recursive: true, force: true });
 }
 console.log(`All ${versions.length} migrations are applied to the hosted project.`);

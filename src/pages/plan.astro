@@ -146,6 +146,8 @@ const eaterOptions: { value: PlanEater; label: string }[] = [
 
 const saved = Astro.url.searchParams.get("saved") === "1";
 const notice = Astro.url.searchParams.get("error");
+// S-08: a save that turned stale shares into fresh batches (formatUnsharedNotice in /api/plan).
+const softNotice = saved ? Astro.url.searchParams.get("notice") : null;
 
 const selectClass =
   "w-full rounded-lg border border-white/20 bg-slate-900/60 px-2 py-1.5 text-sm text-white focus:border-purple-300 focus:outline-none";
@@ -167,6 +169,14 @@ const selectClass =
       {saved && (
         <p class="mb-4 rounded-lg border border-emerald-400/30 bg-emerald-500/10 p-3 text-sm text-emerald-200">
           Saved.
+        </p>
+      )}
+      {softNotice && (
+        <p
+          class="mb-4 rounded-lg border border-amber-400/30 bg-amber-500/10 p-3 text-sm text-amber-200"
+          data-testid="plan-notice"
+        >
+          {softNotice}
         </p>
       )}
       {notice && (

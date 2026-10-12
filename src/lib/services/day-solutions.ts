@@ -286,13 +286,16 @@ export async function getDayView(
   ]);
   const stored = groupStored[dayIndex] ?? null;
   const unsolvable = checkSolvable(loaded.input);
+  // The rule getPlanSolveStatuses() uses: current only when every day of the group has a parsed row
+  // carrying the group's fingerprint, so this page and /plan never disagree about one group.
+  const groupCurrent = loaded.groupDayIndexes.every((day) => groupStored[day]?.inputFingerprint === fingerprint);
   return {
     plan: loaded.plan,
     input: loaded.input,
     unsolvable,
     fingerprint,
     stored,
-    stale: stored !== null && (unsolvable !== null || stored.inputFingerprint !== fingerprint),
+    stale: stored !== null && (unsolvable !== null || !groupCurrent),
     groupDayIndexes: loaded.groupDayIndexes,
     groupStored,
   };
@@ -597,6 +600,16 @@ export interface SplitLineContext {
   viewedDay: PlanDayIndex;
   weekdayOf: (dayIndex: PlanDayIndex) => string;
   mealTypeOf: (mealId: string) => MealType | undefined;
+  // The meal eats from a batch cooked on another day, whose amounts this page does not list: show
+  // only this meal's own portions, and a percentage share also as grams.
+  ownOnly?: boolean;
+}
+
+// A percent split's share in grams of the whole batch (a percent split has no cooked yield, so the
+// batch weighs what its ingredients do).
+function percentShareGrams(component: DaySolutionComponent, share: DaySplitShare): number {
+  const batch = component.ingredients.reduce((sum, ingredient) => sum + ingredient.amountG, 0);
+  return roundHalfUp(share.fraction * batch);
 }
 
 function isOwnShare(share: DaySplitShare, context: SplitLineContext | undefined): boolean {
@@ -619,7 +632,8 @@ export function formatSplitLine(component: DaySolutionComponent, viewerId: strin
   const { kind, evenSplit } = component.split;
   const own = component.split.shares.filter((share) => isOwnShare(share, context));
   const other = component.split.shares.filter((share) => !isOwnShare(share, context));
-  const shares = [...viewerFirst(own, viewerId), ...viewerFirst(other, viewerId)];
+  const ownOnly = context?.ownOnly === true;
+  const shares = [...viewerFirst(own, viewerId), ...(ownOnly ? [] : viewerFirst(other, viewerId))];
   if (kind === "all") {
     return shares[0].userId === viewerId ? SPLIT_LABELS.allForYou : SPLIT_LABELS.allForPartner;
   }
@@ -629,7 +643,9 @@ export function formatSplitLine(component: DaySolutionComponent, viewerId: strin
       case "grams_cooked":
         return `${label}: ${share.value ?? 0} g ${SPLIT_LABELS.cooked}`;
       case "percent":
-        return `${label}: ${share.value ?? 0}%`;
+        return ownOnly
+          ? `${label}: ${formatGramsShort(percentShareGrams(component, share))} (${share.value ?? 0}% ${SPLIT_LABELS.ofTheDish})`
+          : `${label}: ${share.value ?? 0}%`;
       case "pieces":
         return `${label}: ${formatPieces(share.value ?? 0)}`;
       case "per_ingredient":
@@ -648,6 +664,8 @@ export function formatSplitLine(component: DaySolutionComponent, viewerId: strin
     }
   });
   let line = parts.join(" · ");
+  // Own-only: the percentages are already labelled, and an even split describes servings not shown.
+  if (ownOnly) return line;
   if (kind === "percent") line += ` ${SPLIT_LABELS.ofTheDish}`;
   if (evenSplit) {
     line += ` · ${shares.length === 2 ? SPLIT_LABELS.splitInHalf : SPLIT_LABELS.splitEvenly(shares.length)}`;

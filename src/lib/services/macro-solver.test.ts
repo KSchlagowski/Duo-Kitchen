@@ -68,7 +68,11 @@ const MACROS = ["kcal", "proteinG", "fatG", "carbsG"] as const;
 // The F6 performance guard's measured solve time (see "performance" below), on the S-08 dev
 // machine: first 157–165 ms (F2 4.1–4.6 ms in isolation but ~2.5 ms warm in the full suite, ~63× —
 // over budget), then ~41 ms (F2 ~1.1 ms) after the cached per-state contributions in evaluate().
+// Re-measured at 32–42 ms after the per-dish ratio index (statesByDish), so the pin stays.
 const F6_MEASURED_MS = 41;
+// Shared CI runners are often several times slower than the dev machine that set the pin, and this
+// guard has no CI record yet; the relative ≤ 60× budget is the robust gate.
+const CI_RUNNER_SLOWDOWN = 4;
 
 // A fixed permutation (reverse, then rotate by one), so "shuffled" is itself deterministic.
 function shuffle<T>(list: readonly T[]): T[] {
@@ -164,6 +168,17 @@ describe("determinism", () => {
     expect(await solveFingerprint(input(F5_UNSHARED))).not.toBe(shared);
     const renamedDish = F5.map((m) => (m.mealType === "lunch" ? { ...m, dishId: "dish-recreated-by-save" } : m));
     expect(await solveFingerprint(input(renamedDish))).toBe(shared);
+  });
+
+  it("the fingerprint is equal for both days of a group", async () => {
+    const groupOf = (dayIndex: number) => {
+      const group = solveGroups(shuffle(F5)).find((g) => g.some((m) => m.dayIndex === dayIndex));
+      if (!group) throw new Error(`no group for day ${dayIndex}`);
+      return group;
+    };
+    const day0 = await solveFingerprint(shuffledInput(groupOf(0)));
+    expect(day0).toMatch(/^[0-9a-f]{64}$/);
+    expect(await solveFingerprint(shuffledInput(groupOf(1)))).toBe(day0);
   });
 
   it("the fingerprint changes when a recipe, component or product is renamed", async () => {
@@ -576,7 +591,7 @@ describe("performance", () => {
     const f2 = timeOf(F2);
     const f6 = timeOf(F6);
     expect(f6).toBeLessThanOrEqual(60 * f2);
-    // The absolute budget is 3× the first measured value.
-    expect(f6).toBeLessThan(3 * F6_MEASURED_MS);
+    // The absolute budget is 3× the pinned value, widened for CI runner speed.
+    expect(f6).toBeLessThan(3 * F6_MEASURED_MS * CI_RUNNER_SLOWDOWN);
   });
 });

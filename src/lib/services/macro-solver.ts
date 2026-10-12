@@ -642,8 +642,19 @@ function contributionOf(cs: CompState): Contribution | null {
   return result;
 }
 
+// The state indices of each dish, ascending. A candidate move replaces one state in place, so this
+// layout holds for every candidate of one solve and is computed once, in repair().
+function indexStatesByDish(states: readonly CompState[]): number[][] {
+  const byDish: number[][] = [];
+  for (const [s, cs] of states.entries()) {
+    (byDish[cs.dishIndex] ??= []).push(s);
+  }
+  return byDish;
+}
+
 function evaluate(
   states: readonly CompState[],
+  statesByDish: readonly (readonly number[])[],
   slots: readonly DaySlot[],
   targets: SolveDayInput["targets"],
 ): Evaluation | null {
@@ -672,11 +683,12 @@ function evaluate(
     eff.push(row);
   }
 
-  // Every component of a dish has the same serving list, so serving indices line up.
+  // Every component of a dish has the same serving list, so serving indices line up. Only the
+  // dish's own states are visited (ascending, as a full scan would), so the sum is bit-identical.
   for (const [a, csA] of states.entries()) {
     if (!csA.ratioGroup) continue;
-    for (const [b, csB] of states.entries()) {
-      if (a === b || csB.dishIndex !== csA.dishIndex) continue;
+    for (const b of statesByDish[csA.dishIndex]) {
+      if (a === b) continue;
       for (const s of csA.servings.keys()) {
         violation += Math.max(0, eff[a][s] - MAX_COMPONENT_RATIO * eff[b][s]);
       }
@@ -766,7 +778,8 @@ function repair(
   dayCount: number,
 ): { states: CompState[]; evaluation: Evaluation } {
   let states = initial;
-  let current = evaluate(states, slots, targets);
+  const statesByDish = indexStatesByDish(initial);
+  let current = evaluate(states, statesByDish, slots, targets);
   if (current === null) {
     throw new Error("macro solver produced an out-of-range split");
   }
@@ -774,7 +787,7 @@ function repair(
   let accepted = 0;
   search: while (accepted < budget) {
     for (const candidate of candidateMoves(states)) {
-      const next = evaluate(candidate, slots, targets);
+      const next = evaluate(candidate, statesByDish, slots, targets);
       if (next !== null && improves(next, current)) {
         states = candidate;
         current = next;

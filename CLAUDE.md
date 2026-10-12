@@ -15,7 +15,7 @@
 
 Scripts: @package.json. Project-specific notes:
 
-- `npm test` — vitest unit tests (`src/**/*.test.ts`, config in `vitest.config.ts`), pure and needing no secrets; today the S-04 solver suite (`src/lib/services/macro-solver.test.ts`). CI runs it in the `ci` job after lint.
+- `npm test` — vitest unit tests (`src/**/*.test.ts`, config in `vitest.config.ts`), pure and needing no secrets; today the S-04 solver suite (`src/lib/services/macro-solver.test.ts`) and the day page's split lines (`src/lib/services/day-solutions.test.ts`). CI runs it in the `ci` job after lint.
 
 - `npm run smoke` — dependency-free auth-flow smoke test (`scripts/smoke.mjs`) against a running server, `BASE_URL` env (default `http://localhost:4321`). Run after dependency upgrades; CI runs it against the production preview backed by the hosted Supabase project.
 - `npm run test:rls` — household isolation test (`supabase/tests/household_isolation.sql`) against the hosted Supabase project (`--linked`); runs in a rolled-back transaction so it commits nothing, fails with a descriptive error on any broken assertion. CI runs it in the smoke job.

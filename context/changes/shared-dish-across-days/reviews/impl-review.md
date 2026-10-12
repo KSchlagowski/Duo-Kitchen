@@ -60,7 +60,7 @@ Security checks found nothing:
   - Tradeoff: The user still has to make a second edit for a common change.
   - Confidence: HIGH — a message-only change in `meal-plans.ts` / `api/plan.ts`.
   - Blind spot: None significant.
-- **Decision**: PENDING
+- **Decision**: FIXED (Fix A) — src/pages/api/plan.ts turns a share whose target slot is empty or holds another recipe into a fresh batch and appends a `notice` (formatUnsharedNotice in src/lib/services/meal-plans.ts) to the saved=1 redirect, rendered on src/pages/plan.astro as `plan-notice`; a self-reference is still rejected. Smoke step 7 now swaps Monday's lunch (the lead slot) and asserts the save succeeds with the notice and the batch note disappears; README smoke paragraph updated. KD017 stays pinned by npm run test:rls; manual row 3.10 now needs a direct RPC call to see KD017.
 
 ### F2 — The coupled solve's CPU cost: an O(states²) ratio loop on every evaluation, with the edge measurement still open
 
@@ -74,7 +74,7 @@ Security checks found nothing:
   - Tradeoff: A small refactor in `evaluate()` and in the precomputation.
   - Confidence: MED — the loop shape is verified, but its share of the 41 ms has not been profiled.
   - Blind spot: Cold-isolate cost and the real workerd figure are unmeasured.
-- **Decision**: PENDING
+- **Decision**: FIXED (Fix) — src/lib/services/macro-solver.ts: indexStatesByDish() computed once in repair() and passed to evaluate(), whose ratio loop visits only the dish's own states (same ascending order, F1–F5 toStrictEqual still pass). Re-measured F6 at 32–42 ms (no measurable change, so the quadratic term was not dominant); F6_MEASURED_MS stays 41. Still on the user: the workerd timing and Workers plan (Progress 4.12).
 
 ### F3 — The non-cook day shows the whole batch split, not the viewer's own portion
 
@@ -84,7 +84,7 @@ Security checks found nothing:
 - **Location**: src/pages/plan/day.astro:251-292; src/lib/services/day-solutions.ts:618-656
 - **Detail**: Phase 3 §6 says the non-cook day renders "the batch note and the viewer's **own portion**". The page does skip the ingredient list (`cookedElsewhere`), but it still calls `formatSplitLine()` with every share of the batch: this meal's eaters plus the other day's servings, suffixed "(Monday)". For a `percent` split it shows only percentages "of the dish", while the gram amounts that give them meaning are hidden on this day. A `per_ingredient` split shows "N% of the batch" for the other servings. Smoke's curry fixture uses `grams_cooked`, so neither case is exercised.
 - **Fix**: When `cookedElsewhere`, pass a flag to `formatSplitLine()` that keeps only `isOwnShare` shares. For `percent`, also show the grams the share represents (fraction × the batch's cooked weight), so the portion is actionable without the batch list.
-- **Decision**: PENDING
+- **Decision**: FIXED (Fix) — SplitLineContext gains `ownOnly` (src/lib/services/day-solutions.ts); formatSplitLine() then keeps only this meal's shares, shows a percent share as grams of the batch plus its percentage, and drops the even-split label; src/pages/plan/day.astro passes `ownOnly: cookedElsewhere`. Pinned in src/lib/services/day-solutions.test.ts.
 
 ### F4 — The day page and `/plan` judge a group's staleness by different rules
 
@@ -94,7 +94,7 @@ Security checks found nothing:
 - **Location**: src/lib/services/day-solutions.ts:295 vs :344
 - **Detail**: `getDayView()` sets `stale` from the viewed day's own row only (`stored.inputFingerprint !== fingerprint`). `getPlanSolveStatuses()` marks the group stale when **any** group day's row is missing, fails the schema or mismatches. Through the app, group writes are atomic, so the two agree. A row written by a direct RPC call, or one that fails the zod schema, would make the day page show "Solved" with an Accept button while `/plan` shows "Out of date" for the same group.
 - **Fix**: Compute `DayView.stale` over `groupStored` with the same rule `/plan` uses: stale unless every group day has a parsed row whose fingerprint equals the group fingerprint.
-- **Decision**: PENDING
+- **Decision**: FIXED (Fix) — getDayView() in src/lib/services/day-solutions.ts sets `stale` unless every group day in `groupStored` carries the group fingerprint, the rule getPlanSolveStatuses() uses.
 
 ### F5 — No test pins "the fingerprint is equal for both days of a group"
 
@@ -104,7 +104,7 @@ Security checks found nothing:
 - **Location**: src/lib/services/macro-solver.test.ts (fingerprint block)
 - **Detail**: Phase 1 §11 asks that the fingerprint be shown to be "**equal** for both days of a group". The suite covers that it changes on a grouping-only change and on a rename and stays 64 hex characters, but not the equality. It holds today by construction (one fingerprint per group input), but nothing stops a regression where the fingerprint input is filtered by day.
 - **Fix**: Add a test asserting that `solveFingerprint` over the group `solveGroups()` returns for a meal of day 0 equals the fingerprint over the group it returns for a meal of day 1 of F5, using shuffled input for both.
-- **Decision**: PENDING
+- **Decision**: FIXED (Fix) — src/lib/services/macro-solver.test.ts: new test "the fingerprint is equal for both days of a group" fingerprints the solveGroups() group of a day-0 and a day-1 meal of shuffled F5 via shuffledInput().
 
 ### F6 — The F6 absolute budget pins a post-mitigation value and a wall-clock figure that may flake on CI
 
@@ -114,7 +114,7 @@ Security checks found nothing:
 - **Location**: src/lib/services/macro-solver.test.ts:21-25 (`F6_MEASURED_MS = 41`), :580
 - **Detail**: The plan says to pin the absolute assertion at 3× the "first measured value". The comment records a first measurement of 157–165 ms (about 63×, over budget), then rung 3, and pins 41 ms, the post-mitigation value. That is a defensible reading, but it is not written in the plan. `expect(f6).toBeLessThan(123)` is also a wall-clock bound on shared CI runners, which are often several times slower than the dev machine that set it. The relative ≤ 60× guard is the robust one.
 - **Fix**: Add a line to Phase 1 §11 recording "first measurement 157–165 ms → rung 3 applied → 41 ms pinned". Keep the absolute assertion only if it proves stable on CI; otherwise widen it to cover CI runner speed.
-- **Decision**: PENDING
+- **Decision**: FIXED (Fix) — plan.md Phase 1 §11 records 157–165 ms → rung 3 → 41 ms pinned. The branch has no CI run of the guard yet, so the absolute assertion is widened by CI_RUNNER_SLOWDOWN = 4 (src/lib/services/macro-solver.test.ts); the relative ≤ 60× budget stays the gate.
 
 ### F7 — `npm run check:migrations` exits 1 silently on Windows
 
@@ -124,7 +124,7 @@ Security checks found nothing:
 - **Location**: scripts/check-migrations.mjs:36-40
 - **Detail**: `execFileSync("npx", [...])` without `shell` cannot spawn `npx.cmd` on Windows. The `catch` exits with `error.status || 1` and prints nothing. Progress rows 2.2 and 4.6 are marked passing. The migration is in fact applied (verified directly, see the table above), and CI runs on Linux, where the script works. The script is pre-existing and not part of this diff, but on this host its result cannot be trusted as a success signal for those rows.
 - **Fix**: Pass `{ stdio: "inherit", shell: process.platform === "win32" }` to `execFileSync`, and print `error.message` in the `catch` before exiting.
-- **Decision**: PENDING
+- **Decision**: FIXED (Fix, adapted) — scripts/check-migrations.mjs writes the SQL to a temp file and runs `npx supabase db query --linked -f <file>` through a shell (execSync), and prints error.message before exiting. The literal `shell: true` + execFileSync was tried first: cmd.exe split the multi-line SQL argument (UnexpectedArgument) and Node warns DEP0190. Verified on Windows: exit 0 when applied, exit 1 with the reason for a missing version.
 
 ### F8 — Same-day sharing UI added beyond the plan
 
@@ -139,4 +139,4 @@ Security checks found nothing:
 
   `formatSplitLine()` takes a `SplitLineContext` object rather than the planned `(resolver, viewedDay)` pair. The additions are benign and consistent, but undocumented. No unit test or smoke step covers a same-day share.
 - **Fix**: Record same-day sharing and its rendering in the plan as an addendum to Phase 3 §2/§6, and add one unit test of `formatSplitLine()` for a same-day two-meal batch.
-- **Decision**: PENDING
+- **Decision**: FIXED (Fix) — plan.md Phase 3 §2 addendum records same-day sharing and its rendering (SplitLineContext, meal-type suffix, ofTheBatch, splitEvenly); src/lib/services/day-solutions.test.ts adds a formatSplitLine() test for a same-day two-meal batch (CLAUDE.md `npm test` line updated).

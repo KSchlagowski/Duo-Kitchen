@@ -6,13 +6,15 @@ import {
   MEAL_TYPES,
   PLAN_DAYS,
   PLAN_SAVE_FAILED,
-  SHARE_EMPTY_SLOT,
   SHARE_INVALID_SLOT,
-  SHARE_OTHER_RECIPE,
+  addDays,
+  formatUnsharedNotice,
   isIsoDate,
   mealPlanErrorMessage,
   saveMealPlan,
+  weekdayLabel,
 } from "@/lib/services/meal-plans";
+import { MEAL_TYPE_LABELS } from "@/lib/recipe-labels";
 import type { MealType, PlanDayIndex, PlanEater, PlanMealInput } from "@/types";
 
 const INVALID_PLAN = "That plan could not be read. Please check the start date and try again.";
@@ -94,6 +96,7 @@ export const POST: APIRoute = async (context) => {
   }
 
   const meals: PlanMealInput[] = [];
+  const unshared: string[] = [];
   for (const day of PLAN_DAYS) {
     // The "whole day for" shortcut overrides every filled meal of that day; it is not stored.
     const dayEater = fields[`day${day}_eater`];
@@ -120,14 +123,14 @@ export const POST: APIRoute = async (context) => {
         if (targetDay === day && targetType === mealType) {
           return context.redirect(errorUrl(startDate, SHARE_INVALID_SLOT));
         }
+        // A saved batch renders in star form, so changing or clearing its lead slot leaves every other
+        // member naming a slot that no longer matches. That is an ordinary edit: cook a fresh batch.
         const targetRecipe = fields[`d${targetDay}_${targetType}_recipe`];
-        if (!targetRecipe) {
-          return context.redirect(errorUrl(startDate, SHARE_EMPTY_SLOT));
+        if (targetRecipe === recipeId) {
+          shareWith = { dayIndex: targetDay, mealType: targetType };
+        } else {
+          unshared.push(`${weekdayLabel(addDays(startDate, day))} ${MEAL_TYPE_LABELS[mealType]}`);
         }
-        if (targetRecipe !== recipeId) {
-          return context.redirect(errorUrl(startDate, SHARE_OTHER_RECIPE));
-        }
-        shareWith = { dayIndex: targetDay, mealType: targetType };
       }
       meals.push({ dayIndex: day, mealType, recipeId, eaterUserId, shareWith });
     }
@@ -141,5 +144,6 @@ export const POST: APIRoute = async (context) => {
     return context.redirect(errorUrl(startDate, mealPlanErrorMessage(error)));
   }
 
-  return context.redirect(planUrl(startDate, "saved=1"));
+  const notice = unshared.length > 0 ? `&notice=${encodeURIComponent(formatUnsharedNotice(unshared))}` : "";
+  return context.redirect(planUrl(startDate, `saved=1${notice}`));
 };
