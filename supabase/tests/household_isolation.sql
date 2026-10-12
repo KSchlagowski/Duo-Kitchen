@@ -149,8 +149,10 @@ begin
     ('00000000-0000-4000-a000-00000000000b', b_household, 1800, 120, 60, 180);
 
   -- Meal plans (S-03), fixture ids …a007 (plan) / …a017, …a027 (dishes) / …a037, …a047 (meals) for
-  -- A, and …b007 / …b017 / …b037 for B. plan_meals_dish_id_key allows one meal per dish, so A's two
-  -- meals need two dishes. Inserted as postgres: authenticated has no write grant on these tables.
+  -- A, and …b007 / …b017 / …b037 for B. S-08 adds one SHARED dish on A's plan, …a057, eaten by two
+  -- meals on different days, …a067 (day 0 lunch) and …a077 (day 1 lunch). A's plan leaves (2, dinner)
+  -- free on purpose: the write-revoke probe below inserts there. Inserted as postgres: authenticated
+  -- has no write grant on these tables.
   insert into public.meal_plans (id, household_id, start_date)
   values
     ('00000000-0000-4000-b000-00000000a007', a_household, '2030-01-01'),
@@ -162,6 +164,8 @@ begin
       '5eed0002-0000-4000-8000-000000000001'),
     ('00000000-0000-4000-b000-00000000a027', a_household, '00000000-0000-4000-b000-00000000a007',
       '00000000-0000-4000-b000-00000000c002'),
+    ('00000000-0000-4000-b000-00000000a057', a_household, '00000000-0000-4000-b000-00000000a007',
+      '5eed0002-0000-4000-8000-000000000003'),
     ('00000000-0000-4000-b000-00000000b017', b_household, '00000000-0000-4000-b000-00000000b007',
       '5eed0002-0000-4000-8000-000000000001');
 
@@ -171,6 +175,10 @@ begin
       0, 'breakfast', '00000000-0000-4000-b000-00000000a017', null),
     ('00000000-0000-4000-b000-00000000a047', a_household, '00000000-0000-4000-b000-00000000a007',
       1, 'dinner', '00000000-0000-4000-b000-00000000a027', '00000000-0000-4000-a000-00000000000a'),
+    ('00000000-0000-4000-b000-00000000a067', a_household, '00000000-0000-4000-b000-00000000a007',
+      0, 'lunch', '00000000-0000-4000-b000-00000000a057', null),
+    ('00000000-0000-4000-b000-00000000a077', a_household, '00000000-0000-4000-b000-00000000a007',
+      1, 'lunch', '00000000-0000-4000-b000-00000000a057', null),
     ('00000000-0000-4000-b000-00000000b037', b_household, '00000000-0000-4000-b000-00000000b007',
       0, 'lunch', '00000000-0000-4000-b000-00000000b017', null);
 end;
@@ -213,6 +221,14 @@ begin
   end;
 
   delete from public.plan_dishes where id = '00000000-0000-4000-b000-00000000b027';
+
+  -- S-08, the mirror of the probe above: a meal on ANOTHER DAY of the SAME plan may eat from a dish
+  -- that already feeds a meal (…a017 feeds A's day 0 breakfast). This is the direct regression guard
+  -- for the dropped plan_meals_dish_id_key; any error here fails the test.
+  insert into public.plan_meals (id, household_id, plan_id, day_index, meal_type, dish_id)
+  values ('00000000-0000-4000-b000-00000000a087', a_household, '00000000-0000-4000-b000-00000000a007',
+    2, 'breakfast', '00000000-0000-4000-b000-00000000a017');
+  delete from public.plan_meals where id = '00000000-0000-4000-b000-00000000a087';
 end;
 $$;
 
@@ -549,8 +565,8 @@ begin
   end if;
 
   select count(*) into n from public.plan_dishes;
-  if n <> 2 then
-    raise exception 'plans: user A sees % plan_dishes rows, expected exactly its own 2', n;
+  if n <> 3 then
+    raise exception 'plans: user A sees % plan_dishes rows, expected exactly its own 3', n;
   end if;
   select count(*) into n from public.plan_dishes where household_id <> a_household;
   if n <> 0 then
@@ -558,8 +574,12 @@ begin
   end if;
 
   select count(*) into n from public.plan_meals;
+  if n <> 4 then
+    raise exception 'plans: user A sees % plan_meals rows, expected exactly its own 4', n;
+  end if;
+  select count(*) into n from public.plan_meals where dish_id = '00000000-0000-4000-b000-00000000a057';
   if n <> 2 then
-    raise exception 'plans: user A sees % plan_meals rows, expected exactly its own 2', n;
+    raise exception 'plans: user A sees % meals eating from its shared fixture dish, expected 2', n;
   end if;
   select count(*) into n from public.plan_meals
   where id in ('00000000-0000-4000-b000-00000000b037')
@@ -594,8 +614,9 @@ begin
   end;
 
   begin
-    -- Privileges are checked before constraints, so the dish (already eaten from by …a037) cannot
-    -- mask the revoke: if the revoke is gone this fails on plan_meals_dish_id_key, unhandled.
+    -- Valid values: a free slot (2, dinner) and a dish of A's own plan. Since S-08 dropped
+    -- plan_meals_dish_id_key no constraint stands in the way, so this probe rests on the revoke alone;
+    -- a regressed revoke makes the insert succeed and the raise below fail the test as P0001.
     insert into public.plan_meals (household_id, plan_id, day_index, meal_type, dish_id)
     values (a_household, '00000000-0000-4000-b000-00000000a007', 2, 'dinner',
       '00000000-0000-4000-b000-00000000a017');
@@ -732,6 +753,147 @@ begin
 end;
 $$;
 
+-- As user A: save_meal_plan with shared dishes (S-08), on its own 2030-02-03 plan. share_with names
+-- ANOTHER slot; the slots it joins eat from one dish. Covers create (the share_with round-trip pin),
+-- a no-op re-save in either direction, an eater-only change, a split, a merge, a transitive group of
+-- three and orphan cleanup after every regroup.
+do $$
+declare
+  rec_a constant text := '5eed0002-0000-4000-8000-000000000001';
+  rec_b constant text := '5eed0002-0000-4000-8000-000000000002';
+  plan uuid;
+  breakfast_meal uuid;
+  lunch0 uuid;
+  lunch1 uuid;
+  shared_dish uuid;
+  dish0 uuid;
+  dish1 uuid;
+  n int;
+begin
+  -- Create: day 1 lunch shares day 0 lunch's batch -> 3 meals, 2 dishes, both lunches on one dish.
+  plan := public.save_meal_plan('2030-02-03', jsonb_build_array(
+    jsonb_build_object('day_index', 0, 'meal_type', 'breakfast', 'recipe_id', rec_a, 'eater_user_id', null),
+    jsonb_build_object('day_index', 0, 'meal_type', 'lunch', 'recipe_id', rec_b, 'eater_user_id', null),
+    jsonb_build_object('day_index', 1, 'meal_type', 'lunch', 'recipe_id', rec_b, 'eater_user_id', null,
+      'share_with', '0_lunch')));
+  select count(*) into n from public.plan_meals where plan_id = plan;
+  if n <> 3 then
+    raise exception 'plans[share]: creating a shared batch wrote % meals, expected 3', n;
+  end if;
+  select count(*) into n from public.plan_dishes where plan_id = plan;
+  if n <> 2 then
+    raise exception 'plans[share]: creating a shared batch wrote % dishes, expected 2 (one shared)', n;
+  end if;
+  select id into breakfast_meal from public.plan_meals where plan_id = plan and day_index = 0 and meal_type = 'breakfast';
+  select id, dish_id into lunch0, dish0 from public.plan_meals where plan_id = plan and day_index = 0 and meal_type = 'lunch';
+  select id, dish_id into lunch1, dish1 from public.plan_meals where plan_id = plan and day_index = 1 and meal_type = 'lunch';
+  if dish0 is distinct from dish1 then
+    raise exception 'plans[share]: share_with "0_lunch" did not put day 0 and day 1 lunch on one dish';
+  end if;
+  select count(*) into n from public.plan_dishes where id = dish0 and recipe_id = rec_b::uuid;
+  if n <> 1 then
+    raise exception 'plans[share]: the shared dish does not hold the shared recipe';
+  end if;
+  shared_dish := dish0;
+
+  -- No-op re-saves: the same grouping, named from the other side, and an eater-only change on one
+  -- member all keep every meal and dish id.
+  perform public.save_meal_plan('2030-02-03', jsonb_build_array(
+    jsonb_build_object('day_index', 0, 'meal_type', 'breakfast', 'recipe_id', rec_a, 'eater_user_id', null),
+    jsonb_build_object('day_index', 0, 'meal_type', 'lunch', 'recipe_id', rec_b, 'eater_user_id', null,
+      'share_with', '1_lunch'),
+    jsonb_build_object('day_index', 1, 'meal_type', 'lunch', 'recipe_id', rec_b,
+      'eater_user_id', '00000000-0000-4000-a000-00000000000a')));
+  select count(*) into n from public.plan_meals
+  where id in (breakfast_meal, lunch0, lunch1) and plan_id = plan;
+  if n <> 3 then
+    raise exception 'plans[share]: re-saving an unchanged grouping replaced % of 3 meal rows', 3 - n;
+  end if;
+  select count(*) into n from public.plan_meals where id in (lunch0, lunch1) and dish_id = shared_dish;
+  if n <> 2 then
+    raise exception 'plans[share]: re-saving an unchanged grouping moved a lunch off the shared dish';
+  end if;
+  select count(*) into n from public.plan_meals
+  where id = lunch1 and eater_user_id = '00000000-0000-4000-a000-00000000000a';
+  if n <> 1 then
+    raise exception 'plans[share]: an eater-only change on a shared meal did not update it in place';
+  end if;
+
+  -- Split: no share_with -> two fresh lunch dishes, both lunch meal ids replaced, the old shared dish
+  -- cleaned up, breakfast untouched.
+  perform public.save_meal_plan('2030-02-03', jsonb_build_array(
+    jsonb_build_object('day_index', 0, 'meal_type', 'breakfast', 'recipe_id', rec_a, 'eater_user_id', null),
+    jsonb_build_object('day_index', 0, 'meal_type', 'lunch', 'recipe_id', rec_b, 'eater_user_id', null),
+    jsonb_build_object('day_index', 1, 'meal_type', 'lunch', 'recipe_id', rec_b,
+      'eater_user_id', '00000000-0000-4000-a000-00000000000a')));
+  select count(*) into n from public.plan_dishes where plan_id = plan;
+  if n <> 3 then
+    raise exception 'plans[split]: splitting a shared batch left % dishes, expected 3', n;
+  end if;
+  select count(*) into n from public.plan_meals where id in (lunch0, lunch1);
+  if n <> 0 then
+    raise exception 'plans[split]: % lunch meals kept their ids although their grouping changed', n;
+  end if;
+  select count(*) into n from public.plan_dishes where id = shared_dish;
+  if n <> 0 then
+    raise exception 'plans[split]: the formerly shared dish was left behind with no meal';
+  end if;
+  select count(*) into n from public.plan_meals where id = breakfast_meal;
+  if n <> 1 then
+    raise exception 'plans[split]: regrouping the lunches replaced the untouched breakfast';
+  end if;
+  select count(*) into n from public.plan_meals
+  where plan_id = plan and meal_type = 'lunch' and eater_user_id = '00000000-0000-4000-a000-00000000000a';
+  if n <> 1 then
+    raise exception 'plans[split]: the day 1 lunch lost its eater when it was split off';
+  end if;
+  select m0.dish_id, m1.dish_id into dish0, dish1
+  from public.plan_meals m0, public.plan_meals m1
+  where m0.plan_id = plan and m0.day_index = 0 and m0.meal_type = 'lunch'
+    and m1.plan_id = plan and m1.day_index = 1 and m1.meal_type = 'lunch';
+  if dish0 = dish1 then
+    raise exception 'plans[split]: the split lunches still eat from one dish';
+  end if;
+
+  -- Merge + transitivity: day 2 lunch shares day 1, day 1 shares day 0 -> one dish for all three
+  -- lunches; the two separate lunch dishes are cleaned up.
+  perform public.save_meal_plan('2030-02-03', jsonb_build_array(
+    jsonb_build_object('day_index', 0, 'meal_type', 'breakfast', 'recipe_id', rec_a, 'eater_user_id', null),
+    jsonb_build_object('day_index', 0, 'meal_type', 'lunch', 'recipe_id', rec_b, 'eater_user_id', null),
+    jsonb_build_object('day_index', 1, 'meal_type', 'lunch', 'recipe_id', rec_b, 'eater_user_id', null,
+      'share_with', '0_lunch'),
+    jsonb_build_object('day_index', 2, 'meal_type', 'lunch', 'recipe_id', rec_b, 'eater_user_id', null,
+      'share_with', '1_lunch')));
+  select count(*) into n from public.plan_dishes where plan_id = plan;
+  if n <> 2 then
+    raise exception 'plans[merge]: merging three lunches left % dishes, expected 2', n;
+  end if;
+  select count(distinct dish_id) into n from public.plan_meals where plan_id = plan and meal_type = 'lunch';
+  if n <> 1 then
+    raise exception 'plans[merge]: the three transitively shared lunches eat from % dishes, expected 1', n;
+  end if;
+  select count(*) into n from public.plan_dishes where id in (dish0, dish1);
+  if n <> 0 then
+    raise exception 'plans[merge]: % of the two separate lunch dishes were left behind after the merge', n;
+  end if;
+
+  -- A mutual pair (each names the other) is one group, not an error.
+  perform public.save_meal_plan('2030-02-03', jsonb_build_array(
+    jsonb_build_object('day_index', 0, 'meal_type', 'lunch', 'recipe_id', rec_b, 'eater_user_id', null,
+      'share_with', '2_lunch'),
+    jsonb_build_object('day_index', 2, 'meal_type', 'lunch', 'recipe_id', rec_b, 'eater_user_id', null,
+      'share_with', '0_lunch')));
+  select count(*) into n from public.plan_dishes where plan_id = plan;
+  if n <> 1 then
+    raise exception 'plans[share]: a mutual share_with pair left % dishes, expected 1', n;
+  end if;
+  select count(*) into n from public.plan_meals where plan_id = plan;
+  if n <> 2 then
+    raise exception 'plans[share]: a mutual share_with pair left % meals, expected 2', n;
+  end if;
+end;
+$$;
+
 -- As user A: save_meal_plan rejections, one SQLSTATE each (when others + P0001 re-raise idiom, see
 -- the redemption rejections below). B is not in A's household, so it is the KD012 probe.
 do $$
@@ -757,7 +919,20 @@ declare
     array['2030-02-02', '[{"day_index":0,"meal_type":"lunch","recipe_id":"00000000-0000-4000-8000-0000000000ff","eater_user_id":null}]',
       'KD011', 'an unknown recipe was accepted'],
     array['2030-02-02', '[{"day_index":0,"meal_type":"lunch","recipe_id":"5eed0002-0000-4000-8000-000000000001","eater_user_id":"00000000-0000-4000-a000-00000000000b"}]',
-      'KD012', 'a meal for a user outside the household was accepted']
+      'KD012', 'a meal for a user outside the household was accepted'],
+    -- S-08: share_with. Each payload is otherwise valid, so only the share_with rule can reject it.
+    array['2030-02-02', '[' || ok || ',{"day_index":1,"meal_type":"lunch","recipe_id":"5eed0002-0000-4000-8000-000000000001","eater_user_id":null,"share_with":"3_lunch"}]',
+      'KD015', 'a share_with with day 3 was accepted'],
+    array['2030-02-02', '[' || ok || ',{"day_index":1,"meal_type":"lunch","recipe_id":"5eed0002-0000-4000-8000-000000000001","eater_user_id":null,"share_with":"0_brunch"}]',
+      'KD015', 'a share_with with an unknown meal type was accepted'],
+    array['2030-02-02', '[' || ok || ',{"day_index":1,"meal_type":"lunch","recipe_id":"5eed0002-0000-4000-8000-000000000001","eater_user_id":null,"share_with":5}]',
+      'KD015', 'a non-string share_with was accepted'],
+    array['2030-02-02', '[' || ok || ',{"day_index":1,"meal_type":"lunch","recipe_id":"5eed0002-0000-4000-8000-000000000001","eater_user_id":null,"share_with":"1_lunch"}]',
+      'KD015', 'a share_with naming the meal''s own slot was accepted'],
+    array['2030-02-02', '[' || ok || ',{"day_index":1,"meal_type":"lunch","recipe_id":"5eed0002-0000-4000-8000-000000000001","eater_user_id":null,"share_with":"2_lunch"}]',
+      'KD016', 'a share_with naming a slot that is not in the plan was accepted'],
+    array['2030-02-02', '[' || ok || ',{"day_index":1,"meal_type":"lunch","recipe_id":"5eed0002-0000-4000-8000-000000000002","eater_user_id":null,"share_with":"0_lunch"}]',
+      'KD017', 'a share_with naming a slot of a different recipe was accepted']
   ];
   i int;
   n int;
@@ -785,45 +960,59 @@ begin
 end;
 $$;
 
--- As user A: day solutions (S-04) against A's own RPC-saved 2030-05-01 plan. save_day_solution
--- returns an id, a second call for the same day updates that row in place, and the table is
--- write-revoked. The solution id is stashed for B's invisibility check and the cascade block at the end.
+-- As user A: day solutions (S-04, group writer since S-08) against A's own RPC-saved 2030-05-01 plan,
+-- whose lunch is one batch shared by days 0 and 1. save_plan_day_solutions writes both days of the
+-- group in one call and returns the plan id; a second call updates both rows in place; the table is
+-- write-revoked. The day 0 solution id is stashed for B's invisibility check and the cascade block at
+-- the end.
 do $$
 declare
   a_household uuid := current_setting('rls_test.a_household')::uuid;
   fp constant text := repeat('ab', 32);
+  fp2 constant text := repeat('cd', 32);
   plan uuid;
+  returned uuid;
   sol uuid;
-  sol2 uuid;
-  v_status text;
-  v_tol smallint;
+  sol1 uuid;
   n int;
 begin
   plan := public.save_meal_plan('2030-05-01', jsonb_build_array(
     jsonb_build_object('day_index', 0, 'meal_type', 'lunch',
-      'recipe_id', '5eed0002-0000-4000-8000-000000000004', 'eater_user_id', null)));
+      'recipe_id', '5eed0002-0000-4000-8000-000000000004', 'eater_user_id', null),
+    jsonb_build_object('day_index', 1, 'meal_type', 'lunch',
+      'recipe_id', '5eed0002-0000-4000-8000-000000000004', 'eater_user_id', null, 'share_with', '0_lunch')));
 
-  sol := public.save_day_solution('2030-05-01', 0, 'needs_confirmation', 10, fp, '{"version":1}'::jsonb);
-  if sol is null then
-    raise exception 'solutions[rpc]: save_day_solution returned no id';
+  returned := public.save_plan_day_solutions('2030-05-01', jsonb_build_array(
+    jsonb_build_object('day_index', 0, 'status', 'needs_confirmation', 'accepted_tolerance_pct', 10,
+      'input_fingerprint', fp, 'result', '{"version":1}'::jsonb),
+    jsonb_build_object('day_index', 1, 'status', 'needs_confirmation', 'accepted_tolerance_pct', 10,
+      'input_fingerprint', fp, 'result', '{"version":1}'::jsonb)));
+  if returned is distinct from plan then
+    raise exception 'solutions[rpc]: save_plan_day_solutions returned %, expected A''s 2030-05-01 plan %', returned, plan;
   end if;
   select count(*) into n from public.plan_day_solutions
-  where id = sol and plan_id = plan and household_id = a_household and day_index = 0;
-  if n <> 1 then
-    raise exception 'solutions[rpc]: save_day_solution returned %, which is not A''s 2030-05-01 day 0 row', sol;
+  where plan_id = plan and household_id = a_household and day_index in (0, 1)
+    and status = 'needs_confirmation' and accepted_tolerance_pct = 10 and input_fingerprint = fp;
+  if n <> 2 then
+    raise exception 'solutions[rpc]: one group write stored % of its 2 days, expected both', n;
   end if;
+  select id into sol from public.plan_day_solutions where plan_id = plan and day_index = 0;
+  select id into sol1 from public.plan_day_solutions where plan_id = plan and day_index = 1;
 
-  sol2 := public.save_day_solution('2030-05-01', 0, 'solved', 15, fp, '{"version":1}'::jsonb);
-  if sol2 is distinct from sol then
-    raise exception 'solutions[rpc]: re-saving the same day returned %, expected the same row %', sol2, sol;
-  end if;
-  select status, accepted_tolerance_pct into v_status, v_tol from public.plan_day_solutions where id = sol;
-  if v_status <> 'solved' or v_tol <> 15 then
-    raise exception 'solutions[rpc]: re-saving left status % / tolerance %, expected solved / 15', v_status, v_tol;
+  -- Second group write: both rows are updated in place (same ids), not duplicated.
+  perform public.save_plan_day_solutions('2030-05-01', jsonb_build_array(
+    jsonb_build_object('day_index', 1, 'status', 'solved', 'accepted_tolerance_pct', 15,
+      'input_fingerprint', fp2, 'result', '{"version":1}'::jsonb),
+    jsonb_build_object('day_index', 0, 'status', 'solved', 'accepted_tolerance_pct', 15,
+      'input_fingerprint', fp2, 'result', '{"version":1}'::jsonb)));
+  select count(*) into n from public.plan_day_solutions
+  where id in (sol, sol1) and status = 'solved' and accepted_tolerance_pct = 15 and input_fingerprint = fp2;
+  if n <> 2 then
+    raise exception 'solutions[rpc]: re-saving the group updated % of its 2 rows in place, expected both', n;
   end if;
   select count(*) into n from public.plan_day_solutions where plan_id = plan;
-  if n <> 1 then
-    raise exception 'solutions[rpc]: the plan holds % solution rows after two saves of one day, expected 1', n;
+  if n <> 2 then
+    raise exception 'solutions[rpc]: the plan holds % solution rows after two group writes of two days, expected 2', n;
   end if;
 
   -- Valid values in A's own household and plan: the policies alone would ALLOW this, so only the
@@ -872,41 +1061,71 @@ begin
 end;
 $$;
 
--- As user A: save_day_solution rejections, one SQLSTATE each (same when others + P0001 re-raise
--- idiom as the save_meal_plan rejections above).
+-- As user A: save_plan_day_solutions rejections, one SQLSTATE each (same when others + P0001 re-raise
+-- idiom as the save_meal_plan rejections above). Every malformed case puts a VALID day 2 first, so the
+-- final check proves a rejected group write stores none of its days.
 do $$
 declare
   fp constant text := repeat('ab', 32);
+  ok constant text := '{"day_index":2,"status":"solved","accepted_tolerance_pct":10,"input_fingerprint":"' || repeat('ab', 32) || '","result":{}}';
   cases text[][] := array[
-    -- start date, day_index, status, tolerance, fingerprint, result, expected SQLSTATE, what the case proves
-    array['2030-05-01', '3', 'solved', '10', fp, '{}', 'KD013', 'day_index 3 was accepted'],
-    array['2030-05-01', '0', 'great', '10', fp, '{}', 'KD013', 'an unknown status was accepted'],
-    array['2030-05-01', '0', 'solved', '12', fp, '{}', 'KD013', 'a tolerance of 12 was accepted'],
-    array['2030-05-01', '0', 'solved', '10', repeat('zz', 32), '{}', 'KD013', 'a non-hex fingerprint was accepted'],
-    array['2030-05-01', '0', 'solved', '10', fp, '[]', 'KD013', 'a jsonb array result was accepted'],
-    array[null, '0', 'solved', '10', fp, '{}', 'KD013', 'a null start date was accepted'],
-    array['2030-05-01', '0', 'solved', '10', fp,
-      jsonb_build_object('pad', repeat('x', 70000))::text, 'KD013', 'a result over 65536 bytes was accepted'],
-    array['2030-05-09', '0', 'solved', '10', fp, '{}', 'KD014', 'a start date with no plan was accepted']
+    -- start date, payload, expected SQLSTATE, what the case proves
+    array['2030-05-01', '[' || ok || ',' || jsonb_build_object('day_index', 3, 'status', 'solved',
+      'accepted_tolerance_pct', 10, 'input_fingerprint', fp, 'result', '{}'::jsonb)::text || ']',
+      'KD013', 'day_index 3 was accepted'],
+    array['2030-05-01', '[' || ok || ',' || jsonb_build_object('day_index', 0, 'status', 'great',
+      'accepted_tolerance_pct', 10, 'input_fingerprint', fp, 'result', '{}'::jsonb)::text || ']',
+      'KD013', 'an unknown status was accepted'],
+    array['2030-05-01', '[' || ok || ',' || jsonb_build_object('day_index', 0, 'status', 'solved',
+      'accepted_tolerance_pct', 12, 'input_fingerprint', fp, 'result', '{}'::jsonb)::text || ']',
+      'KD013', 'a tolerance of 12 was accepted'],
+    array['2030-05-01', '[' || ok || ',' || jsonb_build_object('day_index', 0, 'status', 'solved',
+      'accepted_tolerance_pct', 10, 'input_fingerprint', repeat('zz', 32), 'result', '{}'::jsonb)::text || ']',
+      'KD013', 'a non-hex fingerprint was accepted'],
+    array['2030-05-01', '[' || ok || ',' || jsonb_build_object('day_index', 0, 'status', 'solved',
+      'accepted_tolerance_pct', 10, 'input_fingerprint', fp, 'result', '[]'::jsonb)::text || ']',
+      'KD013', 'a jsonb array result was accepted'],
+    array['2030-05-01', '[' || ok || ',' || jsonb_build_object('day_index', 0, 'status', 'solved',
+      'accepted_tolerance_pct', 10, 'input_fingerprint', fp,
+      'result', jsonb_build_object('pad', repeat('x', 70000)))::text || ']',
+      'KD013', 'a result over 65536 bytes was accepted'],
+    array['2030-05-01', '[' || ok || ',' || jsonb_build_object('day_index', 0, 'status', 'solved',
+      'accepted_tolerance_pct', 10, 'result', '{}'::jsonb)::text || ']',
+      'KD013', 'an entry without input_fingerprint was accepted'],
+    array['2030-05-01', '[' || ok || ',' || ok || ']', 'KD013', 'a duplicate day_index was accepted'],
+    array['2030-05-01', '[' || ok || ',"day 0"]', 'KD013', 'a non-object entry was accepted'],
+    array['2030-05-01', '[]', 'KD013', 'an empty group was accepted'],
+    array['2030-05-01', '[' || ok || ',' || ok || ',' || ok || ',' || ok || ']', 'KD013', 'more than 3 days were accepted'],
+    array['2030-05-01', ok, 'KD013', 'a non-array payload was accepted'],
+    array['2030-05-01', null, 'KD013', 'a null payload was accepted'],
+    array[null, '[' || ok || ']', 'KD013', 'a null start date was accepted'],
+    array['2030-05-09', '[' || ok || ']', 'KD014', 'a start date with no plan was accepted']
   ];
   i int;
+  n int;
   v_state text;
   v_msg text;
 begin
   for i in 1 .. array_length(cases, 1) loop
     begin
-      perform public.save_day_solution(cases[i][1]::date, cases[i][2]::int, cases[i][3], cases[i][4]::int,
-        cases[i][5], cases[i][6]::jsonb);
-      raise exception 'solutions[%]: %', cases[i][7], cases[i][8];
+      perform public.save_plan_day_solutions(cases[i][1]::date, cases[i][2]::jsonb);
+      raise exception 'solutions[%]: %', cases[i][3], cases[i][4];
     exception
       when others then
         get stacked diagnostics v_state = returned_sqlstate, v_msg = message_text;
         if v_state = 'P0001' then raise; end if;
-        if v_state <> cases[i][7] then
-          raise exception 'solutions[%]: % -- rejected with % ("%") instead', cases[i][7], cases[i][8], v_state, v_msg;
+        if v_state <> cases[i][3] then
+          raise exception 'solutions[%]: % -- rejected with % ("%") instead', cases[i][3], cases[i][4], v_state, v_msg;
         end if;
     end;
   end loop;
+
+  select count(*) into n from public.plan_day_solutions s
+  join public.meal_plans mp on mp.id = s.plan_id
+  where mp.start_date = '2030-05-01' and s.day_index = 2;
+  if n <> 0 then
+    raise exception 'solutions: a rejected group write stored its valid day 2 anyway; a group write must be all or nothing';
+  end if;
 end;
 $$;
 
@@ -997,7 +1216,9 @@ begin
   end if;
 
   begin
-    perform public.save_day_solution('2030-05-01', 0, 'solved', 10, repeat('ab', 32), '{}'::jsonb);
+    perform public.save_plan_day_solutions('2030-05-01', jsonb_build_array(jsonb_build_object(
+      'day_index', 0, 'status', 'solved', 'accepted_tolerance_pct', 10,
+      'input_fingerprint', repeat('ab', 32), 'result', '{}'::jsonb)));
     raise exception 'solutions[KD014]: user B saved a solution for A''s 2030-05-01 plan date';
   exception
     when sqlstate 'KD014' then null;
@@ -1110,16 +1331,17 @@ begin
 end;
 $$;
 
--- As anon: the S-04 RPC, same reasoning and KD007 branch.
+-- As anon: the S-04 solutions RPC (the S-08 group writer), same reasoning and KD007 branch. It is a
+-- NEW function (save_day_solution was dropped), so it got Supabase's default anon grant afresh.
 do $$
 begin
   begin
-    perform public.save_day_solution('2030-01-01', 0, 'solved', 10, repeat('ab', 32), '{}'::jsonb);
-    raise exception 'anon: could execute public.save_day_solution()';
+    perform public.save_plan_day_solutions('2030-01-01', '[]'::jsonb);
+    raise exception 'anon: could execute public.save_plan_day_solutions()';
   exception
     when insufficient_privilege then null;
     when sqlstate 'KD007' then
-      raise exception 'anon: public.save_day_solution() is executable by anon (reached the body and raised KD007); the revoke execute … from public, anon is missing';
+      raise exception 'anon: public.save_plan_day_solutions() is executable by anon (reached the body and raised KD007); the revoke execute … from public, anon is missing';
   end;
 end;
 $$;
@@ -1359,7 +1581,8 @@ end;
 $$;
 
 -- Grants (as postgres), day solutions (S-04): the same write-revoked shape as the S-03 tables, and
--- the RPC's execute grants (the catch-alls inspect tables only).
+-- the RPC's execute grants (the catch-alls inspect tables only). Since S-08 the single write path is
+-- save_plan_day_solutions; the per-day save_day_solution must be gone, or the table has two.
 do $$
 declare
   t text;
@@ -1368,7 +1591,7 @@ begin
   foreach t in array array['plan_day_solutions'] loop
     foreach p in array array['INSERT', 'UPDATE', 'DELETE', 'TRUNCATE', 'REFERENCES', 'TRIGGER', 'MAINTAIN'] loop
       if has_table_privilege('authenticated', 'public.' || t, p) then
-        raise exception 'grants: authenticated holds % on public.%; writes must go through public.save_day_solution', p, t;
+        raise exception 'grants: authenticated holds % on public.%; writes must go through public.save_plan_day_solutions', p, t;
       end if;
     end loop;
 
@@ -1389,11 +1612,15 @@ begin
     end loop;
   end loop;
 
-  if has_function_privilege('anon', 'public.save_day_solution(date, int, text, int, text, jsonb)', 'execute') then
-    raise exception 'grants: anon can execute public.save_day_solution(date, int, text, int, text, jsonb); the revoke execute … from public, anon is missing';
+  if has_function_privilege('anon', 'public.save_plan_day_solutions(date, jsonb)', 'execute') then
+    raise exception 'grants: anon can execute public.save_plan_day_solutions(date, jsonb); the revoke execute … from public, anon is missing';
   end if;
-  if not has_function_privilege('authenticated', 'public.save_day_solution(date, int, text, int, text, jsonb)', 'execute') then
-    raise exception 'grants: authenticated cannot execute public.save_day_solution(date, int, text, int, text, jsonb)';
+  if not has_function_privilege('authenticated', 'public.save_plan_day_solutions(date, jsonb)', 'execute') then
+    raise exception 'grants: authenticated cannot execute public.save_plan_day_solutions(date, jsonb)';
+  end if;
+
+  if to_regprocedure('public.save_day_solution(date, int, text, int, text, jsonb)') is not null then
+    raise exception 'grants: public.save_day_solution(date, int, text, int, text, jsonb) still exists; plan_day_solutions must keep one write path (save_plan_day_solutions)';
   end if;
 end;
 $$;
@@ -1759,7 +1986,8 @@ end;
 $$;
 
 -- As user C (S-03): D is now a member, so a meal for D is accepted; a user outside the household
--- (A) is still KD012. The 2030-04-01 plan is reused by the account-deletion block at the end.
+-- (A) is still KD012. The 2030-04-01 plan is reused by the account-deletion block at the end; its
+-- day 0 lunch (for D) is one batch shared with day 2 lunch (S-08), so that block covers a shared dish.
 do $$
 declare
   c_household uuid := current_setting('rls_test.c_household')::uuid;
@@ -1772,7 +2000,13 @@ begin
     jsonb_build_object('day_index', 0, 'meal_type', 'lunch',
       'recipe_id', '5eed0002-0000-4000-8000-000000000001', 'eater_user_id', '00000000-0000-4000-a000-00000000000d'),
     jsonb_build_object('day_index', 1, 'meal_type', 'lunch',
-      'recipe_id', '5eed0002-0000-4000-8000-000000000002', 'eater_user_id', null)));
+      'recipe_id', '5eed0002-0000-4000-8000-000000000002', 'eater_user_id', null),
+    jsonb_build_object('day_index', 2, 'meal_type', 'lunch',
+      'recipe_id', '5eed0002-0000-4000-8000-000000000001', 'eater_user_id', null, 'share_with', '0_lunch')));
+  select count(*) into n from public.plan_dishes where plan_id = plan;
+  if n <> 2 then
+    raise exception 'plans: user C''s plan with one shared batch holds % dishes, expected 2', n;
+  end if;
   select count(*) into n from public.plan_meals
   where plan_id = plan and household_id = c_household and eater_user_id = '00000000-0000-4000-a000-00000000000d';
   if n <> 1 then
@@ -2089,7 +2323,8 @@ $$;
 reset role;
 
 -- As postgres (S-03), last because it removes a member: deleting D's account turns D's meals into
--- "both" (eater_user_id on delete set null) -- no slot disappears and no dish is orphaned.
+-- "both" (eater_user_id on delete set null) -- no slot disappears and no dish is orphaned, including
+-- the batch D's meal shares with another day (S-08).
 do $$
 declare
   plan uuid := current_setting('rls_test.cd_plan')::uuid;
@@ -2144,10 +2379,10 @@ $$;
 -- ---------------------------------------------------------------------------
 do $$
 begin
-  raise notice 'household_isolation: all assertions passed (trigger, sign-up creates no library rows, read isolation, write denial, public library visibility, library write denial and grants, seed mechanism removed, classification catch-all, anon denial, helper grants, household_id catch-all, invite read isolation, invite write denial, RPC grants, redemption with provenance and an unchanged library, macro targets isolation with owner-only writes and the redemption cascade, seven rejection SQLSTATEs, meal plans isolation, write denial, grants, RPC grants, slot diff, KD010-KD012 and plans left behind on redemption, day solutions isolation, write denial, grants, RPC upsert, KD013/KD014 and the household cascade)';
+  raise notice 'household_isolation: all assertions passed (trigger, sign-up creates no library rows, read isolation, write denial, public library visibility, library write denial and grants, seed mechanism removed, classification catch-all, anon denial, helper grants, household_id catch-all, invite read isolation, invite write denial, RPC grants, redemption with provenance and an unchanged library, macro targets isolation with owner-only writes and the redemption cascade, seven rejection SQLSTATEs, meal plans isolation, write denial, grants, RPC grants, slot diff, KD010-KD012 and plans left behind on redemption, shared dishes across days with the regrouping diff and KD015-KD017, day solutions isolation, write denial, grants, atomic group upsert, KD013/KD014 and the household cascade)';
 end;
 $$;
 
-select 'household_isolation: all assertions passed (incl. public library, classification catch-all, invite isolation, RPC grants, redemption, macro targets, seven rejection SQLSTATEs, meal plans and day solutions)' as result;
+select 'household_isolation: all assertions passed (incl. public library, classification catch-all, invite isolation, RPC grants, redemption, macro targets, seven rejection SQLSTATEs, meal plans, shared dishes and day solutions)' as result;
 
 rollback;

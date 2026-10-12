@@ -1153,10 +1153,10 @@ would cut the 3-day case the Desired End State and F6 are written around and mak
 
 #### Automated
 
-- [ ] 2.1 The migration applies to the hosted project: `npx supabase db push`
-- [ ] 2.2 Every migration file is recorded as applied: `npm run check:migrations`
-- [ ] 2.3 Household isolation passes, including shared-dish fixtures, regrouping and KD015–KD017: `npm run test:rls`
-- [ ] 2.4 Seed integrity is untouched: `npm run test:seed`
+- [x] 2.1 The migration applies to the hosted project: `npx supabase db push`
+- [x] 2.2 Every migration file is recorded as applied: `npm run check:migrations`
+- [x] 2.3 Household isolation passes, including shared-dish fixtures, regrouping and KD015–KD017: `npm run test:rls`
+- [x] 2.4 Seed integrity is untouched: `npm run test:seed`
 
 #### Manual
 
