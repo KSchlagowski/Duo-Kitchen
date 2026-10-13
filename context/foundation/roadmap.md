@@ -3,7 +3,7 @@ project: "Duo Kitchen"
 version: 1
 status: draft
 created: 2026-10-06
-updated: 2026-10-12
+updated: 2026-10-13
 prd_version: 1
 main_goal: market-feedback
 top_blocker: time
@@ -40,7 +40,7 @@ A couple who cook together in bulk, but have different daily macro targets, impr
 | S-05 | browse-recipe-library         | browse recipe cards and open full recipe details                                          | F-04             | FR-005, FR-009, FR-010, FR-012                | done     |
 | S-06 | rate-and-filter-recipes       | rate recipes, see the partner's rating, and filter/sort the library                       | S-05, S-01, F-04 | FR-006, FR-007, FR-008                        | ready    |
 | S-07 | add-missing-product           | add a product with nutrition values and store aisle                                       | F-04             | FR-010, FR-011                                | ready    |
-| S-08 | shared-dish-across-days       | make one cooked dish cover meals on several days and still solve                          | S-04             | US-01, FR-017                                 | ready    |
+| S-08 | shared-dish-across-days       | make one cooked dish cover meals on several days and still solve                          | S-04             | US-01, FR-017                                 | done     |
 | S-09 | shopping-list-from-plan       | open a combined, aisle-grouped shopping list and check items off                          | S-03             | US-02, FR-021                                 | ready    |
 | S-10 | cooking-session-schedule      | see the plan arranged into evening/morning cooking sessions with merged steps             | S-03             | US-03, FR-022                                 | ready    |
 | S-11 | step-by-step-cook-mode        | follow a session step by step with A and B portions                                       | S-10, S-04       | US-03, FR-023                                 | proposed |
@@ -227,7 +227,7 @@ Foundations below assume these are present and do NOT re-scaffold them.
 - **Unknowns:**
   - Does a shared dish couple the days into one solve, or are days solved in order with the batch already fixed? — Owner: team. Block: no.
 - **Risk:** Separated from S-04 so the north star proves the single-day split first; extending to cross-day batches changes the solver's scope, which is safer once the single-day case works.
-- **Status:** ready
+- **Status:** done
 
 ### S-09: Shop from the plan
 
@@ -319,7 +319,7 @@ Foundations below assume these are present and do NOT re-scaffold them.
 | S-05       | browse-recipe-library         | Browse recipe cards and view recipe details           | done                  | Archived 2026-10-09                                                               |
 | S-06       | rate-and-filter-recipes       | Rate, filter and sort recipes                         | yes                   | Run `/10x-plan rate-and-filter-recipes`                                           |
 | S-07       | add-missing-product           | Add a product with nutrition and store aisle          | yes                   | Run `/10x-plan add-missing-product`                                               |
-| S-08       | shared-dish-across-days       | Cover meals on several days with one cooked dish      | yes                   | Run `/10x-plan shared-dish-across-days`                                           |
+| S-08       | shared-dish-across-days       | Cover meals on several days with one cooked dish      | done                  | Archived 2026-10-13                                                               |
 | S-09       | shopping-list-from-plan       | Aisle-grouped shopping list with check-off            | yes                   | Run `/10x-plan shopping-list-from-plan`                                           |
 | S-10       | cooking-session-schedule      | Arrange plan into evening/morning cooking sessions    | yes                   | Run `/10x-plan cooking-session-schedule`                                          |
 | S-11       | step-by-step-cook-mode        | Step-by-step cook mode with A/B portions              | no                    | Waits on S-10, S-04                                                               |
@@ -360,3 +360,4 @@ Foundations below assume these are present and do NOT re-scaffold them.
 - **S-05: user can browse recipe cards (photo, name, cuisine, both partners' ratings) and open a recipe's full details: ingredients with quantities, macros and rounding step, make-ahead vs. fresh steps, divisible components or whole-dish flag, raw/cooked weights, suggested meal types, cuisine and prep time.** — Archived 2026-10-09 → `context/archive/2026-10-08-browse-recipe-library/`. Lesson: —.
 - **S-04: user can solve a planned day (prompted when 5 meals are filled, or manually any time) and see per-ingredient / per-component / whole-dish quantities to cook and how to split them between A and B, with each person's daily totals within ±10%, escalating to ±15% and ±20% on confirmation and then naming the recipe that most hinders a fit.** — Archived 2026-10-09 → `context/archive/2026-10-09-solve-daily-macros/`. Lesson: —.
 - **F-03: (foundation) merging to `main` deploys the app to production with a production Supabase project, and the app installs to the home screen on desktop, Android and iOS.** — Archived 2026-10-12 → `context/archive/2026-10-10-deploy-and-install-skeleton/` (the unexecuted re-plan is `context/archive/2026-10-11-deploy-and-install-skeleton/`). Lesson: —.
+- **S-08: user can make one cooked dish cover meals on several days, and solving still lands each person's daily totals within tolerance.** — Archived 2026-10-13 → `context/archive/2026-10-10-shared-dish-across-days/`. Lesson: —.

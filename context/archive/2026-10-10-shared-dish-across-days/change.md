@@ -1,10 +1,10 @@
 ---
 change_id: shared-dish-across-days
 title: Let one cooked dish cover meals on several days and still solve (S-08)
-status: impl_reviewed
+status: archived
 created: 2026-10-10
-updated: 2026-10-12
-archived_at: null
+updated: 2026-10-13
+archived_at: 2026-10-13T07:57:40Z
 ---
 
 ## Notes
