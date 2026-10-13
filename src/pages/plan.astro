@@ -165,6 +165,14 @@ const selectClass =
       >
         {summary}
       </p>
+      {/* S-09: outside the grid form, so following it never posts unsaved grid edits. */}
+      {plan && (
+        <p class="-mt-4 mb-6 text-center text-sm">
+          <a href={`/plan/shopping?start=${plan.startDate}`} class="text-purple-300 hover:underline">
+            Shopping list
+          </a>
+        </p>
+      )}
 
       {saved && (
         <p class="mb-4 rounded-lg border border-emerald-400/30 bg-emerald-500/10 p-3 text-sm text-emerald-200">

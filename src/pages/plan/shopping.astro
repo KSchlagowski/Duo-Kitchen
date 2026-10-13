@@ -1,0 +1,189 @@
+---
+import Layout from "@/layouts/Layout.astro";
+import { createClient } from "@/lib/supabase";
+import { formatPlanDayStatus } from "@/lib/services/day-solutions";
+import { PLAN_DAYS, addDays, isIsoDate, weekdayLabel } from "@/lib/services/meal-plans";
+import { getShoppingList } from "@/lib/services/shopping";
+import {
+  SHOPPING_NO_PLAN,
+  SHOPPING_NO_PLAN_FOR_DATE,
+  SHOPPING_UNAVAILABLE,
+  formatEstimateNote,
+  formatExactNote,
+  formatShoppingAmount,
+  formatShoppingSummary,
+} from "@/lib/services/shopping-list";
+import { AISLE_LABELS } from "@/lib/recipe-labels";
+import { cn } from "@/lib/utils";
+import type { MealPlan, PlanDayIndex, PlanDaySolveStatus, ShoppingList } from "@/types";
+
+// S-09: the shopping list of one plan, derived on every read (only the checks are stored). Without
+// `start` it is the most recently saved plan's, as on the dashboard. A malformed start is 404, a
+// date with no plan says so, and a failed read is 500 — never "no plan".
+type State =
+  | { kind: "not-found" }
+  | { kind: "unavailable" }
+  | { kind: "no-plan" }
+  | {
+      kind: "loaded";
+      plan: MealPlan;
+      list: ShoppingList;
+      statuses: Record<PlanDayIndex, PlanDaySolveStatus>;
+    };
+
+const startParam = Astro.url.searchParams.get("start");
+const requestedStart = startParam ?? undefined;
+
+let state: State = { kind: "not-found" };
+if (requestedStart === undefined || isIsoDate(requestedStart)) {
+  const supabase = createClient(Astro.request.headers, Astro.cookies);
+  if (!supabase) {
+    state = { kind: "unavailable" };
+  } else {
+    try {
+      const loaded = await getShoppingList(supabase, requestedStart);
+      state = loaded ? { kind: "loaded", ...loaded } : { kind: "no-plan" };
+    } catch (error) {
+      state = { kind: "unavailable" };
+      // eslint-disable-next-line no-console -- surfaced in Cloudflare Workers observability logs
+      console.error("getShoppingList failed on /plan/shopping", error);
+    }
+  }
+}
+
+if (state.kind === "not-found") {
+  Astro.response.status = 404;
+} else if (state.kind === "unavailable") {
+  Astro.response.status = 500;
+}
+
+const loaded = state.kind === "loaded" ? state : null;
+const startDate = loaded?.plan.startDate ?? (requestedStart && isIsoDate(requestedStart) ? requestedStart : null);
+const weekdayOf = (day: PlanDayIndex) => (startDate ? weekdayLabel(addDays(startDate, day)) : "");
+const daysWith = (source: "exact" | "estimate") =>
+  loaded ? PLAN_DAYS.filter((day) => loaded.list.daySources[day] === source) : [];
+const exactDays = daysWith("exact");
+const estimateDays = daysWith("estimate");
+const filledDays = loaded ? PLAN_DAYS.filter((day) => loaded.list.daySources[day] !== "empty") : [];
+
+const notice = Astro.url.searchParams.get("error");
+---
+
+<Layout title="Shopping list">
+  <div class="bg-cosmic min-h-screen p-4 sm:p-8">
+    <div class="mx-auto max-w-3xl rounded-2xl border border-white/10 bg-white/10 p-6 text-white backdrop-blur-xl sm:p-8">
+      <h1 class="mb-1 bg-gradient-to-r from-blue-200 to-purple-200 bg-clip-text text-3xl font-bold text-transparent">
+        Shopping list
+      </h1>
+      {loaded && <p class="mb-4 text-sm text-blue-100/80">Plan from {loaded.plan.startDate}</p>}
+
+      {notice && (
+        <p class="mb-4 rounded-lg border border-red-400/30 bg-red-500/10 p-3 text-sm text-red-200">{notice}</p>
+      )}
+
+      {state.kind === "not-found" && (
+        <p class="text-center text-lg" data-testid="shopping-not-found">
+          Plan not found
+        </p>
+      )}
+      {state.kind === "unavailable" && (
+        <p class="text-center text-lg" data-testid="shopping-unavailable">
+          {SHOPPING_UNAVAILABLE}
+        </p>
+      )}
+      {state.kind === "no-plan" && (
+        <div class="flex flex-col items-center gap-2">
+          <p class="text-center text-lg" data-testid="shopping-no-plan">
+            {requestedStart ? SHOPPING_NO_PLAN_FOR_DATE : SHOPPING_NO_PLAN}
+          </p>
+          <a href={requestedStart ? `/plan?start=${requestedStart}` : "/plan"} class="text-purple-300 hover:underline">
+            Open plan
+          </a>
+        </div>
+      )}
+
+      {loaded && (
+        <>
+          <p class="text-lg font-semibold" data-testid="shopping-summary">
+            {formatShoppingSummary(loaded.list)}
+          </p>
+
+          {exactDays.length > 0 && (
+            <p class="mt-2 text-sm text-emerald-200" data-testid="shopping-exact">
+              {formatExactNote(exactDays.map(weekdayOf))}
+            </p>
+          )}
+          {estimateDays.length > 0 && (
+            <p class="mt-2 text-sm text-amber-100" data-testid="shopping-estimate">
+              {formatEstimateNote(estimateDays.map(weekdayOf))}
+            </p>
+          )}
+          {filledDays.length > 0 && (
+            <ul class="mt-2 space-y-0.5 text-xs text-blue-100/70">
+              {filledDays.map((day) => (
+                <li data-testid={`shopping-day-${day}`}>
+                  <a
+                    href={`/plan/day?start=${loaded.plan.startDate}&day=${day}`}
+                    class="text-purple-300 hover:underline"
+                  >
+                    {weekdayOf(day)}
+                  </a>
+                  {" · "}
+                  {formatPlanDayStatus(loaded.statuses[day])}
+                </li>
+              ))}
+            </ul>
+          )}
+
+          {loaded.list.aisles.map(({ aisle, items }) => (
+            <section class="mt-6" data-testid={`aisle-${aisle}`}>
+              <h2 class="mb-2 font-semibold">{AISLE_LABELS[aisle]}</h2>
+              <ul class="flex flex-col gap-1">
+                {items.map((item) => (
+                  <li
+                    id={`item-${item.productId}`}
+                    data-testid={`item-${item.productId}`}
+                    data-checked={item.checked ? "true" : "false"}
+                  >
+                    <form method="POST" action="/api/plan/shopping">
+                      <input type="hidden" name="start_date" value={loaded.plan.startDate} />
+                      <input type="hidden" name="product_id" value={item.productId} />
+                      <input type="hidden" name="checked" value={item.checked ? "0" : "1"} />
+                      <button
+                        type="submit"
+                        aria-pressed={item.checked ? "true" : "false"}
+                        class:list={cn(
+                          "flex min-h-11 w-full items-center gap-3 rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-left text-sm transition-colors hover:bg-white/10",
+                          item.checked && "text-blue-100/50",
+                        )}
+                      >
+                        <span aria-hidden="true" class="text-lg">
+                          {item.checked ? "☑" : "☐"}
+                        </span>
+                        <span class:list={cn("flex-1 break-words", item.checked && "line-through")}>
+                          {item.productName}
+                        </span>
+                        <span class:list={cn("shrink-0", item.checked ? "line-through" : "text-blue-100/80")}>
+                          {formatShoppingAmount(item)}
+                        </span>
+                      </button>
+                    </form>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          ))}
+        </>
+      )}
+
+      <p class="mt-8 flex justify-center gap-4 text-center text-sm">
+        <a href={startDate ? `/plan?start=${startDate}` : "/plan"} class="text-purple-300 hover:underline">
+          Back to plan
+        </a>
+        <a href="/dashboard" class="text-purple-300 hover:underline">
+          Back to dashboard
+        </a>
+      </p>
+    </div>
+  </div>
+</Layout>

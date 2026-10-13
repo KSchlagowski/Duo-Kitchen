@@ -705,10 +705,10 @@ Prove the slice end to end over HTTP against the production preview, and record 
 
 #### Automated
 
-- [x] 2.1 Unit tests pass, including the existing solver and day-solutions suites: `npm test`
-- [x] 2.2 Lint passes: `npm run lint`
-- [x] 2.3 Types check: `npx astro check`
-- [x] 2.4 Build succeeds: `npm run build`
+- [x] 2.1 Unit tests pass, including the existing solver and day-solutions suites: `npm test` — ac34574
+- [x] 2.2 Lint passes: `npm run lint` — ac34574
+- [x] 2.3 Types check: `npx astro check` — ac34574
+- [x] 2.4 Build succeeds: `npm run build` — ac34574
 
 #### Manual
 
@@ -719,11 +719,11 @@ Prove the slice end to end over HTTP against the production preview, and record 
 
 #### Automated
 
-- [ ] 3.1 Unit tests pass: `npm test`
-- [ ] 3.2 Lint passes: `npm run lint`
-- [ ] 3.3 Types check: `npx astro check`
-- [ ] 3.4 Build succeeds: `npm run build`
-- [ ] 3.5 Existing smoke still passes against the preview
+- [x] 3.1 Unit tests pass: `npm test`
+- [x] 3.2 Lint passes: `npm run lint`
+- [x] 3.3 Types check: `npx astro check`
+- [x] 3.4 Build succeeds: `npm run build`
+- [x] 3.5 Existing smoke still passes against the preview
 
 #### Manual
 

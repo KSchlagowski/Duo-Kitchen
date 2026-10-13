@@ -122,6 +122,12 @@ const joined = Astro.url.searchParams.get("joined") === "1";
       <a href="/plan" class="text-sm text-purple-300 hover:underline">
         {planLinkLabel}
       </a>
+      {/* S-09: the most recently saved plan's list, only when the read found one */}
+      {!planFailed && plan && (
+        <a href="/plan/shopping" class="ml-3 text-sm text-purple-300 hover:underline">
+          Shopping list
+        </a>
+      )}
 
       {/* S-05: recipe library */}
       <p class="mt-2 text-sm">
