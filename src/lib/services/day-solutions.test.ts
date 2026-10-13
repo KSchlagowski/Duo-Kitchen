@@ -1,6 +1,6 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { DaySolutionComponent, DaySplitShare, MealType, PlanDayIndex } from "@/types";
-import { formatSplitLine, type SplitLineContext } from "@/lib/services/day-solutions";
+import { formatSplitLine, parseStoredSolution, type SplitLineContext } from "@/lib/services/day-solutions";
 
 const USER_A = "user-a";
 const USER_B = "user-b";
@@ -64,5 +64,37 @@ describe("formatSplitLine", () => {
     expect(formatSplitLine(component, USER_A, context("tue", 1, types))).toBe(
       "You: 25% · Partner: 25% · You (Monday): 25% · Partner (Monday): 25% of the dish · split evenly 4 ways",
     );
+  });
+});
+
+describe("parseStoredSolution", () => {
+  // A minimal stored row: one meal of one percent-split component, whose ingredient gets `amountG`.
+  function storedRow(amountG: number) {
+    const component = percentBatch([share(USER_A, "lunch", 0, 100)]);
+    return {
+      version: 1,
+      people: [],
+      meals: [
+        {
+          mealId: "lunch",
+          mealType: "lunch",
+          recipeId: "recipe",
+          recipeName: "Leczo",
+          divisionMode: "per_component",
+          eaterUserIds: [USER_A],
+          components: [{ ...component, ingredients: [{ ...component.ingredients[0], amountG }] }],
+        },
+      ],
+      maxDeviationPct: 0,
+      requiredTier: null,
+      explanation: null,
+    };
+  }
+
+  it("rejects a negative ingredient amount, so the day reads as not solved", () => {
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+    expect(parseStoredSolution(storedRow(1000))).not.toBeNull();
+    expect(parseStoredSolution(storedRow(-1000))).toBeNull();
+    vi.restoreAllMocks();
   });
 });

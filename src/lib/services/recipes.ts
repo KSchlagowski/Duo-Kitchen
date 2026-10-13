@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type {
   DivisionMode,
+  IngredientProduct,
   MealType,
   RecipeCard,
   RecipeDetail,
@@ -10,6 +11,7 @@ import type {
   SolverIngredient,
   SolverRecipe,
   StepTiming,
+  StoreAisle,
 } from "@/types";
 import { cookedWeight, ingredientMacros, sumMacros } from "@/lib/services/recipe-macros";
 
@@ -266,3 +268,49 @@ export async function getSolverRecipes(
   return result;
 }
 // --- end S-04 -------------------------------------------------------------------------------
+
+// --- S-09: ingredient → product and aisle for the shopping list ------------------------------
+
+interface IngredientProductRow {
+  recipe_id: string;
+  recipe_ingredients: {
+    id: string;
+    product_id: string;
+    products: { id: string; name: string; aisle: StoreAisle; grams_per_piece: number | string | null };
+  }[];
+}
+
+// Every ingredient of `recipeIds`, keyed by its recipe_ingredients id: the key both a stored solve
+// (DaySolutionIngredient.id) and a base recipe (SolverIngredient.id) carry. One flat query.
+export async function getIngredientProducts(
+  supabase: SupabaseClient,
+  recipeIds: string[],
+): Promise<Record<string, IngredientProduct>> {
+  const ids = [...new Set(recipeIds)];
+  if (ids.length === 0) {
+    return {};
+  }
+  const { data, error } = await supabase
+    .from("recipe_components")
+    .select("recipe_id, recipe_ingredients(id, product_id, products(id, name, aisle, grams_per_piece))")
+    .in("recipe_id", ids);
+
+  if (error) {
+    throw error;
+  }
+
+  const result: Record<string, IngredientProduct> = {};
+  for (const component of data as unknown as IngredientProductRow[]) {
+    for (const row of component.recipe_ingredients) {
+      result[row.id] = {
+        ingredientId: row.id,
+        productId: row.products.id,
+        productName: row.products.name,
+        aisle: row.products.aisle,
+        gramsPerPiece: toNumberOrNull(row.products.grams_per_piece),
+      };
+    }
+  }
+  return result;
+}
+// --- end S-09 -------------------------------------------------------------------------------

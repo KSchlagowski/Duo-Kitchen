@@ -333,3 +333,45 @@ export interface PlanDaySolveStatus {
   groupMaxMealCount: number;
 }
 // --- end S-04 -------------------------------------------------------------------------------
+
+// --- S-09: shopping list from the plan ------------------------------------------------------
+// A library recipe ingredient's product, keyed by the ingredient id (recipe_ingredients.id, which is
+// also DaySolutionIngredient.id), so stored and base ingredients map to products the same way.
+export interface IngredientProduct {
+  ingredientId: string;
+  productId: string;
+  productName: string;
+  aisle: StoreAisle;
+  gramsPerPiece: number | null;
+}
+
+// One product of the list: the plan's combined amount for both people.
+export interface ShoppingItem {
+  productId: string;
+  productName: string;
+  aisle: StoreAisle;
+  amountG: number;
+  gramsPerPiece: number | null;
+  checked: boolean;
+}
+
+export interface ShoppingAisle {
+  aisle: StoreAisle;
+  items: ShoppingItem[];
+}
+
+// Where a day's amounts come from: a current stored solve, recipe base amounts, or no meals.
+export type ShoppingDaySource = "exact" | "estimate" | "empty";
+
+// Derived on every read, never stored; only the checks persist (shopping_list_checks).
+export interface ShoppingList {
+  planId: string;
+  startDate: string;
+  aisles: ShoppingAisle[];
+  daySources: Record<PlanDayIndex, ShoppingDaySource>;
+  itemCount: number;
+  checkedCount: number;
+  // Inconsistent inputs the builder skipped or worked around; the I/O layer logs them.
+  diagnostics: { missingRecipeIds: string[]; unmatchedIngredientIds: string[]; dishesFellBack: string[] };
+}
+// --- end S-09 -------------------------------------------------------------------------------

@@ -58,7 +58,7 @@ npm run dev
 - `npm run lint:fix` - Auto-fix ESLint issues
 - `npm run format` - Run Prettier
 - `npm run smoke` - Smoke test the auth flow against a running server (`BASE_URL`, defaults to `http://localhost:4321`)
-- `npm test` - Run the vitest unit tests (`src/**/*.test.ts`), currently the macro solver suite; pure, no Supabase or secrets needed
+- `npm test` - Run the vitest unit tests (`src/**/*.test.ts`), currently the macro solver, day page and shopping list suites; pure, no Supabase or secrets needed
 - `npm run test:rls` - Run the household isolation (RLS) test against the linked Supabase project (`supabase/tests/household_isolation.sql`); it runs in a rolled-back transaction, so it leaves no data behind
 - `npm run check:migrations` - Fail if any file in `supabase/migrations/` is not yet applied to the linked Supabase project (read-only; the deploy job's gate)
 - `npm run test:seed` - Run the seed integrity test against the linked Supabase project (`supabase/tests/seed_integrity.sql`): checks that the seed rows of the shared recipe/product library cover every solver rule and are internally consistent; also rolled back
@@ -137,6 +137,7 @@ Users can then sign in immediately after sign-up without clicking a confirmation
 | `/targets`            | Your own daily macro targets (editable) and your partner's (read-only)                           |
 | `/plan`               | Household 3-day meal plan (shared with your partner); a slot can share a batch with another slot |
 | `/plan/day`           | One plan day's macro solve (`?start=<date>&day=<0-2>`); 404 if no plan                           |
+| `/plan/shopping`      | The plan's aisle-grouped shopping list with check-off (`?start=<date>`, else the latest plan)    |
 | `/recipes`            | The shared recipe library as a grid of cards                                                     |
 | `/recipes/[id]`       | One recipe's full detail; 404 for a malformed or unknown id                                      |
 
@@ -209,6 +210,8 @@ For S-04 it solves days of a separate plan (`2031-01-13`) saved by the first acc
 
 For S-08 it shares one batch across two days of a third plan (`2031-01-20`): the F1 mix on Monday and Tuesday, with Tuesday's lunch set to share Monday's curry batch (the save also exercises the "whole day for" shortcut). `/plan` re-renders the share in canonical form with a batch note on both slots and prompts the group **once**, on Monday, with a group sentence — also after Monday drops a meal, when only Tuesday is full. One solve of Monday stores both days, which then read the same `Solved within ±…%` status (a looser tier is accepted when the LP needs it). Monday's day page lists the batch amounts and Tuesday's shows only the from-batch note and the portions. An eater-only edit by the partner on Tuesday marks **both** days out of date, un-sharing removes the batch notes, and swapping the recipe of a batch's lead slot saves Tuesday as a fresh batch with a notice instead of rejecting the grid (the RPC's own KD017 rejection is covered by `npm run test:rls`).
 
+For S-09 it checks the shopping list. Signed-out visitors are sent to sign-in from `/plan/shopping` and `/api/plan/shopping`. While the `2031-01-20` group is solved and shared, its list reads exact amounts for Monday and Tuesday with every product listed once; once the partner's eater-only edit stales it, both days fall back to the estimate note. On a fourth plan (`2031-01-27`, two unsolved recipes sharing chives and salt) the item count and two product lines (a summed shared product and a piece product) are pinned from an independent SQL query (see the comment above the S-09 fixtures in `scripts/smoke.mjs`), the aisles appear in the fixed order, and Monday reads `Not solved`. The first account checks an item off, the partner sees and unchecks it, checking a product the plan does not use is rejected with its own message, the JSON mode used by the in-place check-off island answers `{"ok":true,…}`, a malformed date returns 404 and a date with no plan says so.
+
 > **Note:** this script exists primarily to guard the development of the starter itself — it is a fast sanity check that dependency upgrades did not break the build, the Cloudflare adapter or the Supabase auth flow. It is **not** a substitute for a real test suite. Once you build your own product on top of this starter, add proper tests (unit, integration, end-to-end) suited to your application.
 
 ## CI
@@ -244,6 +247,8 @@ Run that **until it deletes 0 rows**. It needs more than one pass by design: del
 Deleting a household also cascades its meal plans (S-03). Plans stay behind on redemption, so a preserved pre-redemption household may now hold the redeemer's plans: one more reason never to delete memberless households blindly. The smoke run itself saves no plan before redeeming.
 
 Stored macro solves (S-04, `plan_day_solutions`) cascade with their plan and their household, so the queries above need no extra step for them.
+
+Shopping list checks (S-09, `shopping_list_checks`) likewise cascade with their plan and their household, so they need no extra step either.
 
 ## License
 

@@ -4,6 +4,7 @@
 // set before the redemption, which must arrive in the shared household with their owner (S-02, FR-004).
 // S-05: the recipe library renders as cards and a recipe's detail shows macros pinned from SQL.
 // S-08: one batch shared across two days solves both together, and editing one day stales both.
+// S-09: a plan's aisle-grouped shopping list sums shared products, and either partner checks items off.
 // F-03: the app is installable -- the manifest, its icons and the <head> links are served anonymously.
 // Zero dependencies on purpose. Run against a live server: BASE_URL=http://localhost:4321 node scripts/smoke.mjs
 
@@ -43,7 +44,8 @@ function makeClient() {
     }
   }
 
-  async function request(path, { method = "GET", form } = {}) {
+  // `headers` is merged after the defaults, so a step can ask for JSON (S-09's check-off island mode).
+  async function request(path, { method = "GET", form, headers = {} } = {}) {
     const response = await fetch(BASE_URL + path, {
       method,
       redirect: "manual",
@@ -51,6 +53,7 @@ function makeClient() {
         Cookie: cookieHeader(),
         Origin: BASE_URL,
         ...(form ? { "Content-Type": "application/x-www-form-urlencoded" } : {}),
+        ...headers,
       },
       body: form ? new URLSearchParams(form).toString() : undefined,
     });
@@ -247,6 +250,99 @@ function groupStatusProblem(body, pattern) {
   const [day0, day1] = [testIdText(body, "day-status-0"), testIdText(body, "day-status-1")];
   if (day0 !== day1) return `day 0 reads "${day0}" but day 1 reads "${day1}"`;
   return pattern.test(day0) ? null : `status "${day0}" does not match ${pattern}`;
+}
+
+// S-09 fixtures: the shopping list of an unsolved plan of its own (2031-01-27, a Monday): Jajecznica
+// at breakfast and Twarożek at second breakfast, which share Szczypiorek and Sól. The amounts and the
+// item count were NOT copied from the page: they are the output of this independent SQL oracle
+// (npx supabase db query --linked), one base batch per dish summed per product:
+//   select p.id, p.name, p.aisle, p.grams_per_piece, sum(ri.base_amount_g) as total_g
+//   from public.recipe_ingredients ri
+//   join public.recipe_components rc on rc.id = ri.component_id
+//   join public.products p on p.id = ri.product_id
+//   where rc.recipe_id in ('5eed0002-0000-4000-8000-000000000001', '5eed0002-0000-4000-8000-000000000007')
+//   group by p.id, p.name order by p.aisle, p.name;
+// It returns 10 products in the produce, dairy, bakery and spices aisles, among them Szczypiorek
+// 10 + 20 = 30 g and Jajko kurze 200 g at 50 g per piece. The display strings mirror
+// formatShoppingSummary() / formatEstimateNote() / formatExactNote() / formatShoppingAmount() in
+// src/lib/services/shopping-list.ts and formatPlanDayStatus() in src/lib/services/day-solutions.ts.
+const shopStart = "2031-01-27";
+const shopPath = `/plan/shopping?start=${shopStart}`;
+const S09_ITEM_COUNT = 10;
+const S09_AISLES = ["produce", "dairy", "bakery", "spices"];
+const S09_STORE_AISLES = ["produce", "dairy", "meat_fish", "bakery", "dry_goods", "spices", "frozen", "other"];
+const chivesId = "5eed0001-0000-4000-8000-000000000006";
+const chivesLine = "Szczypiorek 30 g";
+const eggId = "5eed0001-0000-4000-8000-000000000001";
+const eggLine = "Jajko kurze (rozmiar M) 4 pcs (200 g)";
+const saltId = "5eed0001-0000-4000-8000-000000000004";
+// A seed product neither recipe uses (the same oracle with `not exists`), so checking it is KD019.
+const oatsId = "5eed0001-0000-4000-8000-000000000007";
+const S09_NOT_ON_LIST = "That product is not on this plan's shopping list.";
+const S09_TEST_IDS = [
+  "shopping-summary",
+  "shopping-exact",
+  "shopping-estimate",
+  "shopping-no-plan",
+  "shopping-not-found",
+  "shopping-unavailable",
+  "shopping-toggle-error",
+];
+
+function shopCheck(productId, checked) {
+  return { start_date: shopStart, product_id: productId, checked: checked ? "1" : "0" };
+}
+
+// The visible text of a <li data-testid=…> (tags and React's <!-- --> markers stripped, whitespace
+// collapsed): list items nest links and forms, which testIdText()/testIdBody() (<p> only) cannot match.
+function testIdItem(body, id) {
+  const match = new RegExp(`<li[^>]*data-testid="${escapeRe(id)}"[^>]*>([\\s\\S]*?)</li>`).exec(body);
+  return match
+    ? match[1]
+        .replace(/<[^>]*>/g, " ")
+        .replace(/\s+/g, " ")
+        .trim()
+    : `${id} item missing`;
+}
+
+function itemChecked(body, productId) {
+  return new RegExp(`<li[^>]*data-testid="item-${productId}"[^>]*data-checked="(true|false)"`).exec(body)?.[1];
+}
+
+function itemCheckedProblem(body, productId, expected) {
+  const actual = itemChecked(body, productId);
+  return actual === String(expected) ? null : `item-${productId} data-checked is ${actual ?? "missing"}`;
+}
+
+// Every item testid of the page, in document order.
+function itemIds(body) {
+  return [...body.matchAll(/data-testid="item-([0-9a-f-]{36})"/g)].map((match) => match[1]);
+}
+
+// FR-021: aisles in the fixed enum order, exactly the expected (non-empty) ones.
+function aisleOrderProblem(body, expected) {
+  const present = S09_STORE_AISLES.filter((aisle) => body.includes(`data-testid="aisle-${aisle}"`));
+  if (present.join(",") !== expected.join(",")) return `aisles present: ${present.join(", ")}`;
+  const positions = present.map((aisle) => body.indexOf(`data-testid="aisle-${aisle}"`));
+  return positions.every((at, i) => i === 0 || at > positions[i - 1]) ? null : "aisles out of enum order";
+}
+
+// A product counted twice would render two item rows with one id.
+function duplicateItemProblem(body) {
+  const ids = itemIds(body);
+  if (ids.length === 0) return "no items on the list";
+  const dupes = ids.filter((id, i) => ids.indexOf(id) !== i);
+  return dupes.length ? `listed more than once: ${[...new Set(dupes)].join(", ")}` : null;
+}
+
+function jsonCheckProblem(actual, expected) {
+  let parsed;
+  try {
+    parsed = JSON.parse(actual.body);
+  } catch {
+    return `not JSON: ${actual.body.slice(0, 80)}`;
+  }
+  return parsed.ok === true && parsed.checked === expected ? null : `got ${actual.body}`;
 }
 
 const anon = makeClient();
@@ -879,6 +975,21 @@ const steps = [
     { status: 200, check: (actual) => groupStatusProblem(actual.body, /^Solved within ±(10|15|20)%$/) },
   ],
   [
+    // S-09 depends on this exact state (the group solved and still shared), so keep this step here if
+    // the S-08 sequence is edited. A shared batch carries the full batch on both days and must be
+    // counted once. Structure only: the solved quantities are not pinned from SQL (npm test pins them).
+    "A shopping list of the solved shared plan is exact for both days and lists each product once",
+    () => a.request(`/plan/shopping?start=${shareStart}`),
+    {
+      status: 200,
+      body: new RegExp(
+        `^(?![\\s\\S]*data-testid="shopping-estimate")[\\s\\S]*` +
+          testIdBody("shopping-exact", "Exact amounts from the day solve of Monday and Tuesday.").source,
+      ),
+      check: (actual) => duplicateItemProblem(actual.body),
+    },
+  ],
+  [
     // One batch, not two: its ingredient amounts appear on the cook day only.
     "Monday's day page cooks the whole batch and lists its amounts",
     () => a.request(shareDayPath(0)),
@@ -911,6 +1022,23 @@ const steps = [
     "both days of the group are out of date",
     () => a.request(`/plan?start=${shareStart}`),
     { status: 200, check: (actual) => groupStatusProblem(actual.body, /^Out of date$/) },
+  ],
+  [
+    // S-09 depends on this exact state (the group stale, before the un-share), so keep this step here
+    // if the S-08 sequence is edited. A stale group falls back to recipe base amounts.
+    "A shopping list of the stale shared plan falls back to estimates for both days",
+    () => a.request(`/plan/shopping?start=${shareStart}`),
+    {
+      status: 200,
+      body: new RegExp(
+        `^(?![\\s\\S]*data-testid="shopping-exact")[\\s\\S]*` +
+          testIdBody(
+            "shopping-estimate",
+            "Monday and Tuesday: recipe base amounts (estimate) — solve to get exact amounts.",
+          ).source,
+      ),
+      check: (actual) => duplicateItemProblem(actual.body),
+    },
   ],
   [
     "A un-shares Tuesday's lunch",
@@ -948,6 +1076,144 @@ const steps = [
     "the dropped share has no batch note",
     () => a.request(`/plan?start=${shareStart}`),
     { status: 200, body: /^(?![\s\S]*data-testid="batch-[01]_lunch")/ },
+  ],
+
+  // --- S-09: the shopping list of a plan, checked off by either partner -----------------------
+  [
+    "shopping page redirects anonymous user",
+    () => anon.request(shopPath),
+    { status: 302, location: /^\/auth\/signin$/ },
+  ],
+  [
+    "shopping API redirects anonymous user",
+    () => anon.request("/api/plan/shopping", { method: "POST", form: shopCheck(chivesId, true) }),
+    { status: 302, location: /^\/auth\/signin$/ },
+  ],
+  [
+    "A saves an unsolved plan of two recipes sharing products",
+    () =>
+      a.request("/api/plan", {
+        method: "POST",
+        form: { start_date: shopStart, d0_breakfast_recipe: seedRecipe1, d0_second_breakfast_recipe: seedRecipe7 },
+      }),
+    { status: 302, location: new RegExp(`^${escapeRe(`/plan?start=${shopStart}&saved=1`)}$`) },
+  ],
+  [
+    "A shopping list shows the SQL-pinned item count, the estimate note and Monday not solved",
+    () => a.request(shopPath),
+    {
+      status: 200,
+      body: new RegExp(
+        `^(?![\\s\\S]*data-testid="shopping-exact")` +
+          `(?=[\\s\\S]*${testIdBody("shopping-summary", `Shopping list: ${S09_ITEM_COUNT} items · 0 checked`).source})` +
+          `[\\s\\S]*${testIdBody("shopping-estimate", "Monday: recipe base amounts (estimate) — solve to get exact amounts.").source}`,
+      ),
+      check: (actual) => {
+        const day = testIdItem(actual.body, "shopping-day-0");
+        if (day !== "Monday · Not solved") return `shopping-day-0 reads "${day}"`;
+        return actual.body.includes('data-testid="shopping-day-1"') ? "an empty day has a status line" : null;
+      },
+    },
+  ],
+  [
+    "A shopping list sums the shared product and formats pieces, as the SQL oracle says",
+    () => a.request(shopPath),
+    {
+      status: 200,
+      check: (actual) => {
+        for (const [id, line] of [
+          [chivesId, chivesLine],
+          [eggId, eggLine],
+        ]) {
+          const got = testIdItem(actual.body, `item-${id}`).replace(/^[☐☑] /, "");
+          if (got !== line) return `item-${id} reads "${got}", expected "${line}"`;
+        }
+        return duplicateItemProblem(actual.body);
+      },
+    },
+  ],
+  [
+    "A shopping list shows its aisles in the fixed order, none empty",
+    () => a.request(shopPath),
+    { status: 200, check: (actual) => aisleOrderProblem(actual.body, S09_AISLES) },
+  ],
+  [
+    "A checks off the shared product and lands back on it",
+    () => a.request("/api/plan/shopping", { method: "POST", form: shopCheck(chivesId, true) }),
+    { status: 302, location: new RegExp(`^${escapeRe(`${shopPath}#item-${chivesId}`)}$`) },
+  ],
+  [
+    "A sees it checked and counted",
+    () => a.request(shopPath),
+    {
+      status: 200,
+      body: testIdBody("shopping-summary", `Shopping list: ${S09_ITEM_COUNT} items · 1 checked`),
+      check: (actual) => itemCheckedProblem(actual.body, chivesId, true),
+    },
+  ],
+  [
+    "B sees A's check",
+    () => b.request(shopPath),
+    { status: 200, check: (actual) => itemCheckedProblem(actual.body, chivesId, true) },
+  ],
+  [
+    "B unchecks it",
+    () => b.request("/api/plan/shopping", { method: "POST", form: shopCheck(chivesId, false) }),
+    { status: 302, location: new RegExp(`^${escapeRe(`${shopPath}#item-${chivesId}`)}$`) },
+  ],
+  [
+    "A sees B's uncheck",
+    () => a.request(shopPath),
+    {
+      status: 200,
+      body: testIdBody("shopping-summary", `Shopping list: ${S09_ITEM_COUNT} items · 0 checked`),
+      check: (actual) => itemCheckedProblem(actual.body, chivesId, false),
+    },
+  ],
+  [
+    // KD019: without it any member could plant check rows for arbitrary products.
+    "checking a product the plan does not use is rejected with its own message",
+    () => a.request("/api/plan/shopping", { method: "POST", form: shopCheck(oatsId, true) }),
+    {
+      status: 302,
+      location: new RegExp(`^${escapeRe(`${shopPath}&error=${encodeURIComponent(S09_NOT_ON_LIST)}#item-${oatsId}`)}$`),
+    },
+  ],
+  [
+    // The island's mode, on a second product so the pinned one keeps its final unchecked state.
+    "A checks a second product in JSON mode",
+    () =>
+      a.request("/api/plan/shopping", {
+        method: "POST",
+        form: shopCheck(saltId, true),
+        headers: { Accept: "application/json" },
+      }),
+    { status: 200, check: (actual) => jsonCheckProblem(actual, true) },
+  ],
+  [
+    "A sees the JSON-mode check on reload",
+    () => a.request(shopPath),
+    { status: 200, check: (actual) => itemCheckedProblem(actual.body, saltId, true) },
+  ],
+  [
+    "A unchecks it in JSON mode",
+    () =>
+      a.request("/api/plan/shopping", {
+        method: "POST",
+        form: shopCheck(saltId, false),
+        headers: { Accept: "application/json" },
+      }),
+    { status: 200, check: (actual) => jsonCheckProblem(actual, false) },
+  ],
+  [
+    "a malformed shopping date is 404",
+    () => a.request("/plan/shopping?start=2031-13-40"),
+    { status: 404, body: testIdBody("shopping-not-found", "Plan not found") },
+  ],
+  [
+    "a date with no plan says so",
+    () => a.request("/plan/shopping?start=2040-01-01"),
+    { status: 200, body: testIdBody("shopping-no-plan", "No plan for that date.") },
   ],
 
   [
@@ -1030,6 +1296,20 @@ for (const [name, run, rawExpected] of steps) {
         if (actual.body.includes(`data-testid="${id}"`)) {
           console.log(`      got ${id}: ${testIdText(actual.body, id)}`);
         }
+      }
+      // S-09: likewise its own loop; the day lines and items are <li>, so they print via testIdItem().
+      for (const id of S09_TEST_IDS) {
+        if (actual.body.includes(`data-testid="${id}"`)) {
+          console.log(`      got ${id}: ${testIdText(actual.body, id)}`);
+        }
+      }
+      for (const id of [0, 1, 2].map((n) => `shopping-day-${n}`)) {
+        if (actual.body.includes(`data-testid="${id}"`)) {
+          console.log(`      got ${id}: ${testIdItem(actual.body, id)}`);
+        }
+      }
+      for (const productId of itemIds(actual.body)) {
+        console.log(`      got item-${productId}: ${testIdItem(actual.body, `item-${productId}`)}`);
       }
     }
   }
