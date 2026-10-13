@@ -75,7 +75,8 @@ const notice = Astro.url.searchParams.get("error");
       </h1>
       {loaded && <p class="mb-4 text-sm text-blue-100/80">Plan from {loaded.plan.startDate}</p>}
 
-      {notice && (
+      {/* With a list, the island shows the notice, so the next successful toggle can clear it. */}
+      {notice && !loaded && (
         <p class="mb-4 rounded-lg border border-red-400/30 bg-red-500/10 p-3 text-sm text-red-200">{notice}</p>
       )}
 
@@ -108,6 +109,7 @@ const notice = Astro.url.searchParams.get("error");
             aisles={loaded.list.aisles}
             itemCount={loaded.list.itemCount}
             labels={{ aisles: AISLE_LABELS }}
+            initialMessage={notice}
           >
             {exactDays.length > 0 && (
               <p class="mt-2 text-sm text-emerald-200" data-testid="shopping-exact">

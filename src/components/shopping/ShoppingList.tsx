@@ -13,11 +13,13 @@ interface Props {
   aisles: ShoppingAisle[];
   itemCount: number;
   labels: { aisles: Record<StoreAisle, string> };
+  // The `?error=` of a failed no-JS post, shown in the island's own notice.
+  initialMessage?: string | null;
   children?: React.ReactNode;
 }
 
-export default function ShoppingList({ startDate, aisles, itemCount, labels, children }: Props) {
-  const { checked, pending, message, checkedCount, toggle } = useShoppingChecks(aisles);
+export default function ShoppingList({ startDate, aisles, itemCount, labels, initialMessage, children }: Props) {
+  const { checked, pending, message, checkedCount, toggle } = useShoppingChecks(aisles, initialMessage);
 
   function handleSubmit(event: React.SubmitEvent<HTMLFormElement>, productId: string) {
     event.preventDefault();

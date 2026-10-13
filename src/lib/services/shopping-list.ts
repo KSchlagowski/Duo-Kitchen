@@ -77,6 +77,8 @@ export function buildShoppingList(input: ShoppingListInput): ShoppingList {
   const missingRecipeIds = new Set<string>();
   const unmatchedIngredientIds = new Set<string>();
   const dishesFellBack: string[] = [];
+  // Days of a current group whose amounts nonetheless include a fell-back dish's base batch.
+  const fellBackDays = new Set<PlanDayIndex>();
   const totals = new Map<string, { product: IngredientProduct; grams: number }>();
 
   for (const [dishId, meals] of dishes) {
@@ -89,6 +91,9 @@ export function buildShoppingList(input: ShoppingListInput): ShoppingList {
     } else {
       if (exact) {
         dishesFellBack.push(dishId);
+        for (const meal of meals) {
+          fellBackDays.add(meal.dayIndex);
+        }
       }
       // Not current (or a current solution unexpectedly without the dish): one base batch per dish.
       const recipe = recipes[meals[0].recipeId] as SolverRecipe | undefined;
@@ -142,7 +147,7 @@ export function buildShoppingList(input: ShoppingListInput): ShoppingList {
   for (const day of DAYS) {
     daySources[day] = !plan.meals.some((meal) => meal.dayIndex === day)
       ? "empty"
-      : currentSolutions[day] !== undefined
+      : currentSolutions[day] !== undefined && !fellBackDays.has(day)
         ? "exact"
         : "estimate";
   }

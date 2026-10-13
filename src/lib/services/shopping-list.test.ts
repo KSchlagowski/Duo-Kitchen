@@ -304,6 +304,7 @@ describe("buildShoppingList", () => {
     expect(list.diagnostics.dishesFellBack).toEqual(["d2"]);
     expect(amounts(list)["p-sausage"]).toBe(300);
     expect(amounts(list)["p-salt"]).toBe(8);
+    expect(list.daySources).toEqual({ 0: "estimate", 1: "empty", 2: "empty" });
   });
 });
 

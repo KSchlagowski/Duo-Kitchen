@@ -656,6 +656,7 @@ Prove the slice end to end over HTTP against the production preview, and record 
   - one ingredient→product read;
   - one checks read.
 - No LP runs, so a render is within `/plan`'s existing cost plus two small reads. That stays well inside the Workers Free 10 ms CPU budget.
+- `getIngredientProducts()` reads `recipe_components → recipe_ingredients → products` again for recipes `getSolverRecipes()` has already loaded. This extra library read is deliberate: it keeps `SolverIngredient` and the solve fingerprint untouched, and it runs inside the same `Promise.all`, so it costs one round trip but no serial latency. Fold it into the solver read only if an edge CPU or latency measurement of `/plan/shopping` shows it matters (impl-review F5).
 - A toggle is one RPC: a household lookup, a plan lookup and, on a check, one `exists` join over a plan's few dishes. It needs no further work.
 
 ## Migration Notes
@@ -681,6 +682,17 @@ Prove the slice end to end over HTTP against the production preview, and record 
 - Page pattern: `src/pages/plan/day.astro`
 - Shared-batch dedup rule: `context/changes/shared-dish-across-days/plan.md:122-130`
 - Amount formatting: `src/lib/services/recipe-macros.ts:62-81`
+
+## Implementation deviations
+
+Recorded after the implementation review (impl-review F6). None changes a requirement.
+
+1. **Island props.** `ShoppingList.tsx` takes no `initialCheckedCount`: the count is derived from the item state. It takes two extra props: `children` (see 2) and `initialMessage`, the `?error=` of a failed no-JS post, which the island shows in its single `aria-live` notice (impl-review F4).
+2. **Notes and day lines.** They are written in `shopping.astro` as planned, but passed into the island as a slot, so they render inside the island's root, between the summary and the aisles. Testids are unchanged.
+3. **Summary wording.** `formatShoppingSummary` prints `Shopping list: no items yet` whenever `itemCount === 0` (not only when the plan has no meals), and uses the singular `1 item`.
+4. **JSON status codes.** In JSON mode, an authenticated caller without a household gets KD007 → `400`, not `401`. Every account gets a household at sign-up, so this is practically unreachable.
+
+Smoke also pins two product lines instead of one, and hard-codes the KD019 test product (oats, found with the `not exists` oracle).
 
 ## Progress
 

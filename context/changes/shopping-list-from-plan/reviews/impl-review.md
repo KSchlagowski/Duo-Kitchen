@@ -66,7 +66,7 @@ The Manual rows in Progress (1.5–1.7, 2.5–2.6, 3.6–3.13, 4.6–4.11, 5.8�
 - **Fix**:
   - Code: in `buildShoppingList`, when a dish falls back, collect the `dayIndex` of each of its meals into a `Set`, and set `daySources[day] = "estimate"` for those days (after the `empty/exact/estimate` loop).
   - Test: extend the existing "Fallback" case in `shopping-list.test.ts` to assert that `daySources` for the fell-back dish's day is `"estimate"`.
-- **Decision**: PENDING
+- **Decision**: FIXED (Fix) — `buildShoppingList` collects the days of every fell-back dish and marks them `estimate` (src/lib/services/shopping-list.ts); the Fallback case in shopping-list.test.ts now asserts `daySources`.
 
 ### F2 — Stored `amountG` is summed into the list without a range check
 
@@ -81,7 +81,7 @@ The Manual rows in Progress (1.5–1.7, 2.5–2.6, 3.6–3.13, 4.6–4.11, 5.8�
 - **Fix**: Change `amountG: z.number()` to `amountG: z.number().finite().nonnegative()` at `day-solutions.ts:143`.
   - A row that fails the schema already reads as "not solved", so the list falls back to estimates and `/plan/day` shows the day as unsolved, with no new code path.
   - Add one `day-solutions.test.ts` case that a negative `amountG` fails `parseStoredSolution()`.
-- **Decision**: PENDING
+- **Decision**: FIXED (Fix) — `amountG: z.number().nonnegative()` in day-solutions.ts (`.finite()` dropped: deprecated no-op in zod 4, which already rejects infinities, and lint fails on it); `parseStoredSolution()` exported and a negative-amount case added to day-solutions.test.ts.
 
 ### F3 — Tapping one item clears another item's failure message
 
@@ -93,7 +93,7 @@ The Manual rows in Progress (1.5–1.7, 2.5–2.6, 3.6–3.13, 4.6–4.11, 5.8�
   - The hook keeps one shared `message`, and `toggle()` calls `setMessage(null)` before every request.
   - Suppose item A's save fails, so it reverts and the message shows. Tapping item B immediately hides that message while A's revert stands. A user moving quickly through a store can miss that A did not save.
 - **Fix**: Remove `setMessage(null)` from the start of `toggle()`, and clear the message only after a successful response, i.e. in an `else` branch of the `!response.ok || payload?.ok !== true` check at L54.
-- **Decision**: PENDING
+- **Decision**: FIXED (Fix) — useShoppingChecks.ts no longer clears the message at the start of `toggle()`; it clears it only after a successful response.
 
 ### F4 — Server `?error=` notice survives successful in-place toggles
 
@@ -108,7 +108,7 @@ The Manual rows in Progress (1.5–1.7, 2.5–2.6, 3.6–3.13, 4.6–4.11, 5.8�
 - **Fix**:
   - Island: pass the `error` param into the island as an `initialMessage` prop, use it as the hook's initial `message` state, and delete the separate red notice from `shopping.astro`. One `aria-live` notice then covers both paths and is cleared by the next successful toggle (together with F3's fix).
   - URL: call `history.replaceState` to drop `error` from the URL on that first success.
-- **Decision**: PENDING
+- **Decision**: FIXED (Fix) — the island takes an `initialMessage` prop (the `?error=` param) as the hook's initial message, a successful toggle clears it and drops `error` from the URL with `history.replaceState`; shopping.astro renders its own red notice only when no list is loaded (no-plan/unavailable states, which have no island).
 
 ### F5 — Second library read duplicates part of `getSolverRecipes()`
 
@@ -122,7 +122,7 @@ The Manual rows in Progress (1.5–1.7, 2.5–2.6, 3.6–3.13, 4.6–4.11, 5.8�
   - Folding it into the solver read is risky: if the fingerprint serialises the ingredient objects (unverified), every stored solve would go stale.
 - **Fix**: Keep the code as is, and record the trade-off in the plan's "Performance Considerations" ("one extra library read, chosen to keep `SolverIngredient` and the solve fingerprint untouched").
   - Revisit only if an edge CPU or latency measurement of `/plan/shopping` shows it matters.
-- **Decision**: PENDING
+- **Decision**: FIXED (Fix) — plan.md "Performance Considerations" records the extra library read and why it is kept.
 
 ### F6 — Small undocumented deviations from the plan
 
@@ -138,4 +138,4 @@ The Manual rows in Progress (1.5–1.7, 2.5–2.6, 3.6–3.13, 4.6–4.11, 5.8�
 
   The smoke test also pins two product lines instead of one, and hard-codes the KD019 test product (oats). Both are benign extras.
 - **Fix**: Append a short "Implementation deviations" addendum to `plan.md` (after "References") listing items 1–4, so the plan stays an accurate source of truth for S-10/S-11 and future reviews. No code change.
-- **Decision**: PENDING
+- **Decision**: FIXED (Fix) — plan.md gains an "Implementation deviations" addendum after References listing items 1–4 (plus the new `initialMessage` prop from F4) and the smoke extras.

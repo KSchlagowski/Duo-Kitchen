@@ -9,13 +9,25 @@ interface CheckResponse {
 
 // Optimistic check-offs over POST /api/plan/shopping in its JSON mode (S-09). A toggle flips at once
 // and reverts, with a message, if the save fails; while one is in flight that item cannot toggle again.
-// The server-rendered list stays the source of truth on reload.
-export function useShoppingChecks(aisles: ShoppingAisle[]) {
+// The server-rendered list stays the source of truth on reload. `initialMessage` is the `?error=` of a
+// failed no-JS post; it shares the one notice, which only a successful toggle clears, so a failure
+// stays visible until something actually saves.
+export function useShoppingChecks(aisles: ShoppingAisle[], initialMessage: string | null = null) {
   const [checked, setChecked] = useState<Record<string, boolean>>(() =>
     Object.fromEntries(aisles.flatMap(({ items }) => items.map((item) => [item.productId, item.checked]))),
   );
   const [pending, setPending] = useState<ReadonlySet<string>>(() => new Set());
-  const [message, setMessage] = useState<string | null>(null);
+  const [message, setMessage] = useState<string | null>(initialMessage);
+
+  const clearMessage = () => {
+    setMessage(null);
+    // Drop a no-JS post's `?error=` too, so a reload does not bring the stale notice back.
+    const url = new URL(window.location.href);
+    if (url.searchParams.has("error")) {
+      url.searchParams.delete("error");
+      window.history.replaceState(window.history.state, "", url);
+    }
+  };
 
   const setItem = (productId: string, value: boolean) => {
     setChecked((prev) => ({ ...prev, [productId]: value }));
@@ -43,7 +55,6 @@ export function useShoppingChecks(aisles: ShoppingAisle[]) {
 
     setItem(productId, target);
     setItemPending(productId, true);
-    setMessage(null);
     try {
       const response = await fetch("/api/plan/shopping", {
         method: "POST",
@@ -54,6 +65,8 @@ export function useShoppingChecks(aisles: ShoppingAisle[]) {
       if (!response.ok || payload?.ok !== true) {
         setItem(productId, !target);
         setMessage(payload?.message ?? SHOPPING_SAVE_FAILED);
+      } else {
+        clearMessage();
       }
     } catch {
       setItem(productId, !target);

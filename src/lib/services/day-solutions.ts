@@ -140,7 +140,9 @@ const daySolutionSchema: z.ZodType<DaySolution> = z.object({
             z.object({
               id: z.string(),
               productName: z.string(),
-              amountG: z.number(),
+              // S-09 sums these into the shopping list, so a crafted row cannot show negative amounts
+              // (zod 4 numbers already reject infinities).
+              amountG: z.number().nonnegative(),
               gramsPerPiece: z.number().nullable(),
               allowHalfPieces: z.boolean(),
               perPerson: z.record(z.string(), z.number()).nullable(),
@@ -191,7 +193,7 @@ const daySolutionSchema: z.ZodType<DaySolution> = z.object({
 });
 
 // The stored result, or null (logged) when it does not match the version-1 shape.
-function parseStoredSolution(result: unknown): DaySolution | null {
+export function parseStoredSolution(result: unknown): DaySolution | null {
   const parsed = daySolutionSchema.safeParse(result);
   if (!parsed.success) {
     // eslint-disable-next-line no-console -- surfaced in Cloudflare Workers observability logs
