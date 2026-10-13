@@ -10,12 +10,10 @@ import {
   SHOPPING_UNAVAILABLE,
   formatEstimateNote,
   formatExactNote,
-  formatShoppingAmount,
-  formatShoppingSummary,
 } from "@/lib/services/shopping-list";
+import ShoppingList from "@/components/shopping/ShoppingList";
 import { AISLE_LABELS } from "@/lib/recipe-labels";
-import { cn } from "@/lib/utils";
-import type { MealPlan, PlanDayIndex, PlanDaySolveStatus, ShoppingList } from "@/types";
+import type { MealPlan, PlanDayIndex, PlanDaySolveStatus, ShoppingList as ShoppingListData } from "@/types";
 
 // S-09: the shopping list of one plan, derived on every read (only the checks are stored). Without
 // `start` it is the most recently saved plan's, as on the dashboard. A malformed start is 404, a
@@ -27,7 +25,7 @@ type State =
   | {
       kind: "loaded";
       plan: MealPlan;
-      list: ShoppingList;
+      list: ShoppingListData;
       statuses: Record<PlanDayIndex, PlanDaySolveStatus>;
     };
 
@@ -104,75 +102,40 @@ const notice = Astro.url.searchParams.get("error");
 
       {loaded && (
         <>
-          <p class="text-lg font-semibold" data-testid="shopping-summary">
-            {formatShoppingSummary(loaded.list)}
-          </p>
-
-          {exactDays.length > 0 && (
-            <p class="mt-2 text-sm text-emerald-200" data-testid="shopping-exact">
-              {formatExactNote(exactDays.map(weekdayOf))}
-            </p>
-          )}
-          {estimateDays.length > 0 && (
-            <p class="mt-2 text-sm text-amber-100" data-testid="shopping-estimate">
-              {formatEstimateNote(estimateDays.map(weekdayOf))}
-            </p>
-          )}
-          {filledDays.length > 0 && (
-            <ul class="mt-2 space-y-0.5 text-xs text-blue-100/70">
-              {filledDays.map((day) => (
-                <li data-testid={`shopping-day-${day}`}>
-                  <a
-                    href={`/plan/day?start=${loaded.plan.startDate}&day=${day}`}
-                    class="text-purple-300 hover:underline"
-                  >
-                    {weekdayOf(day)}
-                  </a>
-                  {" · "}
-                  {formatPlanDayStatus(loaded.statuses[day])}
-                </li>
-              ))}
-            </ul>
-          )}
-
-          {loaded.list.aisles.map(({ aisle, items }) => (
-            <section class="mt-6" data-testid={`aisle-${aisle}`}>
-              <h2 class="mb-2 font-semibold">{AISLE_LABELS[aisle]}</h2>
-              <ul class="flex flex-col gap-1">
-                {items.map((item) => (
-                  <li
-                    id={`item-${item.productId}`}
-                    data-testid={`item-${item.productId}`}
-                    data-checked={item.checked ? "true" : "false"}
-                  >
-                    <form method="POST" action="/api/plan/shopping">
-                      <input type="hidden" name="start_date" value={loaded.plan.startDate} />
-                      <input type="hidden" name="product_id" value={item.productId} />
-                      <input type="hidden" name="checked" value={item.checked ? "0" : "1"} />
-                      <button
-                        type="submit"
-                        aria-pressed={item.checked ? "true" : "false"}
-                        class:list={cn(
-                          "flex min-h-11 w-full items-center gap-3 rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-left text-sm transition-colors hover:bg-white/10",
-                          item.checked && "text-blue-100/50",
-                        )}
-                      >
-                        <span aria-hidden="true" class="text-lg">
-                          {item.checked ? "☑" : "☐"}
-                        </span>
-                        <span class:list={cn("flex-1 break-words", item.checked && "line-through")}>
-                          {item.productName}
-                        </span>
-                        <span class:list={cn("shrink-0", item.checked ? "line-through" : "text-blue-100/80")}>
-                          {formatShoppingAmount(item)}
-                        </span>
-                      </button>
-                    </form>
+          <ShoppingList
+            client:idle
+            startDate={loaded.plan.startDate}
+            aisles={loaded.list.aisles}
+            itemCount={loaded.list.itemCount}
+            labels={{ aisles: AISLE_LABELS }}
+          >
+            {exactDays.length > 0 && (
+              <p class="mt-2 text-sm text-emerald-200" data-testid="shopping-exact">
+                {formatExactNote(exactDays.map(weekdayOf))}
+              </p>
+            )}
+            {estimateDays.length > 0 && (
+              <p class="mt-2 text-sm text-amber-100" data-testid="shopping-estimate">
+                {formatEstimateNote(estimateDays.map(weekdayOf))}
+              </p>
+            )}
+            {filledDays.length > 0 && (
+              <ul class="mt-2 space-y-0.5 text-xs text-blue-100/70">
+                {filledDays.map((day) => (
+                  <li data-testid={`shopping-day-${day}`}>
+                    <a
+                      href={`/plan/day?start=${loaded.plan.startDate}&day=${day}`}
+                      class="text-purple-300 hover:underline"
+                    >
+                      {weekdayOf(day)}
+                    </a>
+                    {" · "}
+                    {formatPlanDayStatus(loaded.statuses[day])}
                   </li>
                 ))}
               </ul>
-            </section>
-          ))}
+            )}
+          </ShoppingList>
         </>
       )}
 

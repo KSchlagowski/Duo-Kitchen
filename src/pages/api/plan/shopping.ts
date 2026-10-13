@@ -1,9 +1,9 @@
 import type { APIRoute } from "astro";
 import { z } from "zod";
 import { createClient } from "@/lib/supabase";
-import { isIsoDate } from "@/lib/services/meal-plans";
+import { errorCode, isIsoDate } from "@/lib/services/meal-plans";
 import { setShoppingItemChecked, shoppingErrorMessage } from "@/lib/services/shopping";
-import { SHOPPING_ERRORS } from "@/lib/services/shopping-list";
+import { SHOPPING_ERRORS, SHOPPING_SAVE_FAILED } from "@/lib/services/shopping-list";
 
 const INVALID_CHECK = SHOPPING_ERRORS.KD018;
 
@@ -22,10 +22,22 @@ function shoppingUrl(startDate: string | null, productId: string | null, message
   return `/plan/shopping${params ? `?${params}` : ""}${productId ? `#item-${productId}` : ""}`;
 }
 
+// The check-off island (ShoppingList.tsx) asks for JSON so it can toggle in place; a plain form post
+// (no JavaScript) keeps the redirect contract. Both report the same SHOPPING_ERRORS messages.
+function wantsJson(request: Request): boolean {
+  return request.headers.get("accept")?.includes("application/json") ?? false;
+}
+
+function json(status: number, body: { ok: true; checked: boolean } | { ok: false; message: string }): Response {
+  return new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
+}
+
 export const POST: APIRoute = async (context) => {
+  const asJson = wantsJson(context.request);
+
   // /api/* is not in middleware.ts's PROTECTED_ROUTES, so this route is reachable anonymously.
   if (!context.locals.user) {
-    return context.redirect("/auth/signin");
+    return asJson ? json(401, { ok: false, message: SHOPPING_ERRORS.KD007 }) : context.redirect("/auth/signin");
   }
 
   // See redeem.ts: a same-origin non-form body makes formData() reject.
@@ -33,12 +45,16 @@ export const POST: APIRoute = async (context) => {
   try {
     form = await context.request.formData();
   } catch {
-    return context.redirect(shoppingUrl(null, null, INVALID_CHECK));
+    return asJson
+      ? json(400, { ok: false, message: INVALID_CHECK })
+      : context.redirect(shoppingUrl(null, null, INVALID_CHECK));
   }
 
   const start = startDateSchema.safeParse(form.get("start_date"));
   if (!start.success) {
-    return context.redirect(shoppingUrl(null, null, INVALID_CHECK));
+    return asJson
+      ? json(400, { ok: false, message: INVALID_CHECK })
+      : context.redirect(shoppingUrl(null, null, INVALID_CHECK));
   }
   const startDate = start.data;
 
@@ -47,13 +63,17 @@ export const POST: APIRoute = async (context) => {
     checked: form.get("checked") ?? undefined,
   });
   if (!parsed.success) {
-    return context.redirect(shoppingUrl(startDate, null, INVALID_CHECK));
+    return asJson
+      ? json(400, { ok: false, message: INVALID_CHECK })
+      : context.redirect(shoppingUrl(startDate, null, INVALID_CHECK));
   }
   const { product_id: productId, checked } = parsed.data;
 
   const supabase = createClient(context.request.headers, context.cookies);
   if (!supabase) {
-    return context.redirect(shoppingUrl(startDate, productId, "Supabase is not configured"));
+    return asJson
+      ? json(500, { ok: false, message: SHOPPING_SAVE_FAILED })
+      : context.redirect(shoppingUrl(startDate, productId, "Supabase is not configured"));
   }
 
   try {
@@ -61,8 +81,16 @@ export const POST: APIRoute = async (context) => {
   } catch (error) {
     // eslint-disable-next-line no-console -- surfaced in Cloudflare Workers observability logs
     console.error("set_shopping_item_checked failed on /api/plan/shopping", error);
-    return context.redirect(shoppingUrl(startDate, productId, shoppingErrorMessage(error)));
+    const message = shoppingErrorMessage(error);
+    if (asJson) {
+      // A KD rejection is the caller's request; anything else is ours.
+      const code = errorCode(error);
+      return json(code !== null && code in SHOPPING_ERRORS ? 400 : 500, { ok: false, message });
+    }
+    return context.redirect(shoppingUrl(startDate, productId, message));
   }
 
-  return context.redirect(shoppingUrl(startDate, productId));
+  return asJson
+    ? json(200, { ok: true, checked: checked === "1" })
+    : context.redirect(shoppingUrl(startDate, productId));
 };

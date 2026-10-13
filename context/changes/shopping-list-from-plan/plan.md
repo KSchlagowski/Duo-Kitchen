@@ -719,11 +719,11 @@ Prove the slice end to end over HTTP against the production preview, and record 
 
 #### Automated
 
-- [x] 3.1 Unit tests pass: `npm test`
-- [x] 3.2 Lint passes: `npm run lint`
-- [x] 3.3 Types check: `npx astro check`
-- [x] 3.4 Build succeeds: `npm run build`
-- [x] 3.5 Existing smoke still passes against the preview
+- [x] 3.1 Unit tests pass: `npm test` — 38a085b
+- [x] 3.2 Lint passes: `npm run lint` — 38a085b
+- [x] 3.3 Types check: `npx astro check` — 38a085b
+- [x] 3.4 Build succeeds: `npm run build` — 38a085b
+- [x] 3.5 Existing smoke still passes against the preview — 38a085b
 
 #### Manual
 
@@ -740,11 +740,11 @@ Prove the slice end to end over HTTP against the production preview, and record 
 
 #### Automated
 
-- [ ] 4.1 Lint passes: `npm run lint`
-- [ ] 4.2 Types check: `npx astro check`
-- [ ] 4.3 Unit tests pass: `npm test`
-- [ ] 4.4 Build succeeds: `npm run build`
-- [ ] 4.5 Existing smoke still passes against the preview
+- [x] 4.1 Lint passes: `npm run lint`
+- [x] 4.2 Types check: `npx astro check`
+- [x] 4.3 Unit tests pass: `npm test`
+- [x] 4.4 Build succeeds: `npm run build`
+- [x] 4.5 Existing smoke still passes against the preview
 
 #### Manual
 
