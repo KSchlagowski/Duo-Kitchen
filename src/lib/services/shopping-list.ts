@@ -199,6 +199,11 @@ export function formatEstimateNote(weekdays: readonly string[]): string {
   return `${joinList(weekdays)}: recipe base amounts (estimate) — solve to get exact amounts.`;
 }
 
+// Shown with the estimate note: a base batch can be far from the solved amounts (a day with few
+// meals is scaled up to the eaters' full daily targets), so shopping from an estimate is a gamble.
+export const SHOPPING_ESTIMATE_WARNING =
+  "This list may not be up to date: amounts for unsolved or out-of-date days can change a lot once they are solved. Solve every day before you shop.";
+
 // A summed total is always a whole or half piece multiple (every ingredient amount is), so half pieces
 // are allowed here whatever the single ingredients allowed; any other count falls back to grams.
 export function formatShoppingAmount(item: Pick<ShoppingItem, "amountG" | "gramsPerPiece">): string {
