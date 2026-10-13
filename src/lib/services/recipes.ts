@@ -8,6 +8,7 @@ import type {
   RecipeDetailComponent,
   RecipeDetailIngredient,
   RecipeLibrarySummary,
+  RecipeSteps,
   SolverIngredient,
   SolverRecipe,
   StepTiming,
@@ -314,3 +315,56 @@ export async function getIngredientProducts(
   return result;
 }
 // --- end S-09 -------------------------------------------------------------------------------
+
+// --- S-10: ordered steps of the plan's recipes for the cooking sessions ----------------------
+
+// Three flat queries for any number of recipes, for the same PGRST201 reason as getRecipeDetail().
+// A recipe that does not exist is absent from the result; one with no steps has `steps: []`.
+export async function getRecipeSteps(
+  supabase: SupabaseClient,
+  recipeIds: string[],
+): Promise<Record<string, RecipeSteps>> {
+  const ids = [...new Set(recipeIds)];
+  if (ids.length === 0) {
+    return {};
+  }
+  const [recipes, components, steps] = await Promise.all([
+    supabase.from("recipes").select("id, name").in("id", ids),
+    supabase.from("recipe_components").select("id, name").in("recipe_id", ids),
+    supabase
+      .from("recipe_steps")
+      .select("id, recipe_id, position, instruction, timing, component_id, duration_minutes")
+      .in("recipe_id", ids),
+  ]);
+
+  if (recipes.error) {
+    throw recipes.error;
+  }
+  if (components.error) {
+    throw components.error;
+  }
+  if (steps.error) {
+    throw steps.error;
+  }
+
+  const componentNames = new Map((components.data as { id: string; name: string }[]).map((c) => [c.id, c.name]));
+  const result: Record<string, RecipeSteps> = {};
+  for (const row of recipes.data as Pick<RecipeRow, "id" | "name">[]) {
+    result[row.id] = { recipeId: row.id, recipeName: row.name, steps: [] };
+  }
+  for (const row of steps.data as (StepRow & { recipe_id: string })[]) {
+    (result[row.recipe_id] as RecipeSteps | undefined)?.steps.push({
+      id: row.id,
+      position: row.position,
+      instruction: row.instruction,
+      timing: row.timing,
+      componentName: row.component_id === null ? null : (componentNames.get(row.component_id) ?? null),
+      durationMinutes: row.duration_minutes,
+    });
+  }
+  for (const recipe of Object.values(result)) {
+    recipe.steps.sort(byPosition);
+  }
+  return result;
+}
+// --- end S-10 -------------------------------------------------------------------------------
