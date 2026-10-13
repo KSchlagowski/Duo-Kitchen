@@ -986,6 +986,14 @@ the Free plan's limit is 10 ms CPU and the paid plans' is far higher: the record
 the recorded figure interpretable. If the figure exceeds the account's limit, climb the mitigation
 ladder in **Performance Considerations** from rung 3.
 
+**Recorded (2026-10-12/13)**: the account is on the Workers **Free** plan (10 ms CPU). The group measured
+was three days joined by two shared dishes (Monday–Tuesday lunch, Tuesday–Wednesday dinner) with the
+F1 mix on every day, not the all-whole-dish no-fit mix. Local `npm run dev` (workerd): group solve
+735–1141 ms wall, single-day solve 581–664 ms, both including the Supabase round-trips. Production
+after the `main` deploy: six consecutive group solves all succeeded (`Solved within ±10%` on all three
+days), each 570–702 ms wall end to end, with no CPU-limit error (1102 / 503). No mitigation rung was
+climbed; the no-fit mix on the edge stays unmeasured.
+
 #### 4. The full verification chain
 
 **Intent**: Run the mandated order, which CI cannot substitute for — `npm run test:rls` and
@@ -1163,8 +1171,8 @@ would cut the 3-day case the Desired End State and F6 are written around and mak
 
 #### Manual
 
-- [ ] 1.5 F5's shared lunch has identical `amountG` on both days and four distinct `(mealId, userId)` shares
-- [ ] 1.6 If the F6 budget failed, the pre-committed mitigation ladder was climbed in order (rung 3, then rung 4) and F1–F4 still pass
+- [x] 1.5 F5's shared lunch has identical `amountG` on both days and four distinct `(mealId, userId)` shares — manual 2026-10-13
+- [x] 1.6 If the F6 budget failed, the pre-committed mitigation ladder was climbed in order (rung 3, then rung 4) and F1–F4 still pass — manual 2026-10-13
 
 ### Phase 2: Schema and the two RPCs
 
@@ -1177,9 +1185,9 @@ would cut the 3-day case the Desired End State and F6 are written around and mak
 
 #### Manual
 
-- [ ] 2.5 `plan_meals_dish_id_key` is gone and `plan_meals_dish_plan_idx` exists
-- [ ] 2.6 `public.save_day_solution` no longer exists and `anon` holds no execute on `save_plan_day_solutions`
-- [ ] 2.7 A `share_with` naming a slot of a different recipe is rejected with KD017
+- [x] 2.5 `plan_meals_dish_id_key` is gone and `plan_meals_dish_plan_idx` exists — manual 2026-10-13
+- [x] 2.6 `public.save_day_solution` no longer exists and `anon` holds no execute on `save_plan_day_solutions` — manual 2026-10-13
+- [x] 2.7 A `share_with` naming a slot of a different recipe is rejected with KD017 — manual 2026-10-13
 
 ### Phase 3: Services, routes and pages
 
@@ -1192,12 +1200,12 @@ would cut the 3-day case the Desired End State and F6 are written around and mak
 
 #### Manual
 
-- [ ] 3.5 A saved shared batch re-renders in canonical star form
-- [ ] 3.6 A group shows exactly one solve prompt, on its lowest day
-- [ ] 3.7 Solving from either day gives both days the same status, tier and solved-at
-- [ ] 3.8 Editing one sharing day flips both days to "Out of date"
-- [ ] 3.9 The set-aside and from-batch notes render, with the batch ingredient list on the cook day only
-- [ ] 3.10 A share naming a slot of a different recipe shows the KD017 message
+- [x] 3.5 A saved shared batch re-renders in canonical star form — manual 2026-10-13
+- [x] 3.6 A group shows exactly one solve prompt, on its lowest day — manual 2026-10-13
+- [x] 3.7 Solving from either day gives both days the same status, tier and solved-at — manual 2026-10-13
+- [x] 3.8 Editing one sharing day flips both days to "Out of date" — manual 2026-10-13
+- [x] 3.9 The set-aside and from-batch notes render, with the batch ingredient list on the cook day only — manual 2026-10-13
+- [x] 3.10 A share naming a slot of a different recipe shows the KD017 message — manual 2026-10-13 (KD017 via `npm run test:rls`; the grid now unshares with a notice, impl-review F1)
 
 ### Phase 4: Smoke, documentation and the full chain
 
@@ -1214,7 +1222,7 @@ would cut the 3-day case the Desired End State and F6 are written around and mak
 
 #### Manual
 
-- [ ] 4.9 Smoke accounts and households cleaned up with the README's two queries
-- [ ] 4.10 CLAUDE.md states the `batch.dishId` deduplication invariant for S-09 / S-11
-- [ ] 4.11 Production solve verified after the `main` deploy, closing the Phase 2 `db push` window
-- [ ] 4.12 The workerd solve time for an F6-shaped group and the account's Workers plan are recorded in Phase 4 §3
+- [x] 4.9 Smoke accounts and households cleaned up with the README's two queries — manual 2026-10-13
+- [x] 4.10 CLAUDE.md states the `batch.dishId` deduplication invariant for S-09 / S-11 — manual 2026-10-13
+- [x] 4.11 Production solve verified after the `main` deploy, closing the Phase 2 `db push` window — manual 2026-10-13
+- [x] 4.12 The workerd solve time for an F6-shaped group and the account's Workers plan are recorded in Phase 4 §3 — manual 2026-10-13
