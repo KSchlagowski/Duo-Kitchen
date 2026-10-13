@@ -181,6 +181,21 @@ begin
       1, 'lunch', '00000000-0000-4000-b000-00000000a057', null),
     ('00000000-0000-4000-b000-00000000b037', b_household, '00000000-0000-4000-b000-00000000b007',
       0, 'lunch', '00000000-0000-4000-b000-00000000b017', null);
+
+  -- Shopping-list checks (S-09): one row on each fixture plan, both for the first product (by id) of
+  -- seed recipe …0001, which both plans cook. Keyed by (plan_id, product_id), so no id column.
+  -- Inserted as postgres: authenticated has no write grant on this table.
+  insert into public.shopping_list_checks (household_id, plan_id, product_id)
+  select hh, plan, (
+    select ri.product_id
+    from public.recipe_ingredients ri
+    join public.recipe_components rc on rc.id = ri.component_id
+    where rc.recipe_id = '5eed0002-0000-4000-8000-000000000001'
+    order by ri.product_id
+    limit 1)
+  from (values
+    (a_household, '00000000-0000-4000-b000-00000000a007'::uuid),
+    (b_household, '00000000-0000-4000-b000-00000000b007'::uuid)) as f(hh, plan);
 end;
 $$;
 
@@ -1129,6 +1144,204 @@ begin
 end;
 $$;
 
+-- As user A: shopping-list checks (S-09) are household-scoped -- exactly A's one fixture row, none of
+-- B's. Runs before the RPC block below adds rows on A's 2030-06-01 plan.
+do $$
+declare
+  a_household uuid := current_setting('rls_test.a_household')::uuid;
+  n int;
+begin
+  select count(*) into n from public.shopping_list_checks;
+  if n <> 1 then
+    raise exception 'checks: user A sees % shopping_list_checks rows, expected exactly its own 1', n;
+  end if;
+  select count(*) into n from public.shopping_list_checks
+  where plan_id = '00000000-0000-4000-b000-00000000a007' and household_id = a_household;
+  if n <> 1 then
+    raise exception 'checks: user A cannot see its own fixture check';
+  end if;
+  select count(*) into n from public.shopping_list_checks where plan_id = '00000000-0000-4000-b000-00000000b007';
+  if n <> 0 then
+    raise exception 'checks: user A can see B''s fixture check';
+  end if;
+end;
+$$;
+
+-- As user A: shopping-list checks are write-revoked (writes only via public.set_shopping_item_checked).
+-- The insert probe uses valid values in A's own household and plan (the fixture product, which A's
+-- plan cooks through the fixture recipe, not the already-checked seed product), so the policies alone
+-- would ALLOW it: only the revoke can raise insufficient_privilege, and no other handler is accepted
+-- on purpose. update/delete may raise or affect 0 rows; truncate must raise.
+do $$
+declare
+  a_household uuid := current_setting('rls_test.a_household')::uuid;
+  n int;
+begin
+  begin
+    insert into public.shopping_list_checks (household_id, plan_id, product_id)
+    values (a_household, '00000000-0000-4000-b000-00000000a007', '00000000-0000-4000-b000-00000000c001');
+    raise exception 'checks: user A could insert into public.shopping_list_checks directly';
+  exception when insufficient_privilege then null;
+  end;
+
+  begin
+    update public.shopping_list_checks set checked_at = now() where household_id = a_household;
+    get diagnostics n = row_count;
+    if n <> 0 then
+      raise exception 'checks: user A updated % own shopping_list_checks rows directly', n;
+    end if;
+  exception when insufficient_privilege then null;
+  end;
+
+  begin
+    delete from public.shopping_list_checks where household_id = a_household;
+    get diagnostics n = row_count;
+    if n <> 0 then
+      raise exception 'checks: user A deleted % own shopping_list_checks rows directly', n;
+    end if;
+  exception when insufficient_privilege then null;
+  end;
+
+  begin
+    truncate public.shopping_list_checks;
+    raise exception 'checks: user A could truncate public.shopping_list_checks';
+  exception when insufficient_privilege then null;
+  end;
+end;
+$$;
+
+-- As user A: set_shopping_item_checked behaviour, on A's own RPC-saved 2030-06-01 plan holding one
+-- meal of seed recipe …0001. Check and uncheck are both idempotent. The final check row stays, for
+-- B's invisibility check and the household cascade block at the end.
+do $$
+declare
+  a_household uuid := current_setting('rls_test.a_household')::uuid;
+  used uuid;
+  plan uuid;
+  n int;
+begin
+  plan := public.save_meal_plan('2030-06-01', jsonb_build_array(
+    jsonb_build_object('day_index', 0, 'meal_type', 'lunch',
+      'recipe_id', '5eed0002-0000-4000-8000-000000000001', 'eater_user_id', null)));
+
+  select ri.product_id into used
+  from public.recipe_ingredients ri
+  join public.recipe_components rc on rc.id = ri.component_id
+  where rc.recipe_id = '5eed0002-0000-4000-8000-000000000001'
+  order by ri.product_id
+  limit 1;
+  if used is null then
+    raise exception 'checks setup: seed recipe …0001 has no ingredients';
+  end if;
+
+  -- Check, then check again: one row, in A's household and plan.
+  perform public.set_shopping_item_checked('2030-06-01', used, true);
+  select count(*) into n from public.shopping_list_checks
+  where plan_id = plan and product_id = used and household_id = a_household;
+  if n <> 1 then
+    raise exception 'checks[rpc]: checking a product the plan uses stored % rows, expected 1', n;
+  end if;
+  perform public.set_shopping_item_checked('2030-06-01', used, true);
+  select count(*) into n from public.shopping_list_checks where plan_id = plan;
+  if n <> 1 then
+    raise exception 'checks[rpc]: checking the same product twice left % rows, expected 1', n;
+  end if;
+
+  -- Uncheck, then uncheck again: no error, no rows.
+  perform public.set_shopping_item_checked('2030-06-01', used, false);
+  perform public.set_shopping_item_checked('2030-06-01', used, false);
+  select count(*) into n from public.shopping_list_checks where plan_id = plan;
+  if n <> 0 then
+    raise exception 'checks[rpc]: unchecking twice left % rows, expected 0', n;
+  end if;
+
+  -- The fixture check on A's 2030-01-01 plan was untouched by all of the above.
+  select count(*) into n from public.shopping_list_checks where plan_id = '00000000-0000-4000-b000-00000000a007';
+  if n <> 1 then
+    raise exception 'checks[rpc]: writes on the 2030-06-01 plan changed the 2030-01-01 plan''s checks';
+  end if;
+
+  perform public.set_shopping_item_checked('2030-06-01', used, true);
+  perform set_config('rls_test.a_check_plan', plan::text, true);
+  perform set_config('rls_test.a_check_product', used::text, true);
+end;
+$$;
+
+-- As user A: set_shopping_item_checked rejections, one SQLSTATE each (same when others + P0001
+-- re-raise idiom as above). The unused product is a seed product recipe …0001 does not use, found by
+-- query rather than hard-coded.
+do $$
+declare
+  used text := current_setting('rls_test.a_check_product');
+  unused text := (
+    select p.id::text from public.products p
+    where p.id::text like '5eed%'
+      and not exists (
+        select 1 from public.recipe_ingredients ri
+        join public.recipe_components rc on rc.id = ri.component_id
+        where rc.recipe_id = '5eed0002-0000-4000-8000-000000000001' and ri.product_id = p.id)
+    order by p.id
+    limit 1);
+  cases text[][];
+  i int;
+  n int;
+  v_state text;
+  v_msg text;
+begin
+  if unused is null then
+    raise exception 'checks setup: every seed product is used by seed recipe …0001';
+  end if;
+
+  cases := array[
+    -- start date, product id, checked, expected SQLSTATE, what the case proves
+    array[null, used, 'true', 'KD018', 'a null start date was accepted'],
+    array['2030-06-01', null, 'true', 'KD018', 'a null product id was accepted'],
+    array['2030-06-01', used, null, 'KD018', 'a null checked flag was accepted'],
+    array['2030-06-09', used, 'true', 'KD014', 'a start date with no plan was accepted'],
+    array['2030-06-01', unused, 'true', 'KD019', 'checking a product no recipe of the plan uses was accepted'],
+    array['2030-06-01', gen_random_uuid()::text, 'true', 'KD019', 'checking an unknown product id was accepted']
+  ];
+
+  for i in 1 .. array_length(cases, 1) loop
+    begin
+      perform public.set_shopping_item_checked(cases[i][1]::date, cases[i][2]::uuid, cases[i][3]::boolean);
+      raise exception 'checks[%]: %', cases[i][4], cases[i][5];
+    exception
+      when others then
+        get stacked diagnostics v_state = returned_sqlstate, v_msg = message_text;
+        if v_state = 'P0001' then raise; end if;
+        if v_state <> cases[i][4] then
+          raise exception 'checks[%]: % -- rejected with % ("%") instead', cases[i][4], cases[i][5], v_state, v_msg;
+        end if;
+    end;
+  end loop;
+
+  -- Unchecking a product the plan does not use is allowed (a stale check must stay clearable).
+  perform public.set_shopping_item_checked('2030-06-01', unused::uuid, false);
+
+  select count(*) into n from public.shopping_list_checks
+  where plan_id = current_setting('rls_test.a_check_plan')::uuid;
+  if n <> 1 then
+    raise exception 'checks: the rejected calls changed the 2030-06-01 plan''s checks to % rows, expected 1', n;
+  end if;
+
+  -- KD007: an authenticated request with no sub claim. The claims are restored afterwards.
+  perform set_config('request.jwt.claims', json_build_object('role', 'authenticated')::text, true);
+  begin
+    perform public.set_shopping_item_checked('2030-06-01', used::uuid, true);
+    raise exception 'checks[KD007]: a call with no caller was accepted';
+  exception
+    when sqlstate 'KD007' then null;
+    when others then
+      get stacked diagnostics v_state = returned_sqlstate, v_msg = message_text;
+      if v_state = 'P0001' then raise; end if;
+      raise exception 'checks[KD007]: rejected with % ("%") instead of KD007', v_state, v_msg;
+  end;
+  perform set_config('request.jwt.claims',
+    json_build_object('sub', '00000000-0000-4000-a000-00000000000a', 'role', 'authenticated')::text, true);
+end;
+$$;
+
 -- ---------------------------------------------------------------------------
 -- As user B: symmetric read check.
 -- ---------------------------------------------------------------------------
@@ -1227,6 +1440,42 @@ begin
       if v_state = 'P0001' then raise; end if;
       raise exception 'solutions[KD014]: rejected with % ("%") instead of KD014', v_state, v_msg;
   end;
+end;
+$$;
+
+-- As user B: shopping-list checks (S-09) -- only B's own fixture check, none of A's, and B cannot
+-- check or uncheck on A's 2030-06-01 plan: the start date resolves against B's own household, which
+-- has no plan there (KD014). The postgres block after the grants asserts A's row survived.
+do $$
+declare
+  b_household uuid := current_setting('rls_test.b_household')::uuid;
+  flag boolean;
+  n int;
+  v_state text;
+  v_msg text;
+begin
+  select count(*) into n from public.shopping_list_checks where household_id <> b_household;
+  if n <> 0 then
+    raise exception 'checks: user B sees % shopping_list_checks rows of other households', n;
+  end if;
+  select count(*) into n from public.shopping_list_checks where plan_id = '00000000-0000-4000-b000-00000000b007';
+  if n <> 1 then
+    raise exception 'checks: user B cannot see its own fixture check';
+  end if;
+
+  foreach flag in array array[true, false] loop
+    begin
+      perform public.set_shopping_item_checked('2030-06-01',
+        current_setting('rls_test.a_check_product')::uuid, flag);
+      raise exception 'checks[KD014]: user B set checked = % on A''s 2030-06-01 plan date', flag;
+    exception
+      when sqlstate 'KD014' then null;
+      when others then
+        get stacked diagnostics v_state = returned_sqlstate, v_msg = message_text;
+        if v_state = 'P0001' then raise; end if;
+        raise exception 'checks[KD014]: user B (checked = %) rejected with % ("%") instead of KD014', flag, v_state, v_msg;
+    end;
+  end loop;
 end;
 $$;
 
@@ -1346,13 +1595,28 @@ begin
 end;
 $$;
 
+-- As anon: the S-09 check-off RPC, same reasoning and KD007 branch.
+do $$
+begin
+  begin
+    perform public.set_shopping_item_checked('2030-01-01', '00000000-0000-4000-b000-00000000c001', true);
+    raise exception 'anon: could execute public.set_shopping_item_checked()';
+  exception
+    when insufficient_privilege then null;
+    when sqlstate 'KD007' then
+      raise exception 'anon: public.set_shopping_item_checked() is executable by anon (reached the body and raised KD007); the revoke execute … from public, anon is missing';
+  end;
+end;
+$$;
+
 do $$
 declare
   t text;
   n int;
 begin
   foreach t in array array['products', 'recipes', 'recipe_components', 'recipe_ingredients', 'recipe_steps',
-    'household_invites', 'macro_targets', 'meal_plans', 'plan_dishes', 'plan_meals', 'plan_day_solutions'] loop
+    'household_invites', 'macro_targets', 'meal_plans', 'plan_dishes', 'plan_meals', 'plan_day_solutions',
+    'shopping_list_checks'] loop
     begin
       execute format('select count(*) from public.%I', t) into n;
       if n <> 0 then
@@ -1625,6 +1889,56 @@ begin
 end;
 $$;
 
+-- Grants (as postgres), shopping-list checks (S-09): the same write-revoked shape, and the RPC's
+-- execute grants (the catch-alls inspect tables only). Also: B's KD014 probes above left A's
+-- 2030-06-01 check in place.
+do $$
+declare
+  p text;
+  n int;
+begin
+  foreach p in array array['INSERT', 'UPDATE', 'DELETE', 'TRUNCATE', 'REFERENCES', 'TRIGGER', 'MAINTAIN'] loop
+    if has_table_privilege('authenticated', 'public.shopping_list_checks', p) then
+      raise exception 'grants: authenticated holds % on public.shopping_list_checks; writes must go through public.set_shopping_item_checked', p;
+    end if;
+  end loop;
+
+  foreach p in array array['INSERT', 'UPDATE', 'REFERENCES'] loop
+    if has_any_column_privilege('authenticated', 'public.shopping_list_checks', p) then
+      raise exception 'grants: authenticated holds column-level % on public.shopping_list_checks', p;
+    end if;
+  end loop;
+
+  if not has_table_privilege('authenticated', 'public.shopping_list_checks', 'SELECT') then
+    raise exception 'grants: authenticated lacks SELECT on public.shopping_list_checks';
+  end if;
+
+  foreach p in array array['SELECT', 'INSERT', 'UPDATE', 'DELETE', 'TRUNCATE', 'REFERENCES', 'TRIGGER', 'MAINTAIN'] loop
+    if has_table_privilege('anon', 'public.shopping_list_checks', p) then
+      raise exception 'grants: anon holds % on public.shopping_list_checks; the revoke all is missing', p;
+    end if;
+  end loop;
+
+  if has_function_privilege('anon', 'public.set_shopping_item_checked(date, uuid, boolean)', 'execute') then
+    raise exception 'grants: anon can execute public.set_shopping_item_checked(date, uuid, boolean); the revoke execute … from public, anon is missing';
+  end if;
+  if has_function_privilege('public', 'public.set_shopping_item_checked(date, uuid, boolean)', 'execute') then
+    raise exception 'grants: PUBLIC can execute public.set_shopping_item_checked(date, uuid, boolean); the revoke execute … from public is missing';
+  end if;
+  if not has_function_privilege('authenticated', 'public.set_shopping_item_checked(date, uuid, boolean)', 'execute') then
+    raise exception 'grants: authenticated cannot execute public.set_shopping_item_checked(date, uuid, boolean)';
+  end if;
+
+  select count(*) into n from public.shopping_list_checks
+  where plan_id = current_setting('rls_test.a_check_plan')::uuid
+    and product_id = current_setting('rls_test.a_check_product')::uuid
+    and household_id = current_setting('rls_test.a_household')::uuid;
+  if n <> 1 then
+    raise exception 'checks: A''s 2030-06-01 check is gone after user B''s KD014 probes';
+  end if;
+end;
+$$;
+
 -- Seed mechanism gone (as postgres, F-04): no per-household seed function and no templates. The
 -- public tables are the single source of truth for seed content.
 do $$
@@ -1777,6 +2091,17 @@ begin
       0, 'dinner', '00000000-0000-4000-b000-00000000cc17', null),
     ('00000000-0000-4000-b000-00000000dd37', d_household, '00000000-0000-4000-b000-00000000dd07',
       0, 'dinner', '00000000-0000-4000-b000-00000000dd17', '00000000-0000-4000-a000-00000000000d');
+
+  -- S-09: one check on D's plan, for a product of its recipe (…0002). If shopping_list_checks ever
+  -- gains the per-person membership FK, D's redemption below fails with 23503 instead of leaving
+  -- this check behind with its plan.
+  insert into public.shopping_list_checks (household_id, plan_id, product_id)
+  select d_household, '00000000-0000-4000-b000-00000000dd07', ri.product_id
+  from public.recipe_ingredients ri
+  join public.recipe_components rc on rc.id = ri.component_id
+  where rc.recipe_id = '5eed0002-0000-4000-8000-000000000002'
+  order by ri.product_id
+  limit 1;
 end;
 $$;
 
@@ -1926,6 +2251,13 @@ begin
     and eater_user_id = '00000000-0000-4000-a000-00000000000d';
   if n <> 1 then
     raise exception 'redeem: D''s "D only" meal did not stay behind unchanged in D''s former household';
+  end if;
+
+  -- S-09: the check on D's plan stayed behind with it, still in D's former household.
+  select count(*) into n from public.shopping_list_checks
+  where plan_id = '00000000-0000-4000-b000-00000000dd07' and household_id = d_household;
+  if n <> 1 then
+    raise exception 'redeem: the check on D''s plan did not stay behind in D''s former household; checks are household-owned and must not travel';
   end if;
 end;
 $$;
@@ -2364,12 +2696,22 @@ begin
   if n <> 1 then
     raise exception 'solutions: A''s day solution is missing before the household delete';
   end if;
+  select count(*) into n from public.shopping_list_checks where household_id = a_household;
+  if n <> 2 then
+    raise exception 'checks: A holds % shopping_list_checks rows before the household delete, expected 2', n;
+  end if;
 
   delete from public.households where id = a_household;
 
   select count(*) into n from public.plan_day_solutions where id = sol or household_id = a_household;
   if n <> 0 then
     raise exception 'solutions: deleting A''s household left % plan_day_solutions rows behind', n;
+  end if;
+
+  -- S-09: A's shopping-list checks (the fixture row and the 2030-06-01 row) cascade with it too.
+  select count(*) into n from public.shopping_list_checks where household_id = a_household;
+  if n <> 0 then
+    raise exception 'checks: deleting A''s household left % shopping_list_checks rows behind', n;
   end if;
 end;
 $$;
@@ -2379,10 +2721,10 @@ $$;
 -- ---------------------------------------------------------------------------
 do $$
 begin
-  raise notice 'household_isolation: all assertions passed (trigger, sign-up creates no library rows, read isolation, write denial, public library visibility, library write denial and grants, seed mechanism removed, classification catch-all, anon denial, helper grants, household_id catch-all, invite read isolation, invite write denial, RPC grants, redemption with provenance and an unchanged library, macro targets isolation with owner-only writes and the redemption cascade, seven rejection SQLSTATEs, meal plans isolation, write denial, grants, RPC grants, slot diff, KD010-KD012 and plans left behind on redemption, shared dishes across days with the regrouping diff and KD015-KD017, day solutions isolation, write denial, grants, atomic group upsert, KD013/KD014 and the household cascade)';
+  raise notice 'household_isolation: all assertions passed (trigger, sign-up creates no library rows, read isolation, write denial, public library visibility, library write denial and grants, seed mechanism removed, classification catch-all, anon denial, helper grants, household_id catch-all, invite read isolation, invite write denial, RPC grants, redemption with provenance and an unchanged library, macro targets isolation with owner-only writes and the redemption cascade, seven rejection SQLSTATEs, meal plans isolation, write denial, grants, RPC grants, slot diff, KD010-KD012 and plans left behind on redemption, shared dishes across days with the regrouping diff and KD015-KD017, day solutions isolation, write denial, grants, atomic group upsert, KD013/KD014 and the household cascade, shopping-list checks isolation, write denial, grants, idempotent check/uncheck, KD007/KD014/KD018/KD019, checks left behind on redemption and the household cascade)';
 end;
 $$;
 
-select 'household_isolation: all assertions passed (incl. public library, classification catch-all, invite isolation, RPC grants, redemption, macro targets, seven rejection SQLSTATEs, meal plans, shared dishes and day solutions)' as result;
+select 'household_isolation: all assertions passed (incl. public library, classification catch-all, invite isolation, RPC grants, redemption, macro targets, seven rejection SQLSTATEs, meal plans, shared dishes, day solutions and shopping-list checks)' as result;
 
 rollback;
