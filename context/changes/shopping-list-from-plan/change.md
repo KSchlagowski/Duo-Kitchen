@@ -1,7 +1,7 @@
 ---
 change_id: shopping-list-from-plan
 title: Combined, aisle-grouped shopping list from the meal plan with check-off
-status: implementing
+status: implemented
 created: 2026-10-13
 updated: 2026-10-13
 archived_at: null

@@ -759,13 +759,13 @@ Prove the slice end to end over HTTP against the production preview, and record 
 
 #### Automated
 
-- [x] 5.1 Isolation test passes: `npm run test:rls`
-- [x] 5.2 Seed integrity passes: `npm run test:seed`
-- [x] 5.3 Unit tests pass: `npm test`
-- [x] 5.4 Lint passes: `npm run lint`
-- [x] 5.5 Types check: `npx astro check`
-- [x] 5.6 Production preview smoke passes, including the S-09 section
-- [x] 5.7 Deploy gate passes: `npm run check:migrations`
+- [x] 5.1 Isolation test passes: `npm run test:rls` — 1167d6e
+- [x] 5.2 Seed integrity passes: `npm run test:seed` — 1167d6e
+- [x] 5.3 Unit tests pass: `npm test` — 1167d6e
+- [x] 5.4 Lint passes: `npm run lint` — 1167d6e
+- [x] 5.5 Types check: `npx astro check` — 1167d6e
+- [x] 5.6 Production preview smoke passes, including the S-09 section — 1167d6e
+- [x] 5.7 Deploy gate passes: `npm run check:migrations` — 1167d6e
 
 #### Manual
 
