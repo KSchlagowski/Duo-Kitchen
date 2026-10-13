@@ -740,11 +740,11 @@ Prove the slice end to end over HTTP against the production preview, and record 
 
 #### Automated
 
-- [x] 4.1 Lint passes: `npm run lint`
-- [x] 4.2 Types check: `npx astro check`
-- [x] 4.3 Unit tests pass: `npm test`
-- [x] 4.4 Build succeeds: `npm run build`
-- [x] 4.5 Existing smoke still passes against the preview
+- [x] 4.1 Lint passes: `npm run lint` — ac3deb0
+- [x] 4.2 Types check: `npx astro check` — ac3deb0
+- [x] 4.3 Unit tests pass: `npm test` — ac3deb0
+- [x] 4.4 Build succeeds: `npm run build` — ac3deb0
+- [x] 4.5 Existing smoke still passes against the preview — ac3deb0
 
 #### Manual
 
@@ -759,13 +759,13 @@ Prove the slice end to end over HTTP against the production preview, and record 
 
 #### Automated
 
-- [ ] 5.1 Isolation test passes: `npm run test:rls`
-- [ ] 5.2 Seed integrity passes: `npm run test:seed`
-- [ ] 5.3 Unit tests pass: `npm test`
-- [ ] 5.4 Lint passes: `npm run lint`
-- [ ] 5.5 Types check: `npx astro check`
-- [ ] 5.6 Production preview smoke passes, including the S-09 section
-- [ ] 5.7 Deploy gate passes: `npm run check:migrations`
+- [x] 5.1 Isolation test passes: `npm run test:rls`
+- [x] 5.2 Seed integrity passes: `npm run test:seed`
+- [x] 5.3 Unit tests pass: `npm test`
+- [x] 5.4 Lint passes: `npm run lint`
+- [x] 5.5 Types check: `npx astro check`
+- [x] 5.6 Production preview smoke passes, including the S-09 section
+- [x] 5.7 Deploy gate passes: `npm run check:migrations`
 
 #### Manual
 
