@@ -1,4 +1,4 @@
-import type { DivisionMode, MacroKey, MealType, StepTiming } from "@/types";
+import type { DivisionMode, MacroKey, MealType, StepTiming, StoreAisle } from "@/types";
 
 // The single place enum keys become display labels, so localisation (S-14) swaps one file.
 
@@ -51,6 +51,19 @@ export const SPLIT_LABELS = {
   allForYou: "All for you",
   allForPartner: "All for your partner",
 } as const;
+
+// --- S-09: shopping list ---
+
+export const AISLE_LABELS: Record<StoreAisle, string> = {
+  produce: "Produce",
+  dairy: "Dairy",
+  meat_fish: "Meat & fish",
+  bakery: "Bakery",
+  dry_goods: "Dry goods",
+  spices: "Spices",
+  frozen: "Frozen",
+  other: "Other",
+};
 
 // The smoke test matches this exact string.
 export function formatMealTypes(types: MealType[]): string {

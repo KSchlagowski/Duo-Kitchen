@@ -705,10 +705,10 @@ Prove the slice end to end over HTTP against the production preview, and record 
 
 #### Automated
 
-- [ ] 2.1 Unit tests pass, including the existing solver and day-solutions suites: `npm test`
-- [ ] 2.2 Lint passes: `npm run lint`
-- [ ] 2.3 Types check: `npx astro check`
-- [ ] 2.4 Build succeeds: `npm run build`
+- [x] 2.1 Unit tests pass, including the existing solver and day-solutions suites: `npm test`
+- [x] 2.2 Lint passes: `npm run lint`
+- [x] 2.3 Types check: `npx astro check`
+- [x] 2.4 Build succeeds: `npm run build`
 
 #### Manual
 

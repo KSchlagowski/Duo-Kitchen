@@ -16,6 +16,7 @@ import type {
   PlanDaySolveStatus,
   SolveDayInput,
   PlanMealRecord,
+  SolverRecipe,
   SolveTier,
   StoredDaySolution,
   UnsolvableReason,
@@ -26,6 +27,7 @@ import { formatMacroTargets, getHouseholdMacroTargets } from "@/lib/services/mac
 import { MEAL_TYPES, errorCode, getMealPlan, type RpcResult } from "@/lib/services/meal-plans";
 import { roundHalfUp } from "@/lib/services/recipe-macros";
 import { getSolverRecipes } from "@/lib/services/recipes";
+import { joinList } from "@/lib/utils";
 import {
   EATER_LABELS,
   MACRO_DIRECTION_LABELS,
@@ -301,13 +303,27 @@ export async function getDayView(
   };
 }
 
-// Where each of the plan's three days stands, for the /plan grid. One read of the plan's stored
-// solutions plus one shared input load; it fingerprints every solve group once but never solves one.
-// Every day of a group gets the group's status: it is current only when every day's stored row is.
+// Where each of the plan's three days stands, for the /plan grid.
 export async function getPlanSolveStatuses(
   supabase: SupabaseClient,
   plan: MealPlan,
 ): Promise<Record<PlanDayIndex, PlanDaySolveStatus>> {
+  return (await getPlanSolveState(supabase, plan)).statuses;
+}
+
+// The plan's solve state: the single rule for "is this solve group current?", shared by /plan and the
+// shopping list (S-09). One read of the plan's stored solutions plus one shared input load; it
+// fingerprints every solve group once but never solves one. Every day of a group gets the group's
+// status: it is current only when every day's stored row is. The days of a current group (any stored
+// status) also land in `currentSolutions`; `recipes` are the library rows the load already fetched.
+export async function getPlanSolveState(
+  supabase: SupabaseClient,
+  plan: MealPlan,
+): Promise<{
+  statuses: Record<PlanDayIndex, PlanDaySolveStatus>;
+  currentSolutions: Partial<Record<PlanDayIndex, DaySolution>>;
+  recipes: Record<string, SolverRecipe>;
+}> {
   const [rows, shared] = await Promise.all([
     supabase
       .from("plan_day_solutions")
@@ -325,6 +341,7 @@ export async function getPlanSolveStatuses(
   const storedRows: (DaySolutionRow & { day_index: PlanDayIndex })[] = rows.data;
 
   const statuses = emptyPlanSolveStatuses();
+  const currentSolutions: Partial<Record<PlanDayIndex, DaySolution>> = {};
   await Promise.all(
     solveGroups(plan.meals).map(async (meals) => {
       const days = groupDayIndexes(meals);
@@ -349,6 +366,10 @@ export async function getPlanSolveStatuses(
         } else {
           // Every day of a group is written in one call with one status and one tier.
           group = { kind: lead.row.status, requiredTier: lead.solution.requiredTier };
+          for (const [i, day] of days.entries()) {
+            const entry = stored[i];
+            if (entry) currentSolutions[day] = entry.solution;
+          }
         }
       }
 
@@ -363,7 +384,7 @@ export async function getPlanSolveStatuses(
       }
     }),
   );
-  return statuses;
+  return { statuses, currentSolutions, recipes: shared.recipes };
 }
 
 // Three empty days, each a group of one: the grid of a date with no saved plan.
@@ -417,11 +438,6 @@ export function formatPlanDayStatus(status: PlanDaySolveStatus): string {
 // A solve group of one day. The smoke test matches this exact string.
 export function formatSolvePrompt(weekday: string): string {
   return `${weekday} has all 5 meals. Solve its macros?`;
-}
-
-// "Monday and Tuesday", "Monday, Tuesday and Wednesday".
-export function joinList(weekdays: readonly string[]): string {
-  return weekdays.length <= 1 ? (weekdays[0] ?? "") : `${weekdays.slice(0, -1).join(", ")} and ${weekdays.at(-1)}`;
 }
 
 // A solve group of several days (S-08). It does not claim every day is full: a group prompts when
