@@ -485,11 +485,11 @@ None. S-10 adds no migration, table or function. `check:migrations`, `test:rls` 
 
 #### Automated
 
-- [x] 2.1 Unit tests pass: `npm test`
-- [x] 2.2 Lint passes: `npm run lint`
-- [x] 2.3 Type check passes: `npx astro check`
-- [x] 2.4 Build passes: `npm run build`
-- [x] 2.5 Existing smoke still passes against the dev server: `npm run smoke`
+- [x] 2.1 Unit tests pass: `npm test` — 49291b1
+- [x] 2.2 Lint passes: `npm run lint` — 49291b1
+- [x] 2.3 Type check passes: `npx astro check` — 49291b1
+- [x] 2.4 Build passes: `npm run build` — 49291b1
+- [x] 2.5 Existing smoke still passes against the dev server: `npm run smoke` — 49291b1
 
 #### Manual
 
@@ -505,12 +505,12 @@ None. S-10 adds no migration, table or function. `check:migrations`, `test:rls` 
 
 #### Automated
 
-- [ ] 3.1 Unit tests pass: `npm test`
-- [ ] 3.2 Lint passes: `npm run lint`
-- [ ] 3.3 Type check passes: `npx astro check`
-- [ ] 3.4 Build passes: `npm run build`
-- [ ] 3.5 Smoke passes against the production preview
-- [ ] 3.6 Migration gate unchanged: `npm run check:migrations`
+- [x] 3.1 Unit tests pass: `npm test`
+- [x] 3.2 Lint passes: `npm run lint`
+- [x] 3.3 Type check passes: `npx astro check`
+- [x] 3.4 Build passes: `npm run build`
+- [x] 3.5 Smoke passes against the production preview
+- [x] 3.6 Migration gate unchanged: `npm run check:migrations`
 
 #### Manual
 

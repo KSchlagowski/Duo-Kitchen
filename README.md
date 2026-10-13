@@ -58,7 +58,7 @@ npm run dev
 - `npm run lint:fix` - Auto-fix ESLint issues
 - `npm run format` - Run Prettier
 - `npm run smoke` - Smoke test the auth flow against a running server (`BASE_URL`, defaults to `http://localhost:4321`)
-- `npm test` - Run the vitest unit tests (`src/**/*.test.ts`), currently the macro solver, day page and shopping list suites; pure, no Supabase or secrets needed
+- `npm test` - Run the vitest unit tests (`src/**/*.test.ts`), currently the macro solver, day page, shopping list and cooking sessions suites; pure, no Supabase or secrets needed
 - `npm run test:rls` - Run the household isolation (RLS) test against the linked Supabase project (`supabase/tests/household_isolation.sql`); it runs in a rolled-back transaction, so it leaves no data behind
 - `npm run check:migrations` - Fail if any file in `supabase/migrations/` is not yet applied to the linked Supabase project (read-only; the deploy job's gate)
 - `npm run test:seed` - Run the seed integrity test against the linked Supabase project (`supabase/tests/seed_integrity.sql`): checks that the seed rows of the shared recipe/product library cover every solver rule and are internally consistent; also rolled back
@@ -127,19 +127,20 @@ Users can then sign in immediately after sign-up without clicking a confirmation
 
 ### Auth routes
 
-| Route                 | Description                                                                                      |
-| --------------------- | ------------------------------------------------------------------------------------------------ |
-| `/auth/signin`        | Email/password sign-in form                                                                      |
-| `/auth/signup`        | Email/password sign-up form                                                                      |
-| `/auth/confirm-email` | Post-signup "check your inbox" page                                                              |
-| `/join`               | Invite redemption — intentionally **unprotected** (see below)                                    |
-| `/dashboard`          | Example protected page (redirects to `/auth/signin` if unauthenticated)                          |
-| `/targets`            | Your own daily macro targets (editable) and your partner's (read-only)                           |
-| `/plan`               | Household 3-day meal plan (shared with your partner); a slot can share a batch with another slot |
-| `/plan/day`           | One plan day's macro solve (`?start=<date>&day=<0-2>`); 404 if no plan                           |
-| `/plan/shopping`      | The plan's aisle-grouped shopping list with check-off (`?start=<date>`, else the latest plan)    |
-| `/recipes`            | The shared recipe library as a grid of cards                                                     |
-| `/recipes/[id]`       | One recipe's full detail; 404 for a malformed or unknown id                                      |
+| Route                 | Description                                                                                           |
+| --------------------- | ----------------------------------------------------------------------------------------------------- |
+| `/auth/signin`        | Email/password sign-in form                                                                           |
+| `/auth/signup`        | Email/password sign-up form                                                                           |
+| `/auth/confirm-email` | Post-signup "check your inbox" page                                                                   |
+| `/join`               | Invite redemption — intentionally **unprotected** (see below)                                         |
+| `/dashboard`          | Example protected page (redirects to `/auth/signin` if unauthenticated)                               |
+| `/targets`            | Your own daily macro targets (editable) and your partner's (read-only)                                |
+| `/plan`               | Household 3-day meal plan (shared with your partner); a slot can share a batch with another slot      |
+| `/plan/day`           | One plan day's macro solve (`?start=<date>&day=<0-2>`); 404 if no plan                                |
+| `/plan/shopping`      | The plan's aisle-grouped shopping list with check-off (`?start=<date>`, else the latest plan)         |
+| `/plan/sessions`      | The plan's evening/morning cooking sessions with merged steps (`?start=<date>`, else the latest plan) |
+| `/recipes`            | The shared recipe library as a grid of cards                                                          |
+| `/recipes/[id]`       | One recipe's full detail; 404 for a malformed or unknown id                                           |
 
 Route protection is handled in `src/middleware.ts`. Add paths to the `PROTECTED_ROUTES` array there to require authentication.
 
@@ -212,6 +213,8 @@ For S-08 it shares one batch across two days of a third plan (`2031-01-20`): the
 
 For S-09 it checks the shopping list. Signed-out visitors are sent to sign-in from `/plan/shopping` and `/api/plan/shopping`. While the `2031-01-20` group is solved and shared, its list reads exact amounts for Monday and Tuesday with every product listed once; once the partner's eater-only edit stales it, both days fall back to the estimate note. On a fourth plan (`2031-01-27`, two unsolved recipes sharing chives and salt) the item count and two product lines (a summed shared product and a piece product) are pinned from an independent SQL query (see the comment above the S-09 fixtures in `scripts/smoke.mjs`), the aisles appear in the fixed order, and Monday reads `Not solved`. The first account checks an item off, the partner sees and unchecks it, checking a product the plan does not use is rejected with its own message, the JSON mode used by the in-place check-off island answers `{"ok":true,…}`, a malformed date returns 404 and a date with no plan says so.
 
+For S-10 it checks the cooking sessions of the shared `2031-01-20` plan, in its plain shared F1 state (after the re-share and before the lead-slot swap). Signed-out visitors are sent to sign-in from `/plan/sessions`. The page must show exactly five sessions in order (Sunday evening, Monday morning and evening, Tuesday morning and evening), and each session must hold exactly the set of step ids derived by the schedule rules from an independent SQL query over `recipe_steps` (see the comment above the S-10 fixtures in `scripts/smoke.mjs`). Sunday evening's order is pinned exactly, but it has no SQL oracle: it is hand-derived from the "longest remaining chain first" rule, and `npm test` pins the order of every section. The shared curry batch's steps appear exactly once on the page, Tuesday morning carries its `from the same batch as Monday Lunch` note, Sunday evening reads `About 118 min of steps · 1 untimed step`, the partner sees the same sessions, `/plan` links to the page, a malformed date returns 404 and a date with no plan says so.
+
 > **Note:** this script exists primarily to guard the development of the starter itself — it is a fast sanity check that dependency upgrades did not break the build, the Cloudflare adapter or the Supabase auth flow. It is **not** a substitute for a real test suite. Once you build your own product on top of this starter, add proper tests (unit, integration, end-to-end) suited to your application.
 
 ## CI
@@ -249,6 +252,8 @@ Deleting a household also cascades its meal plans (S-03). Plans stay behind on r
 Stored macro solves (S-04, `plan_day_solutions`) cascade with their plan and their household, so the queries above need no extra step for them.
 
 Shopping list checks (S-09, `shopping_list_checks`) likewise cascade with their plan and their household, so they need no extra step either.
+
+Cooking sessions (S-10) store nothing: the schedule is derived from the plan on every read, so there is nothing of theirs to clean up.
 
 ## License
 

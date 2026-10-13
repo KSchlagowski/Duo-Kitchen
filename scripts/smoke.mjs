@@ -5,6 +5,7 @@
 // S-05: the recipe library renders as cards and a recipe's detail shows macros pinned from SQL.
 // S-08: one batch shared across two days solves both together, and editing one day stales both.
 // S-09: a plan's aisle-grouped shopping list sums shared products, and either partner checks items off.
+// S-10: a plan's evening/morning cooking sessions merge the steps and cook a shared batch only once.
 // F-03: the app is installable -- the manifest, its icons and the <head> links are served anonymously.
 // Zero dependencies on purpose. Run against a live server: BASE_URL=http://localhost:4321 node scripts/smoke.mjs
 
@@ -333,6 +334,101 @@ function duplicateItemProblem(body) {
   if (ids.length === 0) return "no items on the list";
   const dupes = ids.filter((id, i) => ids.indexOf(id) !== i);
   return dupes.length ? `listed more than once: ${[...new Set(dupes)].join(", ")}` : null;
+}
+
+// S-10 fixtures: the cooking sessions of the shared plan 2031-01-20 (shareStart) in its plain shared F1
+// state. The per-session step-id SETS were NOT copied from the page: they follow the D2/D3/D4 rules of
+// context/changes/cooking-session-schedule/plan.md from this independent SQL oracle (npx supabase db
+// query --linked) over recipes 1 (Jajecznica), 2 (Owsianka), 4 (curry), 6 (Leczo) and 7 (Twarożek):
+//   select id, recipe_id, position, timing, duration_minutes from public.recipe_steps
+//   where recipe_id in ('5eed0002-0000-4000-8000-000000000001', '5eed0002-0000-4000-8000-000000000002',
+//                       '5eed0002-0000-4000-8000-000000000004', '5eed0002-0000-4000-8000-000000000006',
+//                       '5eed0002-0000-4000-8000-000000000007')
+//   order by recipe_id, position;
+// Make-ahead steps go to the evening before their dish's cook day, fresh steps to the morning of the
+// earliest meal (to that day's evening for a dinner), and the curry batch shared by both lunches is
+// cooked once, for Monday. Sunday's ORDER has no SQL oracle: it is hand-derived from the D5 rule
+// (longest remaining chain first; the curry ties Leczo at 45 min and wins on its earlier meal), and
+// `npm test` (src/lib/services/cooking-sessions.test.ts) pins every section's order. Its known minutes
+// are the sum of the twelve make-ahead durations (118), with Owsianka's overnight step untimed.
+// Step ids are 5eed0005-0000-4000-8000-000000000RPP (recipe R, position PP).
+const S10_SESSION_KEYS = [
+  "2031-01-19-evening",
+  "2031-01-20-morning",
+  "2031-01-20-evening",
+  "2031-01-21-morning",
+  "2031-01-21-evening",
+];
+const s10Step = (suffix) => `5eed0005-0000-4000-8000-000000000${suffix}`;
+const S10_SESSION_STEPS = {
+  // Make-ahead of 2, 4, 6 and 7 for Monday.
+  "2031-01-19-evening": ["201", "202", "401", "402", "403", "404", "601", "602", "603", "604", "701", "702"],
+  // Fresh of 1, 2, 4 and 7.
+  "2031-01-20-morning": ["101", "102", "103", "104", "203", "405", "703"],
+  // Tonight: fresh of 6. For tomorrow: make-ahead of 2, 6 and 7 -- no curry, its batch is cooked.
+  "2031-01-20-evening": ["201", "202", "601", "602", "603", "604", "605", "701", "702"],
+  // Fresh of 1, 2 and 7 -- no curry, lunch eats from Monday's batch.
+  "2031-01-21-morning": ["101", "102", "103", "104", "203", "703"],
+  "2031-01-21-evening": ["605"],
+};
+const S10_SUNDAY_ORDER = ["601", "401", "602", "603", "402", "403", "404", "701", "201", "702", "604", "202"];
+const S10_SUNDAY_MINUTES = "About 118 min of steps · 1 untimed step";
+const S10_BATCH_NOTE = "Lunch: from the same batch as Monday Lunch — nothing new to cook.";
+const S10_CURRY_STEPS = ["401", "402", "403", "404", "405"];
+const sessionsPath = `/plan/sessions?start=${shareStart}`;
+const S10_TEST_IDS = [
+  "sessions-not-found",
+  "sessions-unavailable",
+  "sessions-no-plan",
+  "sessions-empty",
+  "session-note-1_lunch",
+  ...S10_SESSION_KEYS.map((key) => `session-minutes-${key}`),
+];
+
+// Every session key in document order; the minutes and note ids do not end in a session part.
+function sessionKeys(body) {
+  return [...body.matchAll(/data-testid="session-(\d{4}-\d{2}-\d{2}-(?:morning|evening))"/g)].map((m) => m[1]);
+}
+
+// One session's markup: from its test id to its </section> (sessions never nest).
+function sessionSection(body, key) {
+  const at = body.indexOf(`data-testid="session-${key}"`);
+  return at < 0 ? "" : body.slice(at, body.indexOf("</section>", at));
+}
+
+// The data-step-id values of some markup, in order.
+function stepIds(html) {
+  return [...html.matchAll(/data-step-id="([0-9a-f-]{36})"/g)].map((m) => m[1]);
+}
+
+function sessionsProblem(body) {
+  const keys = sessionKeys(body);
+  if (keys.join(",") !== S10_SESSION_KEYS.join(",")) {
+    return `sessions ${keys.join(", ") || "none"}, expected ${S10_SESSION_KEYS.join(", ")}`;
+  }
+  for (const key of S10_SESSION_KEYS) {
+    const got = stepIds(sessionSection(body, key)).sort();
+    const want = S10_SESSION_STEPS[key].map(s10Step).sort();
+    if (got.join(",") !== want.join(",")) {
+      return `${key} steps ${got.map((id) => id.slice(-3)).join(", ")}, expected ${want.map((id) => id.slice(-3)).join(", ")}`;
+    }
+  }
+  const sunday = stepIds(sessionSection(body, S10_SESSION_KEYS[0])).map((id) => id.slice(-3));
+  return sunday.join(",") === S10_SUNDAY_ORDER.join(",")
+    ? null
+    : `Sunday evening order ${sunday.join(", ")}, expected ${S10_SUNDAY_ORDER.join(", ")}`;
+}
+
+// The shared batch's steps occur once in the whole page, and Tuesday morning carries its batch note.
+function sharedBatchProblem(body) {
+  const ids = stepIds(body);
+  for (const suffix of S10_CURRY_STEPS) {
+    const count = ids.filter((id) => id === s10Step(suffix)).length;
+    if (count !== 1) return `curry step ${suffix} appears ${count} times`;
+  }
+  return testIdBody("session-note-1_lunch", S10_BATCH_NOTE).test(sessionSection(body, "2031-01-21-morning"))
+    ? null
+    : "Tuesday morning has no batch note for lunch";
 }
 
 function jsonCheckProblem(actual, expected) {
@@ -1059,6 +1155,38 @@ const steps = [
     () => a.request("/api/plan", { method: "POST", form: shareForm() }),
     { status: 302, location: shareSaved },
   ],
+  // --- S-10: cooking sessions of the shared plan --------------------------------------------------
+  // S-10 depends on this exact state (the plain shared F1 plan, after the re-share and before the
+  // lead-slot swap below), so keep these steps here if the S-08 sequence is edited. The schedule needs
+  // no solve: it is derived from the plan and the library steps on every read.
+  [
+    "A cooking sessions of the shared plan follow the schedule rules",
+    () => a.request(sessionsPath),
+    { status: 200, check: (actual) => sessionsProblem(actual.body) },
+  ],
+  [
+    "the shared curry batch is scheduled once",
+    () => a.request(sessionsPath),
+    { status: 200, check: (actual) => sharedBatchProblem(actual.body) },
+  ],
+  [
+    "Sunday evening shows its minutes",
+    () => a.request(sessionsPath),
+    { status: 200, body: testIdBody("session-minutes-2031-01-19-evening", S10_SUNDAY_MINUTES) },
+  ],
+  [
+    "B sees the same sessions",
+    () => b.request(sessionsPath),
+    { status: 200, check: (actual) => sessionsProblem(actual.body) },
+  ],
+  [
+    "the plan page links to cooking sessions",
+    () => a.request(`/plan?start=${shareStart}`),
+    {
+      status: 200,
+      body: new RegExp(`<a(?=[^>]*data-testid="plan-sessions-link")(?=[^>]*href="${escapeRe(sessionsPath)}")[^>]*>`),
+    },
+  ],
   [
     // The grid posts Tuesday's star-form share unchanged, so swapping the batch's lead slot must save
     // with a fresh batch for Tuesday and a soft notice, not reject the whole grid. KD017 itself stays
@@ -1216,6 +1344,23 @@ const steps = [
     { status: 200, body: testIdBody("shopping-no-plan", "No plan for that date.") },
   ],
 
+  // --- S-10: cooking sessions edge cases ------------------------------------------------------
+  [
+    "sessions page redirects anonymous user",
+    () => anon.request(sessionsPath),
+    { status: 302, location: /^\/auth\/signin$/ },
+  ],
+  [
+    "a malformed sessions date is 404",
+    () => a.request("/plan/sessions?start=2031-13-01"),
+    { status: 404, body: testIdBody("sessions-not-found", "Plan not found") },
+  ],
+  [
+    "a sessions date with no plan says so",
+    () => a.request("/plan/sessions?start=2032-01-05"),
+    { status: 200, body: testIdBody("sessions-no-plan", "No plan for that date.") },
+  ],
+
   [
     "signout clears session",
     () => a.request("/api/auth/signout", { method: "POST" }),
@@ -1310,6 +1455,16 @@ for (const [name, run, rawExpected] of steps) {
       }
       for (const productId of itemIds(actual.body)) {
         console.log(`      got item-${productId}: ${testIdItem(actual.body, `item-${productId}`)}`);
+      }
+      // S-10: likewise its own loop; the session keys and step ids print as their short suffixes.
+      for (const id of S10_TEST_IDS) {
+        if (actual.body.includes(`data-testid="${id}"`)) {
+          console.log(`      got ${id}: ${testIdText(actual.body, id)}`);
+        }
+      }
+      for (const key of sessionKeys(actual.body)) {
+        const ids = stepIds(sessionSection(actual.body, key)).map((id) => id.slice(-3));
+        console.log(`      got session-${key}: ${ids.join(", ") || "no steps"}`);
       }
     }
   }
