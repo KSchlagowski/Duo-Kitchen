@@ -1,4 +1,12 @@
-import type { DivisionMode, MacroKey, MealType, StepTiming, StoreAisle } from "@/types";
+import type {
+  DivisionMode,
+  MacroKey,
+  MealType,
+  SessionPart,
+  SessionSectionKind,
+  StepTiming,
+  StoreAisle,
+} from "@/types";
 
 // The single place enum keys become display labels, so localisation (S-14) swaps one file.
 
@@ -63,6 +71,19 @@ export const AISLE_LABELS: Record<StoreAisle, string> = {
   spices: "Spices",
   frozen: "Frozen",
   other: "Other",
+};
+
+// --- S-10: cooking sessions ---
+
+export const SESSION_PART_LABELS: Record<SessionPart, string> = {
+  morning: "morning",
+  evening: "evening",
+};
+
+// The `now` heading is rendered in evenings only; a morning has a single unlabelled section.
+export const SESSION_SECTION_LABELS: Record<SessionSectionKind, string> = {
+  now: "Tonight",
+  ahead: "For tomorrow",
 };
 
 // The smoke test matches this exact string.

@@ -375,3 +375,81 @@ export interface ShoppingList {
   diagnostics: { missingRecipeIds: string[]; unmatchedIngredientIds: string[]; dishesFellBack: string[] };
 }
 // --- end S-09 -------------------------------------------------------------------------------
+
+// --- S-10: cooking-session schedule ---------------------------------------------------------
+// Input: one recipe's ordered steps, as read for the plan's recipes.
+export interface RecipeSteps {
+  recipeId: string;
+  recipeName: string;
+  steps: RecipeDetailStep[];
+}
+
+export type SessionPart = "morning" | "evening";
+// now: fresh steps for meals of the session's own day; ahead: make-ahead for the next day.
+export type SessionSectionKind = "now" | "ahead";
+
+export interface SessionMealRef {
+  mealId: string;
+  dishId: string;
+  dayIndex: PlanDayIndex;
+  mealType: MealType;
+}
+
+// A library step as scheduled; `id` is the recipe_steps id. S-11 depends on these field names.
+export interface ScheduledStep extends RecipeDetailStep {
+  recipeId: string;
+  recipeName: string;
+  entryKey: string;
+}
+
+// One recipe cooked in one section: one dish, or several dishes of the same recipe merged.
+export interface CookingSessionEntry {
+  // Stable within the schedule: the section key plus the smallest dishId.
+  key: string;
+  recipeId: string;
+  // Null when the recipe was missing from the read.
+  recipeName: string | null;
+  // Sorted; more than one means merged same-recipe batches.
+  dishIds: string[];
+  // Every meal those dishes feed, in (day, meal type) order.
+  meals: SessionMealRef[];
+  hasSteps: boolean;
+}
+
+// A later meal of a shared batch: nothing to cook, it eats from the batch of `leadMeal`.
+export interface SessionBatchNote {
+  meal: SessionMealRef;
+  recipeName: string | null;
+  leadMeal: SessionMealRef;
+}
+
+export interface CookingSessionSection {
+  kind: SessionSectionKind;
+  entries: CookingSessionEntry[];
+  // The section's merged step order.
+  steps: ScheduledStep[];
+  batchNotes: SessionBatchNote[];
+}
+
+export interface CookingSession {
+  // `<YYYY-MM-DD>-<part>`, URL-safe.
+  key: string;
+  date: string;
+  part: SessionPart;
+  // "now" before "ahead".
+  sections: CookingSessionSection[];
+  stepCount: number;
+  knownMinutes: number;
+  untimedCount: number;
+}
+
+// Derived on every read, never stored.
+export interface CookingSchedule {
+  planId: string;
+  startDate: string;
+  // Chronological.
+  sessions: CookingSession[];
+  // Inconsistent inputs the builder worked around; the I/O layer logs them. makeAheadDemoted holds step ids.
+  diagnostics: { missingRecipeIds: string[]; recipesWithoutSteps: string[]; makeAheadDemoted: string[] };
+}
+// --- end S-10 -------------------------------------------------------------------------------
