@@ -690,10 +690,10 @@ Prove the slice end to end over HTTP against the production preview, and record 
 
 #### Automated
 
-- [x] 1.1 Migration applies to the hosted project: `npx supabase db push`
-- [x] 1.2 Isolation test passes: `npm run test:rls`
-- [x] 1.3 Seed integrity still passes: `npm run test:seed`
-- [x] 1.4 Deploy gate sees no missing migration: `npm run check:migrations`
+- [x] 1.1 Migration applies to the hosted project: `npx supabase db push` — 43ce7f5
+- [x] 1.2 Isolation test passes: `npm run test:rls` — 43ce7f5
+- [x] 1.3 Seed integrity still passes: `npm run test:seed` — 43ce7f5
+- [x] 1.4 Deploy gate sees no missing migration: `npm run check:migrations` — 43ce7f5
 
 #### Manual
 
