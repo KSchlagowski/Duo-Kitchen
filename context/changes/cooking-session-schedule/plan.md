@@ -477,9 +477,9 @@ None. S-10 adds no migration, table or function. `check:migrations`, `test:rls` 
 
 #### Manual
 
-- [ ] 1.5 Recipe detail pages match the step fixtures (curry, leczo, owsianka)
-- [ ] 1.6 `/plan` and `/plan/shopping` render as before
-- [ ] 1.7 Worked-example test order reads as a sensible cooking order
+- [x] 1.5 Recipe detail pages match the step fixtures (curry, leczo, owsianka)
+- [x] 1.6 `/plan` and `/plan/shopping` render as before
+- [x] 1.7 Worked-example test order reads as a sensible cooking order
 
 ### Phase 2: Steps read, sessions page and navigation
 
@@ -493,13 +493,13 @@ None. S-10 adds no migration, table or function. `check:migrations`, `test:rls` 
 
 #### Manual
 
-- [ ] 2.6 Anonymous visitor is redirected from `/plan/sessions`
-- [ ] 2.7 Worked-example plan shows the five expected sessions with dedup and batch note
-- [ ] 2.8 Un-sharing moves the curry make-ahead steps to Monday evening
-- [ ] 2.9 A fresh-only day-0 dinner lands in Monday evening's Tonight section
-- [ ] 2.10 Two same-recipe dishes merge into one `· 2 batches` entry
-- [ ] 2.11 Malformed date 404, no-plan message, dashboard link work
-- [ ] 2.12 Partner sees the identical schedule
+- [x] 2.6 Anonymous visitor is redirected from `/plan/sessions`
+- [x] 2.7 Worked-example plan shows the five expected sessions with dedup and batch note
+- [x] 2.8 Un-sharing moves the curry make-ahead steps to Monday evening
+- [x] 2.9 A fresh-only day-0 dinner lands in Monday evening's Tonight section
+- [x] 2.10 Two same-recipe dishes merge into one `· 2 batches` entry
+- [x] 2.11 Malformed date 404, no-plan message, dashboard link work
+- [x] 2.12 Partner sees the identical schedule
 
 ### Phase 3: Smoke coverage and documentation
 
@@ -514,6 +514,6 @@ None. S-10 adds no migration, table or function. `check:migrations`, `test:rls` 
 
 #### Manual
 
-- [ ] 3.7 Post-smoke `2031-01-20` sessions show the swapped-lead state as described
-- [ ] 3.8 A deliberately wrong `S10_SUNDAY_ORDER` makes smoke fail with a clear message
-- [ ] 3.9 CLAUDE.md and README claims match the running app
+- [x] 3.7 Post-smoke `2031-01-20` sessions show the swapped-lead state as described
+- [x] 3.8 A deliberately wrong `S10_SUNDAY_ORDER` makes smoke fail with a clear message
+- [x] 3.9 CLAUDE.md and README claims match the running app

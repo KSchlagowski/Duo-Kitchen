@@ -3,7 +3,7 @@ change_id: cooking-session-schedule
 title: Arrange the plan into evening/morning cooking sessions with merged steps
 status: implemented
 created: 2026-10-13
-updated: 2026-10-13
+updated: 2026-10-14
 archived_at: null
 ---
 
