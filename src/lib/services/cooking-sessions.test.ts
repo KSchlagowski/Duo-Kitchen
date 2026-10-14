@@ -263,6 +263,15 @@ describe("buildCookingSessions", () => {
     expect(only.sessions[0].sections[0].entries.map((e) => e.hasSteps)).toEqual([false]);
     expect(only.sessions[0].stepCount).toBe(0);
     expect(formatSessionMinutes(only.sessions[0])).toBe("No timed steps");
+    expect(only.diagnostics.recipesWithoutSteps).toEqual(["empty"]);
+  });
+
+  it("keeps every batch note of a dish without fresh steps", () => {
+    const sameDay = build(shareDish(day([CIASTKA, CIASTKA]), [0, "breakfast"], [0, "second_breakfast"]));
+    expect(order(section(sameDay, "2031-01-19-evening", "ahead"))).toEqual(["301", "302", "303", "304", "305"]);
+    expect(
+      section(sameDay, "2031-01-20-morning", "now").batchNotes.map((note) => formatBatchNote(note, sameDay.startDate)),
+    ).toEqual(["Second breakfast: from the same batch as Monday Breakfast — nothing new to cook."]);
   });
 
   it("breaks equal chains by earliest meal, then Polish name, then dish id", () => {

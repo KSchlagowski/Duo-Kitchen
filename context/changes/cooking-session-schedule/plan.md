@@ -470,10 +470,10 @@ None. S-10 adds no migration, table or function. `check:migrations`, `test:rls` 
 
 #### Automated
 
-- [x] 1.1 Unit tests pass: `npm test` — feecde6
-- [x] 1.2 Lint passes: `npm run lint` — feecde6
-- [x] 1.3 Type check passes: `npx astro check` — feecde6
-- [x] 1.4 Build passes: `npm run build` — feecde6
+- [x] 1.1 Unit tests pass: `npm test` — d0145bd
+- [x] 1.2 Lint passes: `npm run lint` — d0145bd
+- [x] 1.3 Type check passes: `npx astro check` — d0145bd
+- [x] 1.4 Build passes: `npm run build` — d0145bd
 
 #### Manual
 
@@ -485,11 +485,11 @@ None. S-10 adds no migration, table or function. `check:migrations`, `test:rls` 
 
 #### Automated
 
-- [x] 2.1 Unit tests pass: `npm test` — 49291b1
-- [x] 2.2 Lint passes: `npm run lint` — 49291b1
-- [x] 2.3 Type check passes: `npx astro check` — 49291b1
-- [x] 2.4 Build passes: `npm run build` — 49291b1
-- [x] 2.5 Existing smoke still passes against the dev server: `npm run smoke` — 49291b1
+- [x] 2.1 Unit tests pass: `npm test` — 7c8b4a2
+- [x] 2.2 Lint passes: `npm run lint` — 7c8b4a2
+- [x] 2.3 Type check passes: `npx astro check` — 7c8b4a2
+- [x] 2.4 Build passes: `npm run build` — 7c8b4a2
+- [x] 2.5 Existing smoke still passes against the dev server: `npm run smoke` — 7c8b4a2
 
 #### Manual
 
@@ -505,12 +505,12 @@ None. S-10 adds no migration, table or function. `check:migrations`, `test:rls` 
 
 #### Automated
 
-- [x] 3.1 Unit tests pass: `npm test` — 3f750b2
-- [x] 3.2 Lint passes: `npm run lint` — 3f750b2
-- [x] 3.3 Type check passes: `npx astro check` — 3f750b2
-- [x] 3.4 Build passes: `npm run build` — 3f750b2
-- [x] 3.5 Smoke passes against the production preview — 3f750b2
-- [x] 3.6 Migration gate unchanged: `npm run check:migrations` — 3f750b2
+- [x] 3.1 Unit tests pass: `npm test` — 33b266e
+- [x] 3.2 Lint passes: `npm run lint` — 33b266e
+- [x] 3.3 Type check passes: `npx astro check` — 33b266e
+- [x] 3.4 Build passes: `npm run build` — 33b266e
+- [x] 3.5 Smoke passes against the production preview — 33b266e
+- [x] 3.6 Migration gate unchanged: `npm run check:migrations` — 33b266e
 
 #### Manual
 
