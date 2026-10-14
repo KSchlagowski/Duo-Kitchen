@@ -481,6 +481,9 @@ export interface CookBatchAmounts {
   dishId: string;
   // "For Monday Lunch" — set only when the entry has more than one batch.
   heading: string | null;
+  // True for a batch of an exact section that fell back to the recipe base amounts (its stored row is
+  // missing), so the page can mark it; false otherwise, the estimate section note covering the rest.
+  estimate: boolean;
   ingredients: CookIngredientLine[];
 }
 
@@ -520,6 +523,8 @@ export interface CookEntryOverview {
   batches: {
     dishId: string;
     heading: string | null;
+    // As CookBatchAmounts.estimate.
+    estimate: boolean;
     // One block per component, as on /plan/day; componentName set only for per_component recipes.
     components: { componentName: string | null; ingredients: CookIngredientLine[]; portion: string | null }[];
   }[];
@@ -556,4 +561,7 @@ export interface CookModeView {
   // Inconsistent inputs the builder worked around; the I/O layer logs them.
   diagnostics: { dishesFellBack: string[]; missingRecipeIds: string[] };
 }
+
+// The part of the view the island reads; the overview is plain Astro, so it is not serialised twice.
+export type CookModeIslandView = Pick<CookModeView, "planId" | "startDate" | "sessionKey" | "part" | "steps">;
 // --- end S-11 -------------------------------------------------------------------------------

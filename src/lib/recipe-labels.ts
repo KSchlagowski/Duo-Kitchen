@@ -98,6 +98,7 @@ export const COOK_MODE_LABELS = {
   overview: "Ingredients and portions",
   amounts: "You need",
   portions: "Portions",
+  batchEstimate: "(recipe base amounts — estimate)",
   keepScreenOn: "Keep screen on",
 } as const;
 

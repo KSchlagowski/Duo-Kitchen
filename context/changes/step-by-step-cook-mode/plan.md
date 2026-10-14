@@ -562,6 +562,9 @@ One page load runs `getMealPlan()`, then in parallel `getRecipeSteps()` (3 flat 
 
 None. S-11 adds no migration, table, function or grant. `check:migrations`, `test:rls` and `test:seed` are unaffected. `RecipeDetailStep.componentId` is additive and read from columns already selected.
 
+## Addendum (implementation review)
+
+- **Progress storage** (review F3): `useCookProgress` reads the ticks through `useSyncExternalStore` with a `null` server snapshot instead of an effect, which is equally hydration-safe. Ticks also sync across tabs of the same browser through the `storage` event, and a module-level in-memory map keeps them for the page's lifetime when `localStorage` is blocked.
 ## References
 
 - Research: `context/changes/step-by-step-cook-mode/research.md`

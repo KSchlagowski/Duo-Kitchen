@@ -307,7 +307,10 @@ describe("buildCookMode", () => {
     expect(view.diagnostics.dishesFellBack).toEqual([MON_LUNCH.dishId]);
     expect(stepById(view, "404").portions).toBeNull();
     expect(stepById(view, "401").amounts[0].ingredients.map((i) => i.amount)).toEqual(["160 g", "1 g"]);
+    expect(stepById(view, "401").amounts[0].estimate).toBe(true);
+    expect(view.sections[0].entries.find((entry) => entry.recipeId === CURRY)?.batches[0].estimate).toBe(true);
     expect(stepById(view, "604").portions).not.toBeNull();
+    expect(stepById(view, "601").amounts.every((batch) => !batch.estimate)).toBe(true);
   });
 
   it("decides exact or estimate per section", () => {

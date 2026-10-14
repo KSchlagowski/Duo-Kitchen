@@ -31,6 +31,11 @@ export function useWakeLock() {
         await lock.release();
         return;
       }
+      if (sentinel.current && !sentinel.current.released) {
+        // An overlapping request (a quick re-toggle, or visibilitychange) already holds one: keep one.
+        await lock.release();
+        return;
+      }
       sentinel.current = lock;
     } catch {
       wanted.current = false;

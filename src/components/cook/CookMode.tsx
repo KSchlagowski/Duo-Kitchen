@@ -1,6 +1,6 @@
 import type React from "react";
 import { useEffect, useRef, useSyncExternalStore } from "react";
-import type { CookModeView, SessionSectionKind, StepTiming } from "@/types";
+import type { CookModeIslandView, SessionSectionKind, StepTiming } from "@/types";
 import { useCookProgress } from "@/components/hooks/useCookProgress";
 import { useWakeLock } from "@/components/hooks/useWakeLock";
 import { cookPath, formatDoneCount, formatStepCounter, formatStepDuration } from "@/lib/services/cook-mode";
@@ -14,7 +14,7 @@ import { cn } from "@/lib/utils";
 // cook-mode.ts, never cooking.ts or day-solutions.ts, so no solver, zod or Supabase code reaches the
 // browser.
 interface Props {
-  view: CookModeView;
+  view: CookModeIslandView;
   initialStep: number;
   labels: { sections: Record<SessionSectionKind, string>; timings: Record<StepTiming, string> };
 }
@@ -105,7 +105,16 @@ export default function CookMode({ view, initialStep, labels }: Props) {
             <h3 className="text-sm font-semibold text-purple-200">{COOK_MODE_LABELS.amounts}</h3>
             {current.amounts.map((batch) => (
               <div key={batch.dishId} className="mt-1">
-                {batch.heading && <p className="text-xs text-blue-100/70">{batch.heading}</p>}
+                {(batch.heading !== null || batch.estimate) && (
+                  <p
+                    className="text-xs text-blue-100/70"
+                    data-testid={batch.estimate ? "cook-step-estimate" : undefined}
+                  >
+                    {[batch.heading, batch.estimate ? COOK_MODE_LABELS.batchEstimate : null]
+                      .filter((part) => part !== null)
+                      .join(" ")}
+                  </p>
+                )}
                 <ul className="space-y-0.5 text-sm" data-testid="cook-step-amounts">
                   {batch.ingredients.map((ingredient) => (
                     <li key={ingredient.ingredientId}>

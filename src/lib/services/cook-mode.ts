@@ -56,6 +56,8 @@ interface Batch {
   lead: SessionMealRef;
   stored: DaySolutionMeal | null;
   base: SolverRecipe | null;
+  // An exact section's batch whose stored row is missing: it shows the base amounts, marked.
+  fellBack: boolean;
 }
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -143,7 +145,7 @@ export function buildCookMode(input: CookModeInput): CookModeView {
         if (recipe) base = recipe;
         else missingRecipeIds.add(entry.recipeId);
       }
-      return { dishId, heading, lead, stored, base };
+      return { dishId, heading, lead, stored, base, fellBack: exact && stored === null };
     });
   };
 
@@ -185,7 +187,7 @@ export function buildCookMode(input: CookModeInput): CookModeView {
           portion: null,
         }));
       }
-      return { dishId: batch.dishId, heading: batch.heading, components };
+      return { dishId: batch.dishId, heading: batch.heading, estimate: batch.fellBack, components };
     }),
   });
 
@@ -242,7 +244,9 @@ export function buildCookMode(input: CookModeInput): CookModeView {
       if (step.componentId !== null) {
         for (const batch of batches) {
           const ingredients = componentLines(batch, step.componentId);
-          if (ingredients) amounts.push({ dishId: batch.dishId, heading: batch.heading, ingredients });
+          if (ingredients) {
+            amounts.push({ dishId: batch.dishId, heading: batch.heading, estimate: batch.fellBack, ingredients });
+          }
         }
       }
       let portions: CookBatchPortions[] | null = null;

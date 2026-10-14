@@ -1,5 +1,5 @@
 import { useMemo, useState, useSyncExternalStore } from "react";
-import type { CookModeView } from "@/types";
+import type { CookModeIslandView } from "@/types";
 import { cookPath } from "@/lib/services/cook-mode";
 
 // The current step and the per-device done ticks of one cook-mode session (S-11, D1). Nothing reaches
@@ -50,7 +50,7 @@ function parseIds(raw: string | null): string[] {
   }
 }
 
-export function useCookProgress(view: CookModeView, initialStep: number) {
+export function useCookProgress(view: CookModeIslandView, initialStep: number) {
   const key = `duo-kitchen:cook:${view.planId}:${view.sessionKey}`;
   const total = view.steps.length;
   const [current, setCurrent] = useState(initialStep);

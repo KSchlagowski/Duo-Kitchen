@@ -58,7 +58,7 @@ Manual rows 1.6–1.8, 2.6–2.17, 3.7–3.14 and 4.7–4.10 are unchecked. Manu
   - Tradeoff: throws away the correct exact amounts of the section's other dishes, and the "solve Monday" advice is wrong when Monday is already solved.
   - Confidence: MED — simple, but the message misleads.
   - Blind spot: none significant.
-- **Decision**: PENDING
+- **Decision**: FIXED (Fix A) — `estimate` flag on `CookBatchAmounts` / overview batches (`types.ts`, `cook-mode.ts`), tagged with `COOK_MODE_LABELS.batchEstimate` in `CookMode.tsx` and `cook.astro`, pinned in the fallback test of `cook-mode.test.ts`. The related serving-note diagnostics nuance was left as is (outside Fix A).
 
 ### F2 — Wake lock can leak a sentinel on quick re-toggles
 
@@ -68,7 +68,7 @@ Manual rows 1.6–1.8, 2.6–2.17, 3.7–3.14 and 4.7–4.10 are unchecked. Manu
 - **Location**: src/components/hooks/useWakeLock.ts:26-39
 - **Detail**: `request()` assigns `sentinel.current = lock` without releasing a lock it already holds. Toggling on → off → on while the first `navigator.wakeLock.request` is still pending leaves two requests in flight, and both resolve with `wanted.current === true`. The first lock is overwritten and never released, so the screen stays on even after the user unticks **Keep screen on**, until the tab is hidden. The same overlap can happen when `visibilitychange` fires while a `setActive(true)` request is pending.
 - **Fix**: In `request()`, after the `await`, release the new lock when `sentinel.current` is already set and not released (or call `release()` before assigning), so at most one sentinel is ever held.
-- **Decision**: PENDING
+- **Decision**: FIXED (Fix) — `request()` in `useWakeLock.ts` releases a newly granted lock when an unreleased sentinel is already held.
 
 ### F3 — Unplanned storage behaviour in useCookProgress (cross-tab sync, in-memory fallback)
 
@@ -78,7 +78,7 @@ Manual rows 1.6–1.8, 2.6–2.17, 3.7–3.14 and 4.7–4.10 are unchecked. Manu
 - **Location**: src/components/hooks/useCookProgress.ts:12-41
 - **Detail**: The plan's Critical Implementation Details and Phase 3 say the ticks (and wake-lock support) are read "in an effect". The implementation uses `useSyncExternalStore` with a `null` server snapshot instead. That is equally hydration-safe. It also adds two behaviours the plan does not describe: ticks sync across tabs through the `storage` event, and a module-level in-memory `Map` keeps ticks when `localStorage` is blocked. Both are benign and arguably better. They are still undocumented: the plan and the CLAUDE.md S-11 bullet describe ticks as `localStorage`-only.
 - **Fix**: Add one sentence to the CLAUDE.md S-11 bullet (and a plan addendum if the plan is kept as the record), saying that ticks sync across tabs of the same browser and fall back to memory when storage is blocked.
-- **Decision**: PENDING
+- **Decision**: FIXED (Fix) — one sentence added to the CLAUDE.md S-11 bullet and an "Addendum (implementation review)" section in `plan.md`.
 
 ### F4 — Island props serialise the whole view, overview included
 
@@ -88,7 +88,7 @@ Manual rows 1.6–1.8, 2.6–2.17, 3.7–3.14 and 4.7–4.10 are unchecked. Manu
 - **Location**: src/pages/plan/sessions/cook.astro:154-159
 - **Detail**: `<CookMode view={view} …>` serialises the whole `CookModeView` into the island's props: `sections` (every entry's overview ingredients, portions and serving notes) and `diagnostics`. The island reads only `steps`, `planId`, `startDate`, `sessionKey` and `part`. The overview is already rendered by plain Astro, so its data ships twice in the HTML. The plan specified `view: CookModeView` as the prop, so this follows the plan, but it makes the "a few KB" estimate larger than needed on a phone.
 - **Fix**: Pass `view={{ ...view, sections: [], diagnostics: { dishesFellBack: [], missingRecipeIds: [] } }}`, or narrow the prop type to `Pick<CookModeView, "planId" | "startDate" | "sessionKey" | "part" | "steps">` in `CookMode.tsx` and `useCookProgress.ts`.
-- **Decision**: PENDING
+- **Decision**: FIXED (Fix) — new `CookModeIslandView` (`Pick` of the five fields) in `types.ts`, used by `CookMode.tsx` and `useCookProgress.ts`; `cook.astro` passes only those fields.
 
 ### F5 — Unrelated CLAUDE.md rule commit rides on the feature branch
 
@@ -98,4 +98,4 @@ Manual rows 1.6–1.8, 2.6–2.17, 3.7–3.14 and 4.7–4.10 are unchecked. Manu
 - **Location**: CLAUDE.md:5 (commit 9746b90)
 - **Detail**: `git log main..HEAD` includes `9746b90 docs(claude): never create GitHub issues for this project`. It adds a project-wide hard rule unrelated to S-11. It is harmless, but merging the branch lands a repository policy change under the S-11 PR.
 - **Fix**: Name the commit in the S-11 PR description as a separate docs change, or cherry-pick it onto `main` first so the S-11 diff holds only the slice.
-- **Decision**: PENDING
+- **Decision**: DEFERRED — needs action outside this branch: name commit 9746b90 in the S-11 PR description, or cherry-pick it onto `main` and push.

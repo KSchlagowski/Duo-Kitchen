@@ -153,7 +153,13 @@ const sessionsPath = view ? `/plan/sessions?start=${view.startDate}#${view.sessi
       {view && current && (
         <CookMode
           client:idle
-          view={view}
+          view={{
+            planId: view.planId,
+            startDate: view.startDate,
+            sessionKey: view.sessionKey,
+            part: view.part,
+            steps: view.steps,
+          }}
           initialStep={current.number}
           labels={{ sections: SESSION_SECTION_LABELS, timings: STEP_TIMING_LABELS }}
         />
@@ -187,6 +193,11 @@ const sessionsPath = view ? `/plan/sessions?start=${view.startDate}#${view.sessi
                   {entry.batches.map((batch) => (
                     <div class="mt-2" data-testid={`cook-batch-${batch.dishId}`}>
                       {batch.heading && <p class="text-xs font-semibold text-blue-100/80">{batch.heading}</p>}
+                      {batch.estimate && (
+                        <p class="text-xs text-amber-100" data-testid={`cook-batch-estimate-${batch.dishId}`}>
+                          {COOK_MODE_LABELS.batchEstimate}
+                        </p>
+                      )}
                       {batch.components.map((component) => (
                         <div class="mt-2 border-t border-white/10 pt-2">
                           {component.componentName && <h4 class="text-sm font-medium">{component.componentName}</h4>}
