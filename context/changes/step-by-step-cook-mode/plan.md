@@ -644,12 +644,12 @@ None. S-11 adds no migration, table, function or grant. `check:migrations`, `tes
 
 #### Automated
 
-- [x] 4.1 Unit tests pass: `npm test`
-- [x] 4.2 Lint passes: `npm run lint`
-- [x] 4.3 Type check passes: `npx astro check`
-- [x] 4.4 Build passes: `npm run build`
-- [x] 4.5 Smoke passes against the production preview
-- [x] 4.6 Migration gate unchanged: `npm run check:migrations`
+- [x] 4.1 Unit tests pass: `npm test` — 4b92c17
+- [x] 4.2 Lint passes: `npm run lint` — 4b92c17
+- [x] 4.3 Type check passes: `npx astro check` — 4b92c17
+- [x] 4.4 Build passes: `npm run build` — 4b92c17
+- [x] 4.5 Smoke passes against the production preview — 4b92c17
+- [x] 4.6 Migration gate unchanged: `npm run check:migrations` — 4b92c17
 
 #### Manual
 
