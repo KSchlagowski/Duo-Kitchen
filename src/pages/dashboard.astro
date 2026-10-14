@@ -128,6 +128,12 @@ const joined = Astro.url.searchParams.get("joined") === "1";
           Shopping list
         </a>
       )}
+      {/* S-10: the same plan's cooking sessions */}
+      {!planFailed && plan && (
+        <a href="/plan/sessions" class="ml-3 text-sm text-purple-300 hover:underline">
+          Cooking sessions
+        </a>
+      )}
 
       {/* S-05: recipe library */}
       <p class="mt-2 text-sm">
