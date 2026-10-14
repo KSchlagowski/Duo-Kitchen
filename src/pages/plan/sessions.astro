@@ -15,7 +15,8 @@ import {
   formatSessionTitle,
   formatStepDuration,
 } from "@/lib/services/cooking-sessions";
-import { SESSION_SECTION_LABELS, STEP_TIMING_LABELS } from "@/lib/recipe-labels";
+import { cookPath } from "@/lib/services/cook-mode";
+import { COOK_MODE_LABELS, SESSION_SECTION_LABELS, STEP_TIMING_LABELS } from "@/lib/recipe-labels";
 import { cn } from "@/lib/utils";
 import type { CookingSchedule, MealPlan } from "@/types";
 
@@ -109,6 +110,13 @@ const planStart = loaded?.plan.startDate ?? "";
           <p class="mt-1 text-sm text-blue-100/80" data-testid={`session-minutes-${session.key}`}>
             {formatSessionMinutes(session)}
           </p>
+          <a
+            href={cookPath(planStart, session.key)}
+            class="mt-2 inline-block text-sm font-medium text-purple-300 hover:underline"
+            data-testid={`session-cook-${session.key}`}
+          >
+            {COOK_MODE_LABELS.cookLink}
+          </a>
 
           {session.sections.map((section) => (
             <div class:list={cn("mt-4", session.part === "evening" && "border-t border-white/10 pt-3")}>
