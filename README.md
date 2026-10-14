@@ -58,7 +58,7 @@ npm run dev
 - `npm run lint:fix` - Auto-fix ESLint issues
 - `npm run format` - Run Prettier
 - `npm run smoke` - Smoke test the auth flow against a running server (`BASE_URL`, defaults to `http://localhost:4321`)
-- `npm test` - Run the vitest unit tests (`src/**/*.test.ts`), currently the macro solver, day page, shopping list and cooking sessions suites; pure, no Supabase or secrets needed
+- `npm test` - Run the vitest unit tests (`src/**/*.test.ts`), currently the macro solver, day page, shopping list, cooking sessions and cook mode suites; pure, no Supabase or secrets needed
 - `npm run test:rls` - Run the household isolation (RLS) test against the linked Supabase project (`supabase/tests/household_isolation.sql`); it runs in a rolled-back transaction, so it leaves no data behind
 - `npm run check:migrations` - Fail if any file in `supabase/migrations/` is not yet applied to the linked Supabase project (read-only; the deploy job's gate)
 - `npm run test:seed` - Run the seed integrity test against the linked Supabase project (`supabase/tests/seed_integrity.sql`): checks that the seed rows of the shared recipe/product library cover every solver rule and are internally consistent; also rolled back
@@ -127,20 +127,21 @@ Users can then sign in immediately after sign-up without clicking a confirmation
 
 ### Auth routes
 
-| Route                 | Description                                                                                           |
-| --------------------- | ----------------------------------------------------------------------------------------------------- |
-| `/auth/signin`        | Email/password sign-in form                                                                           |
-| `/auth/signup`        | Email/password sign-up form                                                                           |
-| `/auth/confirm-email` | Post-signup "check your inbox" page                                                                   |
-| `/join`               | Invite redemption — intentionally **unprotected** (see below)                                         |
-| `/dashboard`          | Example protected page (redirects to `/auth/signin` if unauthenticated)                               |
-| `/targets`            | Your own daily macro targets (editable) and your partner's (read-only)                                |
-| `/plan`               | Household 3-day meal plan (shared with your partner); a slot can share a batch with another slot      |
-| `/plan/day`           | One plan day's macro solve (`?start=<date>&day=<0-2>`); 404 if no plan                                |
-| `/plan/shopping`      | The plan's aisle-grouped shopping list with check-off (`?start=<date>`, else the latest plan)         |
-| `/plan/sessions`      | The plan's evening/morning cooking sessions with merged steps (`?start=<date>`, else the latest plan) |
-| `/recipes`            | The shared recipe library as a grid of cards                                                          |
-| `/recipes/[id]`       | One recipe's full detail; 404 for a malformed or unknown id                                           |
+| Route                 | Description                                                                                                               |
+| --------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| `/auth/signin`        | Email/password sign-in form                                                                                               |
+| `/auth/signup`        | Email/password sign-up form                                                                                               |
+| `/auth/confirm-email` | Post-signup "check your inbox" page                                                                                       |
+| `/join`               | Invite redemption — intentionally **unprotected** (see below)                                                             |
+| `/dashboard`          | Example protected page (redirects to `/auth/signin` if unauthenticated)                                                   |
+| `/targets`            | Your own daily macro targets (editable) and your partner's (read-only)                                                    |
+| `/plan`               | Household 3-day meal plan (shared with your partner); a slot can share a batch with another slot                          |
+| `/plan/day`           | One plan day's macro solve (`?start=<date>&day=<0-2>`); 404 if no plan                                                    |
+| `/plan/shopping`      | The plan's aisle-grouped shopping list with check-off (`?start=<date>`, else the latest plan)                             |
+| `/plan/sessions`      | The plan's evening/morning cooking sessions with merged steps (`?start=<date>`, else the latest plan)                     |
+| `/plan/sessions/cook` | One cooking session step by step with amounts and You/Partner portions (`?start=<date>&session=<date>-<part>[&step=<n>]`) |
+| `/recipes`            | The shared recipe library as a grid of cards                                                                              |
+| `/recipes/[id]`       | One recipe's full detail; 404 for a malformed or unknown id                                                               |
 
 Route protection is handled in `src/middleware.ts`. Add paths to the `PROTECTED_ROUTES` array there to require authentication.
 
@@ -215,6 +216,8 @@ For S-09 it checks the shopping list. Signed-out visitors are sent to sign-in fr
 
 For S-10 it checks the cooking sessions of the shared `2031-01-20` plan, in its plain shared F1 state (after the re-share and before the lead-slot swap). Signed-out visitors are sent to sign-in from `/plan/sessions`. The page must show exactly five sessions in order (Sunday evening, Monday morning and evening, Tuesday morning and evening), and each session must hold exactly the set of step ids derived by the schedule rules from an independent SQL query over `recipe_steps` (see the comment above the S-10 fixtures in `scripts/smoke.mjs`). Sunday evening's order is pinned exactly, but it has no SQL oracle: it is hand-derived from the "longest remaining chain first" rule, and `npm test` pins the order of every section. The shared curry batch's steps appear exactly once on the page, Tuesday morning carries its `from the same batch as Monday Lunch` note, Sunday evening reads `About 118 min of steps · 1 untimed step`, the partner sees the same sessions, `/plan` links to the page, a malformed date returns 404 and a date with no plan says so.
 
+For S-11 it checks cook mode on the same `2031-01-20` plan, in two windows of the S-08 sequence. While the group is solved and still shared (right after the S-08 day-page checks), `/plan/sessions` links every session to `/plan/sessions/cook`, and Sunday evening opens on `Step 1 of 12` (the first step of the S-10 order) with the exact-amounts note. The curry rice step lists its own component's amounts and no portions, and the curry's last step of the evening shows You and Partner portions including the `(Tuesday)` servings of the shared batch. The curry entry has exactly one batch block, and Tuesday morning lists no curry step but a serving note with only Tuesday's own portions. The partner sees the same portions with "You" and "Partner" swapped, and `step=99` shows the last step. Once the partner's eater-only edit stales the group, the same page falls back to the estimate note with no portions anywhere. The portion numbers are checked by structure and partner symmetry, not pinned from an SQL oracle (there is no LP in SQL); `npm test` pins them. A signed-out visitor is sent to sign-in, a malformed session, a session outside the plan and a malformed step each return 404, and a date with no plan says so.
+
 > **Note:** this script exists primarily to guard the development of the starter itself — it is a fast sanity check that dependency upgrades did not break the build, the Cloudflare adapter or the Supabase auth flow. It is **not** a substitute for a real test suite. Once you build your own product on top of this starter, add proper tests (unit, integration, end-to-end) suited to your application.
 
 ## CI
@@ -254,6 +257,8 @@ Stored macro solves (S-04, `plan_day_solutions`) cascade with their plan and the
 Shopping list checks (S-09, `shopping_list_checks`) likewise cascade with their plan and their household, so they need no extra step either.
 
 Cooking sessions (S-10) store nothing: the schedule is derived from the plan on every read, so there is nothing of theirs to clean up.
+
+Cook mode (S-11) stores nothing server-side either: its done ticks live in each browser's `localStorage`, so there is nothing in the database to clean up.
 
 ## License
 
