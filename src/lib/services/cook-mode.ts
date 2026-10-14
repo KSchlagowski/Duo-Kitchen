@@ -27,6 +27,9 @@ import { formatIngredientAmount } from "@/lib/services/recipe-macros";
 import { formatSplitLine, type SplitLineContext } from "@/lib/services/split-lines";
 import { joinList } from "@/lib/utils";
 
+// Re-exported so the island takes every display helper from this module.
+export { formatStepDuration } from "@/lib/services/cooking-sessions";
+
 // Step-by-step cook mode of one cooking session (S-11), as a pure function of the S-10 session, the
 // plan's current stored solves and the library recipes. No I/O and nothing that pulls in the solver,
 // zod or Supabase: the island imports this module, so it must never import day-solutions.ts or
@@ -289,6 +292,11 @@ export const COOK_BOUNDS_WARNING = "Some amounts break the solver limits — che
 
 export function formatStepCounter(n: number, total: number): string {
   return `Step ${n} of ${total}`;
+}
+
+// The island's per-device progress line: "3 of 12 done".
+export function formatDoneCount(done: number, total: number): string {
+  return `${done} of ${total} done`;
 }
 
 export function formatCookExactNote(weekday: string): string {

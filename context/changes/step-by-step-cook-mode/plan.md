@@ -597,11 +597,11 @@ None. S-11 adds no migration, table, function or grant. `check:migrations`, `tes
 
 #### Automated
 
-- [x] 2.1 Unit tests pass: `npm test`
-- [x] 2.2 Lint passes: `npm run lint`
-- [x] 2.3 Type check passes: `npx astro check`
-- [x] 2.4 Build passes: `npm run build`
-- [x] 2.5 Existing smoke still passes against the dev server: `npm run smoke`
+- [x] 2.1 Unit tests pass: `npm test` — 251a623
+- [x] 2.2 Lint passes: `npm run lint` — 251a623
+- [x] 2.3 Type check passes: `npx astro check` — 251a623
+- [x] 2.4 Build passes: `npm run build` — 251a623
+- [x] 2.5 Existing smoke still passes against the dev server: `npm run smoke` — 251a623
 
 #### Manual
 
@@ -622,12 +622,12 @@ None. S-11 adds no migration, table, function or grant. `check:migrations`, `tes
 
 #### Automated
 
-- [ ] 3.1 Unit tests pass: `npm test`
-- [ ] 3.2 Lint passes: `npm run lint`
-- [ ] 3.3 Type check passes: `npx astro check`
-- [ ] 3.4 Build passes: `npm run build`
-- [ ] 3.5 Existing smoke still passes against the dev server: `npm run smoke`
-- [ ] 3.6 No file under `dist/client/` contains `yalps` or `ZodError`
+- [x] 3.1 Unit tests pass: `npm test`
+- [x] 3.2 Lint passes: `npm run lint`
+- [x] 3.3 Type check passes: `npx astro check`
+- [x] 3.4 Build passes: `npm run build`
+- [x] 3.5 Existing smoke still passes against the dev server: `npm run smoke`
+- [x] 3.6 No file under `dist/client/` contains `yalps` or `ZodError`
 
 #### Manual
 

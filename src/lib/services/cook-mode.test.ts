@@ -14,6 +14,7 @@ import {
   formatBatchHeading,
   formatCookEstimateNote,
   formatCookExactNote,
+  formatDoneCount,
   formatStepCounter,
 } from "@/lib/services/cook-mode";
 import { buildCookingSessions } from "@/lib/services/cooking-sessions";
@@ -351,6 +352,7 @@ describe("buildCookMode", () => {
 describe("cook mode display text", () => {
   it("formats counters, notes, headings and paths", () => {
     expect(formatStepCounter(2, 12)).toBe("Step 2 of 12");
+    expect(formatDoneCount(3, 12)).toBe("3 of 12 done");
     expect(formatCookExactNote("Monday")).toBe("Amounts and portions from the day solve of Monday.");
     expect(formatCookEstimateNote("Monday")).toBe(
       "Estimate for Monday: recipe base amounts and no portions yet — solve Monday to get them.",
