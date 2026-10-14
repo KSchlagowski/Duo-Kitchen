@@ -7,7 +7,7 @@ import { recipeId, SEED_RECIPES } from "@/lib/services/macro-solver.fixtures";
 // components are the seed's; instructions are shortened. A later seed migration re-transcribes from:
 //   select id, recipe_id, position, timing, duration_minutes from public.recipe_steps
 //   where id::text like '5eed0005-%' order by id;
-// Component names come from macro-solver.fixtures.ts, so they match recipe_components.name.
+// Component ids and names come from macro-solver.fixtures.ts, so they match recipe_components.
 
 function pad(n: number): string {
   return String(n).padStart(2, "0");
@@ -22,17 +22,17 @@ function step(
   durationMinutes: number | null,
   instruction: string,
 ): RecipeDetailStep {
-  const componentName =
+  const component =
     componentPosition === null
-      ? null
-      : (SEED_RECIPES[recipeId(r)].components.find((component) => component.position === componentPosition)?.name ??
-        null);
+      ? undefined
+      : SEED_RECIPES[recipeId(r)].components.find((candidate) => candidate.position === componentPosition);
   return {
     id: `5eed0005-0000-4000-8000-000000000${r}${pad(position)}`,
     position,
     instruction,
     timing,
-    componentName,
+    componentId: component?.id ?? null,
+    componentName: component?.name ?? null,
     durationMinutes,
   };
 }

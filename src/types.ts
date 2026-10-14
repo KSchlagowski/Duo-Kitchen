@@ -80,6 +80,8 @@ export interface RecipeDetailStep {
   position: number;
   instruction: string;
   timing: StepTiming;
+  // The library component id (S-11 ties a step to its component's stored amounts by it).
+  componentId: string | null;
   componentName: string | null;
   durationMinutes: number | null;
 }
@@ -453,3 +455,105 @@ export interface CookingSchedule {
   diagnostics: { missingRecipeIds: string[]; recipesWithoutSteps: string[]; makeAheadDemoted: string[] };
 }
 // --- end S-10 -------------------------------------------------------------------------------
+
+// --- S-11: step-by-step cook mode -----------------------------------------------------------
+// A display-ready view model of one session: every string is already viewer-relative, so the island
+// only renders it. Derived on every read, never stored.
+
+// Where a section's amounts come from: a current stored solve, or the recipe base amounts.
+export type CookAmountSource = "exact" | "estimate";
+
+// `amount` is formatted ("2 pcs (100 g)").
+export interface CookIngredientLine {
+  ingredientId: string;
+  productName: string;
+  amount: string;
+}
+
+// `componentName` is set only for per_component recipes.
+export interface CookPortionLine {
+  componentName: string | null;
+  line: string;
+}
+
+// One batch's amounts for one component (a step) or for the whole dish (the overview).
+export interface CookBatchAmounts {
+  dishId: string;
+  // "For Monday Lunch" — set only when the entry has more than one batch.
+  heading: string | null;
+  ingredients: CookIngredientLine[];
+}
+
+export interface CookBatchPortions {
+  dishId: string;
+  heading: string | null;
+  lines: CookPortionLine[];
+}
+
+export interface CookStep {
+  // 1-based across the session.
+  number: number;
+  // The recipe_steps id.
+  id: string;
+  sectionKind: SessionSectionKind;
+  entryKey: string;
+  recipeId: string;
+  recipeName: string;
+  componentName: string | null;
+  instruction: string;
+  timing: StepTiming;
+  durationMinutes: number | null;
+  // Empty for a step with no component.
+  amounts: CookBatchAmounts[];
+  // Set on the entry's last step in its section; null on an estimate section. Batches that fell back
+  // to the estimate are left out.
+  portions: CookBatchPortions[] | null;
+}
+
+export interface CookEntryOverview {
+  key: string;
+  recipeId: string;
+  recipeName: string | null;
+  // formatEntryMeals()
+  mealsLine: string;
+  hasSteps: boolean;
+  batches: {
+    dishId: string;
+    heading: string | null;
+    // One block per component, as on /plan/day; componentName set only for per_component recipes.
+    components: { componentName: string | null; ingredients: CookIngredientLine[]; portion: string | null }[];
+  }[];
+}
+
+// A later meal of a shared batch: nothing to cook, only that meal's own portions to serve.
+export interface CookServingNote {
+  mealId: string;
+  dayIndex: PlanDayIndex;
+  mealType: MealType;
+  text: string;
+  portions: CookPortionLine[];
+}
+
+export interface CookModeSection {
+  kind: SessionSectionKind;
+  source: CookAmountSource;
+  // The lead day its amounts come from (and the solve link's day).
+  sourceDayIndex: PlanDayIndex;
+  // Exact only: the source day's stored solve breaks a hard bound.
+  boundsWarning: boolean;
+  entries: CookEntryOverview[];
+  servingNotes: CookServingNote[];
+}
+
+export interface CookModeView {
+  planId: string;
+  startDate: string;
+  sessionKey: string;
+  date: string;
+  part: SessionPart;
+  sections: CookModeSection[];
+  steps: CookStep[];
+  // Inconsistent inputs the builder worked around; the I/O layer logs them.
+  diagnostics: { dishesFellBack: string[]; missingRecipeIds: string[] };
+}
+// --- end S-11 -------------------------------------------------------------------------------

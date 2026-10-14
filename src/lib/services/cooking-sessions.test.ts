@@ -63,6 +63,7 @@ function synthetic(id: string, name: string, timings: [StepTiming, number | null
     position: i + 1,
     instruction: `${name} ${i + 1}`,
     timing,
+    componentId: null,
     componentName: null,
     durationMinutes,
   }));
