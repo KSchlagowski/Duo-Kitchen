@@ -3,7 +3,7 @@ project: "Duo Kitchen"
 version: 1
 status: draft
 created: 2026-10-06
-updated: 2026-10-13
+updated: 2026-10-14
 prd_version: 1
 main_goal: market-feedback
 top_blocker: time
@@ -42,7 +42,7 @@ A couple who cook together in bulk, but have different daily macro targets, impr
 | S-07 | add-missing-product           | add a product with nutrition values and store aisle                                       | F-04             | FR-010, FR-011                                | ready    |
 | S-08 | shared-dish-across-days       | make one cooked dish cover meals on several days and still solve                          | S-04             | US-01, FR-017                                 | done     |
 | S-09 | shopping-list-from-plan       | open a combined, aisle-grouped shopping list and check items off                          | S-03             | US-02, FR-021                                 | done     |
-| S-10 | cooking-session-schedule      | see the plan arranged into evening/morning cooking sessions with merged steps             | S-03             | US-03, FR-022                                 | ready    |
+| S-10 | cooking-session-schedule      | see the plan arranged into evening/morning cooking sessions with merged steps             | S-03             | US-03, FR-022                                 | done     |
 | S-11 | step-by-step-cook-mode        | follow a session step by step with A and B portions                                       | S-10, S-04       | US-03, FR-023                                 | proposed |
 | S-12 | agent-recipe-import           | import a recipe by talking to the AI agent (photo + description → accepted recipe)        | S-05, F-03       | US-04, FR-024, FR-011                         | proposed |
 | S-13 | agent-edits-recipes-and-plans | ask the AI agent to edit a recipe or build a plan                                         | S-12, S-03       | US-04, FR-025                                 | proposed |
@@ -253,7 +253,7 @@ Foundations below assume these are present and do NOT re-scaffold them.
 - **Unknowns:**
   - How are merged steps ordered within a session (by recipe, by equipment, by duration)? — Owner: user. Block: no.
 - **Risk:** Second deterministic engine after the solver; it depends only on the plan and step metadata, so it can be built in parallel with S-04.
-- **Status:** ready
+- **Status:** done
 
 ### S-11: Step-by-step cook mode
 
@@ -362,3 +362,4 @@ Foundations below assume these are present and do NOT re-scaffold them.
 - **F-03: (foundation) merging to `main` deploys the app to production with a production Supabase project, and the app installs to the home screen on desktop, Android and iOS.** — Archived 2026-10-12 → `context/archive/2026-10-10-deploy-and-install-skeleton/` (the unexecuted re-plan is `context/archive/2026-10-11-deploy-and-install-skeleton/`). Lesson: —.
 - **S-08: user can make one cooked dish cover meals on several days, and solving still lands each person's daily totals within tolerance.** — Archived 2026-10-13 → `context/archive/2026-10-10-shared-dish-across-days/`. Lesson: —.
 - **S-09: user can open a shopping list generated from the plan with combined quantities for both people, grouped by store aisle, and check off items online.** — Archived 2026-10-13 → `context/archive/2026-10-13-shopping-list-from-plan/`. Lesson: —.
+- **S-10: user can see the plan arranged into evening and morning cooking sessions, with steps from several recipes merged, everything possible scheduled for the evening and only what must be fresh in the morning.** — Archived 2026-10-14 → `context/archive/2026-10-13-cooking-session-schedule/`. Lesson: —.
