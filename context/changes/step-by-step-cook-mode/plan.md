@@ -592,9 +592,9 @@ None. S-11 adds no migration, table, function or grant. `check:migrations`, `tes
 
 #### Manual
 
-- [ ] 1.6 `/plan/day` split lines read exactly as before the move
-- [ ] 1.7 Curry recipe detail steps render as before
-- [ ] 1.8 `/plan/sessions` renders exactly as before
+- [x] 1.6 `/plan/day` split lines read exactly as before the move
+- [x] 1.7 Curry recipe detail steps render as before
+- [x] 1.8 `/plan/sessions` renders exactly as before
 
 ### Phase 2: Server-rendered cook page and entry links
 
@@ -608,18 +608,18 @@ None. S-11 adds no migration, table, function or grant. `check:migrations`, `tes
 
 #### Manual
 
-- [ ] 2.6 Anonymous visitor is redirected from the cook page
-- [ ] 2.7 Every session on `/plan/sessions` has a working Cook step by step link
-- [ ] 2.8 Unsolved session shows the estimate note, base amounts and no portions
-- [ ] 2.9 After solving, the exact note appears
-- [ ] 2.10 Step walk shows per-component amounts, portions on the last curry step, and correct Previous/Next/finish
-- [ ] 2.11 All steps list jumps to a step and marks it current
-- [ ] 2.12 Monday morning's null-component curry step shows portions only
-- [ ] 2.13 Tuesday morning's serving note shows only Tuesday's portions
-- [ ] 2.14 Partner sees identical numbers with You/Partner swapped
-- [ ] 2.15 An edit after solving brings back the estimate state
-- [ ] 2.16 Malformed/unknown session and step URLs give 404, step 99 clamps, no-plan date says so
-- [ ] 2.17 The step walk works with JavaScript disabled
+- [x] 2.6 Anonymous visitor is redirected from the cook page
+- [x] 2.7 Every session on `/plan/sessions` has a working Cook step by step link
+- [x] 2.8 Unsolved session shows the estimate note, base amounts and no portions
+- [x] 2.9 After solving, the exact note appears
+- [x] 2.10 Step walk shows per-component amounts, portions on the last curry step, and correct Previous/Next/finish
+- [x] 2.11 All steps list jumps to a step and marks it current
+- [x] 2.12 Monday morning's null-component curry step shows portions only
+- [x] 2.13 Tuesday morning's serving note shows only Tuesday's portions
+- [x] 2.14 Partner sees identical numbers with You/Partner swapped
+- [x] 2.15 An edit after solving brings back the estimate state
+- [x] 2.16 Malformed/unknown session and step URLs give 404, step 99 clamps, no-plan date says so
+- [x] 2.17 The step walk works with JavaScript disabled
 
 ### Phase 3: Focus-mode island
 
@@ -634,14 +634,14 @@ None. S-11 adds no migration, table, function or grant. `check:migrations`, `tes
 
 #### Manual
 
-- [ ] 3.7 Next/Previous switch steps in place, update the URL and survive reload
-- [ ] 3.8 Back returns to `/plan/sessions`, not the previous step
-- [ ] 3.9 Done ticks and the done count persist across reloads and can be undone
-- [ ] 3.10 Done ticks are per device (absent in a private window)
-- [ ] 3.11 Ctrl/Cmd-click on Next opens a new tab without moving the current one
-- [ ] 3.12 Keep screen on appears where supported and keeps the screen awake
-- [ ] 3.13 Keyboard navigation moves focus to the new step heading
-- [ ] 3.14 With JavaScript disabled the page behaves as in Phase 2
+- [x] 3.7 Next/Previous switch steps in place, update the URL and survive reload
+- [x] 3.8 Back returns to `/plan/sessions`, not the previous step
+- [x] 3.9 Done ticks and the done count persist across reloads and can be undone
+- [x] 3.10 Done ticks are per device (absent in a private window)
+- [x] 3.11 Ctrl/Cmd-click on Next opens a new tab without moving the current one
+- [x] 3.12 Keep screen on appears where supported and keeps the screen awake
+- [x] 3.13 Keyboard navigation moves focus to the new step heading
+- [x] 3.14 With JavaScript disabled the page behaves as in Phase 2
 
 ### Phase 4: Smoke coverage and documentation
 
@@ -656,7 +656,7 @@ None. S-11 adds no migration, table, function or grant. `check:migrations`, `tes
 
 #### Manual
 
-- [ ] 4.7 Post-smoke `2031-01-20` Sunday evening cook page shows the estimate state
-- [ ] 4.8 A deliberately wrong `S11_EXACT_NOTE` makes smoke fail with a clear message
-- [ ] 4.9 CLAUDE.md and README claims match the running app
-- [ ] 4.10 On a real phone the cook page is readable and thumb-friendly with no sideways scroll
+- [x] 4.7 Post-smoke `2031-01-20` Sunday evening cook page shows the estimate state
+- [x] 4.8 A deliberately wrong `S11_EXACT_NOTE` makes smoke fail with a clear message
+- [x] 4.9 CLAUDE.md and README claims match the running app
+- [x] 4.10 On a real phone the cook page is readable and thumb-friendly with no sideways scroll
