@@ -199,6 +199,7 @@ export async function getRecipeDetail(supabase: SupabaseClient, id: string): Pro
         position: row.position,
         instruction: row.instruction,
         timing: row.timing,
+        componentId: row.component_id,
         componentName: row.component_id === null ? null : (componentNames.get(row.component_id) ?? null),
         durationMinutes: row.duration_minutes,
       }))
@@ -358,6 +359,7 @@ export async function getRecipeSteps(
       position: row.position,
       instruction: row.instruction,
       timing: row.timing,
+      componentId: row.component_id,
       componentName: row.component_id === null ? null : (componentNames.get(row.component_id) ?? null),
       durationMinutes: row.duration_minutes,
     });

@@ -86,6 +86,22 @@ export const SESSION_SECTION_LABELS: Record<SessionSectionKind, string> = {
   ahead: "For tomorrow",
 };
 
+// --- S-11: cook mode ---
+
+export const COOK_MODE_LABELS = {
+  cookLink: "Cook step by step",
+  previous: "Previous",
+  next: "Next",
+  doneNext: "Done — next step",
+  finish: "Back to sessions",
+  allSteps: "All steps",
+  overview: "Ingredients and portions",
+  amounts: "You need",
+  portions: "Portions",
+  batchEstimate: "(recipe base amounts — estimate)",
+  keepScreenOn: "Keep screen on",
+} as const;
+
 // The smoke test matches this exact string.
 export function formatMealTypes(types: MealType[]): string {
   return types.length === 0 ? "No suggested meal type" : types.map((t) => MEAL_TYPE_LABELS[t]).join(" · ");

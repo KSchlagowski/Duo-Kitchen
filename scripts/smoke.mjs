@@ -6,6 +6,7 @@
 // S-08: one batch shared across two days solves both together, and editing one day stales both.
 // S-09: a plan's aisle-grouped shopping list sums shared products, and either partner checks items off.
 // S-10: a plan's evening/morning cooking sessions merge the steps and cook a shared batch only once.
+// S-11: a session followed step by step shows each step's amounts and the stored You/Partner portions.
 // F-03: the app is installable -- the manifest, its icons and the <head> links are served anonymously.
 // Zero dependencies on purpose. Run against a live server: BASE_URL=http://localhost:4321 node scripts/smoke.mjs
 
@@ -294,16 +295,19 @@ function shopCheck(productId, checked) {
   return { start_date: shopStart, product_id: productId, checked: checked ? "1" : "0" };
 }
 
-// The visible text of a <li data-testid=…> (tags and React's <!-- --> markers stripped, whitespace
-// collapsed): list items nest links and forms, which testIdText()/testIdBody() (<p> only) cannot match.
+// The visible text of some markup: tags and React's <!-- --> markers stripped, whitespace collapsed.
+function visibleText(html) {
+  return html
+    .replace(/<[^>]*>/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+// The visible text of a <li data-testid=…>: list items nest links and forms, which
+// testIdText()/testIdBody() (<p> only) cannot match.
 function testIdItem(body, id) {
   const match = new RegExp(`<li[^>]*data-testid="${escapeRe(id)}"[^>]*>([\\s\\S]*?)</li>`).exec(body);
-  return match
-    ? match[1]
-        .replace(/<[^>]*>/g, " ")
-        .replace(/\s+/g, " ")
-        .trim()
-    : `${id} item missing`;
+  return match ? visibleText(match[1]) : `${id} item missing`;
 }
 
 function itemChecked(body, productId) {
@@ -430,6 +434,100 @@ function sharedBatchProblem(body) {
     ? null
     : "Tuesday morning has no batch note for lunch";
 }
+
+// S-11 fixtures: step-by-step cook mode of the same shared plan (shareStart). The step ids reuse the S-10
+// constants (always through s10Step(): data-step-id holds the full uuid). The portion NUMBERS are not
+// pinned from SQL (there is no LP in SQL): the run checks structure -- the exact/estimate note, which
+// step carries amounts or portions, one batch block per shared batch, Tuesday's own serving -- and
+// partner symmetry; `npm test` (src/lib/services/cook-mode.test.ts) pins the values. The notes mirror
+// formatCookExactNote() / formatCookEstimateNote() in src/lib/services/cook-mode.ts.
+const S11_EXACT_NOTE = "Amounts and portions from the day solve of Monday.";
+const S11_ESTIMATE_NOTE = "Estimate for Monday: recipe base amounts and no portions yet — solve Monday to get them.";
+const S11_SUNDAY = S10_SESSION_KEYS[0];
+const S11_TUESDAY_MORNING = "2031-01-21-morning";
+// Curry 404 is the curry's last make-ahead step, so its card portions the batch.
+const S11_CURRY_LAST_STEP = S10_SUNDAY_ORDER.indexOf("404") + 1;
+const S11_TEST_IDS = [
+  "cook-not-found",
+  "cook-unavailable",
+  "cook-no-plan",
+  "cook-no-steps",
+  "cook-step-counter",
+  "cook-source-now",
+  "cook-source-ahead",
+];
+
+function cookPath(session, step) {
+  const path = `/plan/sessions/cook?start=${shareStart}&session=${session}`;
+  return step === undefined ? path : `${path}&step=${step}`;
+}
+
+// One block of the cook page: from its test id to the next entry, serving note or </section>, the
+// boundaries of every block the run reads (entries and notes never nest; the step card is a section).
+function cookSection(body, testId) {
+  const at = body.indexOf(`data-testid="${testId}"`);
+  if (at < 0) return "";
+  const ends = ['data-testid="cook-entry-', 'data-testid="cook-serving-', "</section>"]
+    .map((marker) => body.indexOf(marker, at + 1))
+    .filter((end) => end > at);
+  return body.slice(at, ends.length ? Math.min(...ends) : body.length);
+}
+
+// The visible text of the first <p data-testid=…>; a source note nests its section label and link.
+function testIdParagraph(body, id) {
+  const match = new RegExp(`<p[^>]*data-testid="${escapeRe(id)}"[^>]*>([\\s\\S]*?)</p>`).exec(body);
+  return match ? visibleText(match[1]) : `${id} line missing`;
+}
+
+// The data-step-id of the step card.
+function cookStepId(body) {
+  return /<section[^>]*data-testid="cook-step"[^>]*>/.exec(body)?.[0].match(/data-step-id="([0-9a-f-]{36})"/)?.[1];
+}
+
+// Each <p> of a block, as visible text: one portion line per component (and a heading per batch).
+function portionLines(html) {
+  return [...html.matchAll(/<p[^>]*>([\s\S]*?)<\/p>/g)].map((match) => visibleText(match[1]));
+}
+
+// A portion line as a share map seen from the OTHER partner, plus its non-share tail. formatSplitLine
+// sorts the viewer's shares first, so a swapped string never equals the partner's: compare maps.
+// "Ryż: You: 320 g cooked · Partner (Tuesday): 250 g cooked · split evenly 4 ways"
+//   -> { shares: { "Partner": "320 g cooked", "You (Tuesday)": "250 g cooked" }, tail: ["split evenly 4 ways"] }
+const SWAP = {
+  You: "Partner",
+  Partner: "You",
+  "All for you": "All for your partner",
+  "All for your partner": "All for you",
+};
+function portionShares(line, swap = false) {
+  let rest = line.replace(/^(?!You\b|Partner\b|All for\b)[^:]+: /, "");
+  const tail = [];
+  // A percent split appends " of the dish" to its LAST share, which is a different person per viewer.
+  if (rest.endsWith(" of the dish")) {
+    rest = rest.slice(0, -" of the dish".length);
+    tail.push("of the dish");
+  }
+  const shares = {};
+  for (const segment of rest.split(" · ")) {
+    const match = /^(You|Partner)((?: \([^)]*\))?): (.*)$/.exec(segment);
+    if (match) shares[`${swap ? SWAP[match[1]] : match[1]}${match[2]}`] = match[3];
+    else tail.push(swap ? (SWAP[segment] ?? segment) : segment);
+  }
+  return { shares, tail };
+}
+
+function sameShares(a, b) {
+  const sorted = (shares) => JSON.stringify(Object.entries(shares).sort(([x], [y]) => (x < y ? -1 : 1)));
+  return sorted(a.shares) === sorted(b.shares) && a.tail.join("|") === b.tail.join("|");
+}
+
+// The href of the element carrying a test id, with the HTML-escaped ampersands decoded.
+function hrefOf(body, testId) {
+  const tag = new RegExp(`<a[^>]*data-testid="${escapeRe(testId)}"[^>]*>`).exec(body)?.[0] ?? "";
+  return (/href="([^"]*)"/.exec(tag)?.[1] ?? "").replace(/&amp;|&#38;/g, "&");
+}
+
+let s11PortionsA = [];
 
 function jsonCheckProblem(actual, expected) {
   let parsed;
@@ -1108,6 +1206,127 @@ const steps = [
       },
     },
   ],
+  // --- S-11: cook mode of the solved shared plan ---------------------------------------------------
+  // S-11 depends on this exact state (the group solved and still shared), so keep these steps here if
+  // the S-08 sequence is edited: the portions come from the current stored solve, and the next step's
+  // eater-only edit stales it.
+  [
+    "the sessions page links each session to cook mode",
+    () => a.request(sessionsPath),
+    {
+      status: 200,
+      check: (actual) => {
+        for (const key of S10_SESSION_KEYS) {
+          const href = hrefOf(actual.body, `session-cook-${key}`);
+          if (href !== cookPath(key)) return `session-cook-${key} links to "${href}"`;
+        }
+        return null;
+      },
+    },
+  ],
+  [
+    "A cook mode of Sunday evening is exact and starts at step 1",
+    () => a.request(cookPath(S11_SUNDAY)),
+    {
+      status: 200,
+      body: testIdBody("cook-step-counter", "Step 1 of 12"),
+      check: (actual) => {
+        const note = testIdParagraph(actual.body, "cook-source-ahead");
+        if (!note.endsWith(S11_EXACT_NOTE)) return `cook-source-ahead reads "${note}"`;
+        if (actual.body.includes("Estimate for ")) return "a section reads as an estimate";
+        const id = cookStepId(actual.body);
+        return id === s10Step(S10_SUNDAY_ORDER[0]) ? null : `step 1 is ${id ?? "missing"}`;
+      },
+    },
+  ],
+  [
+    "the curry rice step lists only its component amounts",
+    () => a.request(cookPath(S11_SUNDAY, 2)),
+    {
+      status: 200,
+      check: (actual) => {
+        const id = cookStepId(actual.body);
+        if (id !== s10Step(S10_SUNDAY_ORDER[1])) return `step 2 is ${id ?? "missing"}`;
+        if (!/<li[\s>]/.test(cookSection(actual.body, "cook-step-amounts"))) return "no amounts on the rice step";
+        return actual.body.includes('data-testid="cook-step-portions"') ? "the rice step shows portions" : null;
+      },
+    },
+  ],
+  [
+    "the last curry step of the evening portions the shared batch",
+    async () => {
+      const res = await a.request(cookPath(S11_SUNDAY, S11_CURRY_LAST_STEP));
+      s11PortionsA = portionLines(cookSection(res.body, "cook-step-portions"));
+      return res;
+    },
+    {
+      status: 200,
+      check: (actual) => {
+        const id = cookStepId(actual.body);
+        if (id !== s10Step("404")) return `step ${S11_CURRY_LAST_STEP} is ${id ?? "missing"}`;
+        const lines = s11PortionsA.join(" | ");
+        if (s11PortionsA.length === 0) return "no portions on the last curry step";
+        if (!/(^|[:·|] )You: /.test(lines) || !/(^|[:·|] )Partner: /.test(lines)) return `portions read "${lines}"`;
+        return lines.includes("(Tuesday)") ? null : `no Tuesday servings in "${lines}"`;
+      },
+    },
+  ],
+  [
+    "the shared curry batch has one batch block",
+    () => a.request(cookPath(S11_SUNDAY)),
+    {
+      status: 200,
+      check: (actual) => {
+        const entry = cookSection(actual.body, `cook-entry-ahead-${curryId}`);
+        if (entry === "") return "no curry entry for tomorrow";
+        const count = entry.split('data-testid="cook-batch-').length - 1;
+        return count === 1 ? null : `the curry entry has ${count} batch blocks`;
+      },
+    },
+  ],
+  [
+    "Tuesday morning serves its own portions from the batch",
+    () => a.request(cookPath(S11_TUESDAY_MORNING)),
+    {
+      status: 200,
+      check: (actual) => {
+        const note = portionLines(cookSection(actual.body, "cook-serving-1_lunch"));
+        if (note[0] !== S10_BATCH_NOTE) return `cook-serving-1_lunch reads "${note.join(" | ") || "nothing"}"`;
+        const portions = note.slice(1).join(" | ");
+        if (!portions.includes("You")) return `serving portions read "${portions}"`;
+        if (portions.includes("(Monday)")) return `serving portions name Monday: "${portions}"`;
+        const listed = stepIds(cookSection(actual.body, "cook-all-steps"));
+        const curry = S10_CURRY_STEPS.filter((suffix) => listed.includes(s10Step(suffix)));
+        return curry.length ? `Tuesday morning lists curry steps ${curry.join(", ")}` : null;
+      },
+    },
+  ],
+  [
+    "B sees the same portions with You and Partner swapped",
+    () => b.request(cookPath(S11_SUNDAY, S11_CURRY_LAST_STEP)),
+    {
+      status: 200,
+      check: (actual) => {
+        const linesB = portionLines(cookSection(actual.body, "cook-step-portions"));
+        if (linesB.length !== s11PortionsA.length) return `B has ${linesB.length} lines, A ${s11PortionsA.length}`;
+        for (const [i, lineB] of linesB.entries()) {
+          if (!sameShares(portionShares(lineB), portionShares(s11PortionsA[i], true))) {
+            return `B reads "${lineB}", A "${s11PortionsA[i]}"`;
+          }
+        }
+        return null;
+      },
+    },
+  ],
+  [
+    "a step past the end shows the last step",
+    () => a.request(cookPath(S11_SUNDAY, 99)),
+    {
+      status: 200,
+      body: testIdBody("cook-step-counter", "Step 12 of 12"),
+      check: (actual) => (actual.body.includes('data-testid="cook-finish"') ? null : "no finish link"),
+    },
+  ],
   [
     // An eater-only edit on ONE day keeps every meal id; the group fingerprint must still notice it.
     "B marks Tuesday's lunch for A only",
@@ -1134,6 +1353,23 @@ const steps = [
           ).source,
       ),
       check: (actual) => duplicateItemProblem(actual.body),
+    },
+  ],
+  [
+    // S-11 depends on this exact state too (the group stale, before the un-share): a stale solve gives
+    // recipe base amounts and no portions anywhere.
+    "cook mode of the stale plan falls back to estimates",
+    () => a.request(cookPath(S11_SUNDAY, S11_CURRY_LAST_STEP)),
+    {
+      status: 200,
+      check: (actual) => {
+        const note = testIdParagraph(actual.body, "cook-source-ahead");
+        if (!note.includes(S11_ESTIMATE_NOTE)) return `cook-source-ahead reads "${note}"`;
+        if (actual.body.includes('data-testid="cook-step-portions"')) return "the stale step still shows portions";
+        const entry = visibleText(cookSection(actual.body, `cook-entry-ahead-${curryId}`));
+        if (entry === "") return "no curry entry for tomorrow";
+        return /\b(You|Partner): /.test(entry) ? `the curry overview still has portions: "${entry}"` : null;
+      },
     },
   ],
   [
@@ -1361,6 +1597,33 @@ const steps = [
     { status: 200, body: testIdBody("sessions-no-plan", "No plan for that date.") },
   ],
 
+  // --- S-11: cook mode edge cases -----------------------------------------------------------------
+  [
+    "cook mode redirects anonymous user",
+    () => anon.request(cookPath(S11_SUNDAY)),
+    { status: 302, location: /^\/auth\/signin$/ },
+  ],
+  [
+    "a malformed cook session is 404",
+    () => a.request(cookPath("2031-01-19-noon")),
+    { status: 404, body: testIdBody("cook-not-found", "Plan not found") },
+  ],
+  [
+    "a cook session outside the plan is 404",
+    () => a.request(cookPath("2031-01-25-morning")),
+    { status: 404, body: testIdBody("cook-not-found", "Plan not found") },
+  ],
+  [
+    "a malformed cook step is 404",
+    () => a.request(cookPath(S11_SUNDAY, 0)),
+    { status: 404, body: testIdBody("cook-not-found", "Plan not found") },
+  ],
+  [
+    "a cook date with no plan says so",
+    () => a.request("/plan/sessions/cook?start=2032-01-05&session=2032-01-04-evening"),
+    { status: 200, body: testIdBody("cook-no-plan", "No plan for that date.") },
+  ],
+
   [
     "signout clears session",
     () => a.request("/api/auth/signout", { method: "POST" }),
@@ -1465,6 +1728,18 @@ for (const [name, run, rawExpected] of steps) {
       for (const key of sessionKeys(actual.body)) {
         const ids = stepIds(sessionSection(actual.body, key)).map((id) => id.slice(-3));
         console.log(`      got session-${key}: ${ids.join(", ") || "no steps"}`);
+      }
+      // S-11: likewise its own loop; the source notes nest a label and a link, so they print as text.
+      for (const id of S11_TEST_IDS) {
+        if (actual.body.includes(`data-testid="${id}"`)) {
+          console.log(`      got ${id}: ${testIdParagraph(actual.body, id)}`);
+        }
+      }
+      if (actual.body.includes('data-testid="cook-step"')) {
+        console.log(`      got cook-step: ${cookStepId(actual.body) ?? "no step id"}`);
+        for (const line of portionLines(cookSection(actual.body, "cook-step-portions"))) {
+          console.log(`      got portion: ${line}`);
+        }
       }
     }
   }

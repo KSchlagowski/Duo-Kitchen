@@ -279,7 +279,8 @@ export const SESSIONS_NO_PLAN_FOR_DATE = "No plan for that date.";
 export const SESSIONS_EMPTY = "Nothing to cook: this plan has no meals yet.";
 export const SESSIONS_NO_STEPS = "No steps recorded";
 
-function mealLabel(startDate: string, meal: SessionMealRef): string {
+// "Monday Lunch"; S-11's batch headings reuse it.
+export function mealLabel(startDate: string, meal: Pick<SessionMealRef, "dayIndex" | "mealType">): string {
   return `${weekdayLabel(addDays(startDate, meal.dayIndex))} ${MEAL_TYPE_LABELS[meal.mealType]}`;
 }
 
